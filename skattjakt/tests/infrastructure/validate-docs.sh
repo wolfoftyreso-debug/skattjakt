@@ -22,7 +22,8 @@ fail() { printf '  FAIL  %s\n' "$1"; failed=$((failed + 1)); }
 echo
 echo "required documents"
 for doc in ARCHITECTURE SECURITY THREAT_MODEL DATA_MODEL ANALYSIS_PIPELINE \
-           RULE_ENGINE DEPLOYMENT RUNBOOK; do
+           RULE_ENGINE DEPLOYMENT RUNBOOK \
+           PRODUCT_SURFACE CLIENT_ARCHITECTURE MEMORY_ARCHITECTURE; do
     path="docs/SKATTJAKT_${doc}.md"
     if [[ -s "$path" ]]; then
         pass "$path ($(wc -l < "$path") lines)"
@@ -155,6 +156,19 @@ if [[ "$broken" -eq 0 ]]; then
     pass "every repository path named in the documents exists"
 else
     fail "$broken referenced paths do not exist"
+fi
+
+# --- the surface matrix does not claim a cluster it never reached ----------
+#
+# The one claim most likely to drift into being false, because it is the one
+# that would be true if anyone ever ran the manifests.
+
+echo
+echo "the surface matrix is honest about the cluster"
+if grep -q "never applied" docs/SKATTJAKT_PRODUCT_SURFACE.md; then
+    pass "the matrix still records that Kubernetes was never applied"
+else
+    fail "the matrix no longer records that Kubernetes was never applied"
 fi
 
 # --- the rule set's review state matches what the documents claim ----------

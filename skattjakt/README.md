@@ -34,10 +34,11 @@ job is to help you ask better questions of the person qualified to answer them.
 
 | Area | State |
 |---|---|
-| Domain model, rule engine, extraction, pipeline | Implemented, 370 tests |
+| Domain model, rule engine, extraction, pipeline | Implemented, 422 tests |
 | Golden dataset, 10 cases | Precision 1.000, recall 1.000, zero false positives |
 | Tenant isolation (Postgres RLS) | 10 checks verified against a real cluster |
 | Security suite (§50) | 39 checks verified against a live API |
+| Identity: sessions, rotation, devices, roles | 44 checks verified against a live API |
 | Failure injection (§77) | 24 checks verified against a real cluster |
 | End-to-end product test | 20 steps, API and worker as separate processes |
 | Durable job system, analysis state machine | Implemented and verified |
@@ -59,12 +60,13 @@ A full account of what has and has not been verified is in
 ## Quick start
 
 ```sh
-cargo test --workspace                                  # 370 tests
+cargo test --workspace                                  # 422 tests
 cargo test -p skattjakt-pipeline --test golden -- --nocapture   # the golden dataset
 
 export PGBIN=$(ls -d /usr/lib/postgresql/*/bin | tail -1)
 ./tests/security/tenant-isolation.sh                    # RLS against a real cluster
 ./tests/security/security-suite.sh                      # the attacks of section 50
+./tests/security/session-suite.sh                       # sessions, rotation, roles
 ./tests/failure/job-failures.sh                         # what a dead pod does
 ./tests/e2e/end-to-end.sh                               # the whole product
 
@@ -200,6 +202,9 @@ Dockerfile               one file, two images
 | [Rule engine](docs/SKATTJAKT_RULE_ENGINE.md) | How a rule works, and how one is changed |
 | [Deployment](docs/SKATTJAKT_DEPLOYMENT.md) | How it is built and promoted — and §9, what is not verified |
 | [Runbook](docs/SKATTJAKT_RUNBOOK.md) | It is 03:00 and something is wrong |
+| [Product surface matrix](docs/SKATTJAKT_PRODUCT_SURFACE.md) | Which surfaces exist, which are prepared, and what platform was reachable |
+| [Client architecture](docs/SKATTJAKT_CLIENT_ARCHITECTURE.md) | What web, Apple and Android need — and what the backend already guarantees them |
+| [Memory architecture](docs/SKATTJAKT_MEMORY_ARCHITECTURE.md) | The four state layers, and why there is no cache and no vector store |
 | [Engineering decisions](docs/SKATTJAKT_ENGINEERING_DECISIONS.md) | Why X was decided that way |
 | [Product specification](docs/SKATTJAKT_PRODUCT_SPEC.md) | What the product promises a customer |
 
