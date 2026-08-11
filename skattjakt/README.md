@@ -34,15 +34,15 @@ job is to help you ask better questions of the person qualified to answer them.
 
 | Area | State |
 |---|---|
-| Domain model, rule engine, extraction, pipeline | Implemented, 219 tests |
+| Domain model, rule engine, extraction, pipeline | Implemented, 233 tests |
 | Golden dataset, 10 cases | Precision 1.000, recall 1.000, zero false positives |
 | Tenant isolation (Postgres RLS) | Implemented, 10 checks verified against a real cluster |
-| HTTP API + OpenAPI contract | Implemented and running |
-| Persistence wired to the API | **Not implemented** — schema and RLS exist; the repository layer does not |
-| Object storage for documents | **Not implemented** — modelled, nothing writes to a bucket |
+| HTTP API + OpenAPI contract | Implemented, 13 endpoints, running |
+| Persistence, document storage, async analyses, report | Implemented, verified end to end against a real cluster |
+| Beta interface | Implemented, driven through a real browser |
 | OCR for scanned PDFs | **Not implemented** — unreadable pages are reported, not read |
-| UI | **Not implemented** — the API is the only surface |
-| Docker / Kubernetes | **Authored, never run** — no container daemon or cluster was available |
+| Docker image | **Authored, unbuilt** — the registry is unreachable from the build environment |
+| Kubernetes | **Authored, never applied** — no cluster was available |
 
 Known gaps are listed in full at the end of
 [`docs/SKATTJAKT_ENGINEERING_DECISIONS.md`](docs/SKATTJAKT_ENGINEERING_DECISIONS.md).
@@ -52,12 +52,15 @@ Known gaps are listed in full at the end of
 ## Quick start
 
 ```sh
-cargo test --workspace                                  # 219 tests
+cargo test --workspace                                  # 233 tests
 cargo test -p skattjakt-pipeline --test golden -- --nocapture   # the golden dataset
 ./scripts/test-tenant-isolation.sh                      # RLS against a real cluster
+./scripts/test-end-to-end.sh                            # the whole product, section 40
 
 SKATTJAKT_API_TOKEN=dev cargo run -p skattjakt-api
 ```
+
+Then open <http://localhost:8080/>, paste `dev` as the token, and run the flow.
 
 Then:
 
@@ -85,6 +88,26 @@ curl -s -X POST localhost:8080/v1/analyses \
 Without `ANTHROPIC_API_KEY` and `SKATTJAKT_MODEL_ID` the service runs
 **rules-only** — the rule engine produces evidence-backed findings on its own,
 and `/ready` reports the degraded state rather than pretending.
+
+### With persistence
+
+Set `DATABASE_URL` (migrations run as the owning role; the service connects as
+`skattjakt_app`, which is subject to row-level security) and
+`SKATTJAKT_ADMIN_TOKEN`. Then:
+
+```sh
+# The admin token can only create companies — it reaches no company's data.
+curl -X POST localhost:8080/v1/companies -H "authorization: Bearer $ADMIN" \
+  -H 'content-type: application/json' \
+  -d '{"company":{"name":"Demo AB","org_number":"556016-0680",
+       "fiscal_year":{"start":"2025-01-01","end":"2025-12-31"}}}'
+# → returns a company token, once. Only its SHA-256 is stored.
+
+curl -X POST localhost:8080/v1/documents      -H "authorization: Bearer $TOKEN" ...
+curl -X POST localhost:8080/v1/analyses/stored -H "authorization: Bearer $TOKEN" \
+  -d '{"document_version_ids":["..."]}'       # → 202, poll GET /v1/analyses/{id}
+curl "localhost:8080/v1/analyses/$ID/report?format=markdown" -H "authorization: Bearer $TOKEN"
+```
 
 Configuration: copy `.env.example`. There is deliberately no default model id;
 see engineering decision D7.
@@ -131,11 +154,12 @@ crates/core              money, facts, evidence, opportunities, confidence
 crates/rules             versioned rule data, three-valued conditions, calculations
 crates/extract           text extraction, Swedish statement parser
 crates/model             provider abstraction, prompts, output validation
-crates/pipeline          orchestration
-crates/api               HTTP surface
+crates/pipeline          orchestration and the report
+crates/store             tenant-scoped Postgres access, immutable blob storage
+crates/api               HTTP surface and the beta interface (crates/api/ui)
 migrations/              schema with row-level security
 testdata/golden/         ten synthetic companies with expected findings
-scripts/                 tenant isolation test
+scripts/                 tenant isolation and end-to-end product tests
 deploy/                  Dockerfile, compose, Kubernetes manifests
 docs/                    architecture, product spec, engineering decisions
 ```

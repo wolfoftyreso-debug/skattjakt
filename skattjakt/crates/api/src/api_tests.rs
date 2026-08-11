@@ -405,3 +405,42 @@ fn token_comparison_is_length_safe() {
     assert!(!constant_time_eq(b"abc", b"abcd"));
     assert!(!constant_time_eq(b"", b"a"));
 }
+
+#[tokio::test]
+async fn the_interface_is_served_and_carries_the_disclaimer() {
+    let request = Request::builder().uri("/").body(Body::empty()).unwrap();
+    let response = router(state()).oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get("content-type").unwrap(),
+        "text/html; charset=utf-8"
+    );
+
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let html = String::from_utf8(bytes.to_vec()).unwrap();
+
+    assert!(html.contains("<html lang=\"sv\">"));
+    // The disclaimer must be present even before an analysis has run.
+    assert!(html.contains("Skattjakt är ett analys- och upptäcktsverktyg"));
+    // And the unreviewed-rule caveat must be on the first screen, not buried.
+    assert!(html.contains("Regelverket är ännu inte granskat"));
+    // No bundler, no CDN: a strict environment must be able to serve this as-is.
+    assert!(
+        !html.contains("<script src="),
+        "the interface must not load remote scripts"
+    );
+    assert!(
+        !html.contains("http://") && !html.contains("https://"),
+        "the interface must not reference external hosts"
+    );
+}
+
+#[tokio::test]
+async fn the_interface_needs_no_credentials_to_load() {
+    // The page is public; the token is entered into it and used per request.
+    let request = Request::builder().uri("/").body(Body::empty()).unwrap();
+    let response = router(state()).oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+}

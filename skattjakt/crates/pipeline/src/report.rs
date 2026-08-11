@@ -124,10 +124,8 @@ pub fn build(
         .cloned()
         .collect();
 
-    let mut rules_cited: Vec<CitedRule> = opportunities
-        .iter()
-        .flat_map(|h| h.rules.clone())
-        .collect();
+    let mut rules_cited: Vec<CitedRule> =
+        opportunities.iter().flat_map(|h| h.rules.clone()).collect();
     rules_cited.sort_by(|a, b| a.rule_id.cmp(&b.rule_id));
     rules_cited.dedup_by(|a, b| a.rule_id == b.rule_id);
 
@@ -144,7 +142,10 @@ pub fn build(
         .collect::<std::collections::BTreeSet<_>>()
         .len();
 
-    let values_cited = opportunities.iter().map(|h| h.supporting_values.len()).sum();
+    let values_cited = opportunities
+        .iter()
+        .map(|h| h.supporting_values.len())
+        .sum();
 
     let headline = if result.summary.found_nothing {
         "Skattjakten hittade inga tydliga möjligheter på det underlag vi fått. \
@@ -155,7 +156,11 @@ pub fn build(
         format!(
             "Vi hittade {} {} som kan vara värda att undersöka.",
             result.summary.identified_opportunities,
-            if result.summary.identified_opportunities == 1 { "sak" } else { "saker" }
+            if result.summary.identified_opportunities == 1 {
+                "sak"
+            } else {
+                "saker"
+            }
         )
     };
 
@@ -198,7 +203,11 @@ pub fn build(
                 assumptions,
             },
             next_steps: result.recommended_actions.clone(),
-            limitations: result.limitations.iter().map(|l| l.statement.clone()).collect(),
+            limitations: result
+                .limitations
+                .iter()
+                .map(|l| l.statement.clone())
+                .collect(),
         },
         disclaimer: result.disclaimer.clone(),
         generated_at: result.generated_at,
@@ -211,7 +220,13 @@ fn highlight(opportunity: &skattjakt_core::Opportunity) -> Highlight {
 
     for item in opportunity.evidence.items() {
         match item {
-            EvidenceItem::DocumentValue { kind, value, page, excerpt, .. } => {
+            EvidenceItem::DocumentValue {
+                kind,
+                value,
+                page,
+                excerpt,
+                ..
+            } => {
                 supporting_values.push(SupportingValue {
                     kind: kind.key(),
                     amount: value.to_string(),
@@ -219,7 +234,12 @@ fn highlight(opportunity: &skattjakt_core::Opportunity) -> Highlight {
                     excerpt: excerpt.clone(),
                 });
             }
-            EvidenceItem::Rule { rule_id, title, source, .. } => {
+            EvidenceItem::Rule {
+                rule_id,
+                title,
+                source,
+                ..
+            } => {
                 rules.push(CitedRule {
                     rule_id: rule_id.clone(),
                     title: title.clone(),
@@ -290,7 +310,10 @@ pub fn to_markdown(report: &Report) -> String {
         out.push_str("Inget fynd har nått hög prioritet på det här underlaget.\n\n");
     }
     for item in &s.start_here {
-        out.push_str(&format!("- **{}** — {}\n", item.title, item.recommended_action));
+        out.push_str(&format!(
+            "- **{}** — {}\n",
+            item.title, item.recommended_action
+        ));
     }
     out.push('\n');
 
@@ -310,7 +333,10 @@ pub fn to_markdown(report: &Report) -> String {
                     "  - {} {}{}\n",
                     value.kind,
                     value.amount,
-                    value.page.map(|p| format!(" (sida {p})")).unwrap_or_default()
+                    value
+                        .page
+                        .map(|p| format!(" (sida {p})"))
+                        .unwrap_or_default()
                 ));
             }
         }
@@ -326,7 +352,10 @@ pub fn to_markdown(report: &Report) -> String {
                 out.push_str(&format!("  - {missing}\n"));
             }
         }
-        out.push_str(&format!("- Rekommenderad åtgärd: {}\n\n", item.recommended_action));
+        out.push_str(&format!(
+            "- Rekommenderad åtgärd: {}\n\n",
+            item.recommended_action
+        ));
     }
 
     out.push_str("## 4. Varningar\n\n");
@@ -343,7 +372,10 @@ pub fn to_markdown(report: &Report) -> String {
         out.push_str("Inget ytterligare underlag efterfrågas.\n\n");
     }
     for missing in &s.missing_information {
-        out.push_str(&format!("- {} — {}\n", missing.description, missing.unlocks));
+        out.push_str(&format!(
+            "- {} — {}\n",
+            missing.description, missing.unlocks
+        ));
     }
     out.push('\n');
 
@@ -417,7 +449,11 @@ mod tests {
     #[test]
     fn a_report_with_nothing_found_says_so_and_still_shows_what_was_checked() {
         let report = build(&empty_result(), "Testbolaget AB", "2025", "se-2025.1");
-        assert!(report.sections.summary.headline.contains("inga tydliga möjligheter"));
+        assert!(report
+            .sections
+            .summary
+            .headline
+            .contains("inga tydliga möjligheter"));
         assert!(report
             .sections
             .summary
@@ -430,7 +466,12 @@ mod tests {
 
     #[test]
     fn the_report_has_all_nine_sections_in_markdown() {
-        let markdown = to_markdown(&build(&empty_result(), "Testbolaget AB", "2025", "se-2025.1"));
+        let markdown = to_markdown(&build(
+            &empty_result(),
+            "Testbolaget AB",
+            "2025",
+            "se-2025.1",
+        ));
         for heading in [
             "## 1. Sammanfattning",
             "## 2. Börja här",

@@ -53,8 +53,9 @@ versioned rule behind it.
 | `skattjakt-rules` | Versioned rule data, three-valued conditions, deterministic money expressions, per-year constants. | core |
 | `skattjakt-extract` | Text extraction, Swedish statement parsing. | core |
 | `skattjakt-model` | Provider abstraction, Anthropic adapter, versioned prompts, structured-output validation. | core |
-| `skattjakt-pipeline` | Orchestration of the flow above. | all of the above |
-| `skattjakt-api` | HTTP surface implementing `api/openapi.yaml`. | pipeline |
+| `skattjakt-pipeline` | Orchestration of the flow above, and the report. | all of the above |
+| `skattjakt-store` | Tenant-scoped Postgres access and immutable blob storage. | core, model |
+| `skattjakt-api` | HTTP surface implementing `api/openapi.yaml`, plus the beta interface. | pipeline, store |
 
 Dependencies point one way. `core` knows nothing about databases, HTTP or models,
 which is why the rules about *meaning* — what may be called actionable, how
@@ -152,6 +153,20 @@ reports what is missing. `SIGTERM` drains in flight analyses. The Kubernetes
 manifests in `deploy/k8s` run as a non-root user with a read-only root
 filesystem and all capabilities dropped.
 
-**Neither the container image nor the manifests have been built or applied** —
-the environment this was written in had no container daemon and no `kubectl`.
+**Neither the container image nor the manifests have been built or applied.**
+The daemon runs in the build environment, but its egress to Docker Hub is
+rate-limited, so no base image can be pulled; and no cluster was available.
 They are authored, not verified.
+
+### Running modes
+
+The service runs in two modes, and says which on `/ready`:
+
+- **Stateless** — no `DATABASE_URL`. `POST /v1/analyses` takes documents inline,
+  runs the pipeline, returns the result, and stores nothing.
+- **Persistent** — with `DATABASE_URL`. Companies, documents, analyses,
+  opportunities, evidence, calculations, model runs and audit events are stored.
+  Analyses run in the background and the client polls the stage.
+
+An analysis that runs for minutes is normal at high effort, which is why the
+persistent path returns `202` rather than holding the request open.

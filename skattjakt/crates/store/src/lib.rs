@@ -20,8 +20,8 @@ use serde_json::Value;
 use skattjakt_core::analysis::{AnalysisResult, AnalysisStage, AnalysisStatus};
 use skattjakt_core::document::{AccountsState, DocumentKind, DocumentVersion, MimeType};
 use skattjakt_core::{
-    AnalysisId, CompanyId, CompanyProfile, DocumentId, DocumentVersionId, FiscalYear, FinancialFact,
-    Opportunity, OrgNumber,
+    AnalysisId, CompanyId, CompanyProfile, DocumentId, DocumentVersionId, FinancialFact,
+    FiscalYear, Opportunity, OrgNumber,
 };
 use skattjakt_model::ModelRunRecord;
 use sqlx::postgres::{PgPool, PgPoolOptions};
@@ -132,14 +132,12 @@ impl Store {
         .execute(&mut *tx)
         .await?;
 
-        sqlx::query(
-            "INSERT INTO api_tokens (company_id, token_hash, label) VALUES ($1, $2, $3)",
-        )
-        .bind(profile.id.0)
-        .bind(skattjakt_core::document::sha256_hex(token.as_bytes()))
-        .bind(token_label)
-        .execute(&mut *tx)
-        .await?;
+        sqlx::query("INSERT INTO api_tokens (company_id, token_hash, label) VALUES ($1, $2, $3)")
+            .bind(profile.id.0)
+            .bind(skattjakt_core::document::sha256_hex(token.as_bytes()))
+            .bind(token_label)
+            .execute(&mut *tx)
+            .await?;
 
         sqlx::query(
             "INSERT INTO audit_events (company_id, actor, event_type, subject_id, detail)
@@ -275,7 +273,12 @@ impl Tenant<'_> {
         )
         .bind(document_id.0)
         .bind(self.company_id.0)
-        .bind(serde_json::to_value(kind).ok().and_then(|v| v.as_str().map(str::to_string)).unwrap_or_else(|| "unknown".into()))
+        .bind(
+            serde_json::to_value(kind)
+                .ok()
+                .and_then(|v| v.as_str().map(str::to_string))
+                .unwrap_or_else(|| "unknown".into()),
+        )
         .bind(original_filename)
         .execute(&mut *self.tx)
         .await?;
@@ -302,13 +305,17 @@ impl Tenant<'_> {
         .execute(&mut *self.tx)
         .await?;
 
-        self.audit("document.uploaded", Some(version_id.0), serde_json::json!({
-            // Metadata only. The filename is the user's own text and the hash
-            // identifies the bytes; no document content goes into the audit log.
-            "filename": original_filename,
-            "sha256": sha256,
-            "byte_size": bytes.len(),
-        }))
+        self.audit(
+            "document.uploaded",
+            Some(version_id.0),
+            serde_json::json!({
+                // Metadata only. The filename is the user's own text and the hash
+                // identifies the bytes; no document content goes into the audit log.
+                "filename": original_filename,
+                "sha256": sha256,
+                "byte_size": bytes.len(),
+            }),
+        )
         .await?;
 
         Ok(DocumentVersion {
@@ -362,7 +369,9 @@ impl Tenant<'_> {
         })
     }
 
-    pub async fn list_document_versions(&mut self) -> StoreResult<Vec<(DocumentVersionId, String, String)>> {
+    pub async fn list_document_versions(
+        &mut self,
+    ) -> StoreResult<Vec<(DocumentVersionId, String, String)>> {
         let rows = sqlx::query(
             "SELECT v.id, d.original_filename, v.sha256
              FROM document_versions v JOIN documents d ON d.id = v.document_id
@@ -431,10 +440,14 @@ impl Tenant<'_> {
         .execute(&mut *self.tx)
         .await?;
 
-        self.audit("analysis.created", Some(id.0), serde_json::json!({
-            "document_versions": ids.len(),
-            "rule_set_version": rule_set_version,
-        }))
+        self.audit(
+            "analysis.created",
+            Some(id.0),
+            serde_json::json!({
+                "document_versions": ids.len(),
+                "rule_set_version": rule_set_version,
+            }),
+        )
         .await
     }
 
@@ -471,18 +484,23 @@ impl Tenant<'_> {
         .await?;
 
         for opportunity in result.opportunities.iter().chain(result.rejected.iter()) {
-            self.insert_opportunity(result.analysis_id, opportunity).await?;
+            self.insert_opportunity(result.analysis_id, opportunity)
+                .await?;
         }
 
         for run in model_runs {
             self.insert_model_run(run).await?;
         }
 
-        self.audit("analysis.completed", Some(result.analysis_id.0), serde_json::json!({
-            "opportunities": result.opportunities.len(),
-            "rejected": result.rejected.len(),
-            "warnings": result.warnings.len(),
-        }))
+        self.audit(
+            "analysis.completed",
+            Some(result.analysis_id.0),
+            serde_json::json!({
+                "opportunities": result.opportunities.len(),
+                "rejected": result.rejected.len(),
+                "warnings": result.warnings.len(),
+            }),
+        )
         .await
     }
 
@@ -495,8 +513,12 @@ impl Tenant<'_> {
         .execute(&mut *self.tx)
         .await?;
 
-        self.audit("analysis.failed", Some(id.0), serde_json::json!({"error": error}))
-            .await
+        self.audit(
+            "analysis.failed",
+            Some(id.0),
+            serde_json::json!({"error": error}),
+        )
+        .await
     }
 
     pub async fn analysis(&mut self, id: AnalysisId) -> StoreResult<StoredAnalysis> {

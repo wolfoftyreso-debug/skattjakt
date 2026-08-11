@@ -118,7 +118,10 @@ pub async fn create_company(
         .into_response())
 }
 
-pub async fn get_company(State(state): State<AppState>, headers: HeaderMap) -> Result<Response, Problem> {
+pub async fn get_company(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Response, Problem> {
     let company_id = company_scope(authorise(&state, &headers).await?)?;
     let store = store(&state)?;
 
@@ -221,13 +224,24 @@ pub async fn upload_document(
 
 fn prepare_document_bytes(
     upload: DocumentUpload,
-) -> Result<(Vec<u8>, skattjakt_core::document::MimeType, skattjakt_extract::ExtractedDocument), Problem> {
+) -> Result<
+    (
+        Vec<u8>,
+        skattjakt_core::document::MimeType,
+        skattjakt_extract::ExtractedDocument,
+    ),
+    Problem,
+> {
     let mime = crate::parse_mime(&upload.mime_type)?;
     let bytes = crate::upload_bytes(&upload)?;
     if !mime.matches_content(&bytes) {
         return Err(Problem::bad_request(
             "content does not match its declared type",
-            format!("{} does not look like {}", upload.filename, mime.as_content_type()),
+            format!(
+                "{} does not look like {}",
+                upload.filename,
+                mime.as_content_type()
+            ),
         ));
     }
     let extracted = skattjakt_extract::extract(&bytes, mime).map_err(|e| {
@@ -236,7 +250,10 @@ fn prepare_document_bytes(
     Ok((bytes, mime, extracted))
 }
 
-pub async fn list_documents(State(state): State<AppState>, headers: HeaderMap) -> Result<Response, Problem> {
+pub async fn list_documents(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Response, Problem> {
     let company_id = company_scope(authorise(&state, &headers).await?)?;
     let store = store(&state)?;
 
@@ -319,8 +336,15 @@ pub async fn start_analysis(
 
     let background = state.clone();
     tokio::spawn(async move {
-        if let Err(error) =
-            run_analysis(background, company_id, analysis_id, profile, documents, accounts_state).await
+        if let Err(error) = run_analysis(
+            background,
+            company_id,
+            analysis_id,
+            profile,
+            documents,
+            accounts_state,
+        )
+        .await
         {
             tracing::error!(%analysis_id, error, "analysis failed");
         }
@@ -369,7 +393,10 @@ async fn run_analysis(
     versions: Vec<skattjakt_core::document::DocumentVersion>,
     accounts_state: AccountsState,
 ) -> Result<(), String> {
-    let store = state.store.clone().expect("persistence was checked by the caller");
+    let store = state
+        .store
+        .clone()
+        .expect("persistence was checked by the caller");
 
     let mut documents = Vec::new();
     for version in &versions {
@@ -408,7 +435,8 @@ async fn run_analysis(
         accounts_state,
     };
 
-    let facts = skattjakt_pipeline::build_fact_set(company_id, profile.fiscal_year, &input.documents);
+    let facts =
+        skattjakt_pipeline::build_fact_set(company_id, profile.fiscal_year, &input.documents);
     let stored_facts: Vec<_> = facts.iter().cloned().collect();
 
     let pipeline = AnalysisPipeline::new(
@@ -427,7 +455,10 @@ async fn run_analysis(
     match pipeline.run(&input, &observer).await {
         Ok((result, runs)) => {
             let mut tenant = store.tenant(company_id).await.map_err(|e| e.to_string())?;
-            tenant.insert_facts(&stored_facts).await.map_err(|e| e.to_string())?;
+            tenant
+                .insert_facts(&stored_facts)
+                .await
+                .map_err(|e| e.to_string())?;
             tenant
                 .complete_analysis(&result, &runs)
                 .await
@@ -479,7 +510,10 @@ pub async fn get_analysis(
     .into_response())
 }
 
-pub async fn list_analyses(State(state): State<AppState>, headers: HeaderMap) -> Result<Response, Problem> {
+pub async fn list_analyses(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Response, Problem> {
     let company_id = company_scope(authorise(&state, &headers).await?)?;
     let store = store(&state)?;
 
@@ -582,7 +616,10 @@ pub async fn get_report(
 
     if query.format.as_deref() == Some("markdown") {
         return Ok((
-            [(axum::http::header::CONTENT_TYPE, "text/markdown; charset=utf-8")],
+            [(
+                axum::http::header::CONTENT_TYPE,
+                "text/markdown; charset=utf-8",
+            )],
             skattjakt_pipeline::to_markdown(&report),
         )
             .into_response());

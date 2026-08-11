@@ -49,6 +49,10 @@ tags:
     description: Running an analysis and reading its result.
   - name: Rules
     description: Inspecting the rule set an analysis ran under.
+  - name: Companies
+    description: Tenants and their credentials.
+  - name: Documents
+    description: Immutable uploads.
 
 paths:
   /health:
@@ -120,7 +124,13 @@ paths:
       summary: Analyse a company's material
       description: |
         Runs the full pipeline — extraction, discovery, rule evaluation,
-        falsification, confidence and priority — and returns the result.
+        falsification, confidence and priority — and returns the result
+        synchronously, without storing anything.
+
+        This is the stateless mode, available with or without a database. When a
+        database is configured, prefer `POST /v1/documents` followed by
+        `POST /v1/analyses/stored`, which persists the analysis and lets it run
+        in the background.
 
         Documents are supplied inline as UTF-8 text or base64. Every document
         must declare its `mime_type`; the bytes are checked against it, and a
@@ -152,6 +162,247 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Problem" }
 
+  /v1/companies:
+    post:
+      tags: [Companies]
+      summary: Create a company and issue its first token
+      description: |
+        Requires the admin token. Returns a company-scoped bearer token **once** —
+        only its SHA-256 is stored, so it cannot be retrieved later.
+
+        The admin token grants no access to any company's data; it can only
+        create companies.
+      responses:
+        "201":
+          description: Company created. Save the token.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [company_id, api_token]
+                properties:
+                  company_id: { type: string, format: uuid }
+                  name: { type: string }
+                  org_number: { type: string }
+                  api_token: { type: string }
+                  token_label: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: Not the admin token.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "501": { $ref: "#/components/responses/NoPersistence" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [company]
+              properties:
+                company: { $ref: "#/components/schemas/CompanyProfile" }
+                token_label: { type: string }
+
+  /v1/companies/me:
+    get:
+      tags: [Companies]
+      summary: The company this token belongs to
+      description: |
+        There is no `/v1/companies/{id}`: the tenant comes from the credential,
+        so an identifier in the path could only ever name the same company or be
+        refused.
+      responses:
+        "200":
+          description: The company profile, plus which onboarding questions are unanswered.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "501": { $ref: "#/components/responses/NoPersistence" }
+
+  /v1/documents:
+    get:
+      tags: [Documents]
+      summary: List stored document versions
+      responses:
+        "200": { description: The company's documents. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "501": { $ref: "#/components/responses/NoPersistence" }
+    post:
+      tags: [Documents]
+      summary: Upload a document
+      description: |
+        Stores the bytes immutably and records version 1. The document is parsed
+        before it is stored, so a file that cannot be read is refused rather than
+        kept as an unusable blob. The storage key is derived from the tenant, the
+        document and the content hash — never from the filename.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/DocumentUpload"
+                - type: object
+                  properties:
+                    kind:
+                      type: string
+                      enum: [annual_accounts, income_statement, balance_sheet, general_ledger, tax_return]
+                    accounts_state: { $ref: "#/components/schemas/AccountsState" }
+      responses:
+        "201":
+          description: Stored.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [document_version_id, sha256]
+                properties:
+                  document_id: { type: string, format: uuid }
+                  document_version_id: { type: string, format: uuid }
+                  sha256: { type: string }
+                  byte_size: { type: integer }
+                  page_count: { type: [integer, "null"] }
+                  unreadable_pages:
+                    type: array
+                    items: { type: integer }
+        "400":
+          description: Unreadable, unsupported, or not what its content type claims.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "501": { $ref: "#/components/responses/NoPersistence" }
+
+  /v1/analyses/stored:
+    get:
+      tags: [Analysis]
+      summary: List analyses
+      responses:
+        "200": { description: The company's analyses, newest first. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "501": { $ref: "#/components/responses/NoPersistence" }
+    post:
+      tags: [Analysis]
+      summary: Start an analysis over stored documents
+      description: |
+        Returns immediately with `202`. An analysis can legitimately run for
+        minutes at high effort, which is too long to hold a request open — poll
+        `GET /v1/analyses/{id}` and watch `stage` advance through the steps of
+        the progress display.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [document_version_ids]
+              properties:
+                document_version_ids:
+                  type: array
+                  minItems: 1
+                  items: { type: string, format: uuid }
+                accounts_state: { $ref: "#/components/schemas/AccountsState" }
+      responses:
+        "202":
+          description: Accepted. Poll the returned location.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [analysis_id, status, stage]
+                properties:
+                  analysis_id: { type: string, format: uuid }
+                  status: { type: string }
+                  stage: { type: string }
+                  poll: { type: string }
+        "400":
+          description: No documents, or a document version this company does not have.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "501": { $ref: "#/components/responses/NoPersistence" }
+
+  /v1/analyses/{id}:
+    get:
+      tags: [Analysis]
+      summary: Analysis status and result
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: |
+            Status, stage, progress and — once finished — the full result. Also
+            lists the model runs, with token usage and latency but never any
+            reasoning trace.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [analysis_id, status, stage]
+                properties:
+                  analysis_id: { type: string, format: uuid }
+                  status: { type: string, enum: [pending, running, succeeded, failed] }
+                  stage: { $ref: "#/components/schemas/Stage" }
+                  progress: { type: number, minimum: 0, maximum: 1 }
+                  stage_label: { type: string, description: Swedish label for the progress display. }
+                  rule_set_version: { type: string }
+                  error: { type: [string, "null"] }
+                  model_runs: { type: array, items: { type: object } }
+                  result:
+                    oneOf:
+                      - $ref: "#/components/schemas/AnalysisResult"
+                      - type: "null"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/analyses/{id}/opportunities:
+    get:
+      tags: [Analysis]
+      summary: The findings of an analysis
+      description: Highest priority first. Rejected findings are not included.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The findings, each with its evidence chain.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/analyses/{id}/report:
+    get:
+      tags: [Analysis]
+      summary: The report
+      description: The nine sections of the beta report. `?format=markdown` renders it for export.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: format, in: query, required: false, schema: { type: string, enum: [json, markdown] } }
+      responses:
+        "200":
+          description: The report.
+          content:
+            application/json:
+              schema: { type: object }
+            text/markdown:
+              schema: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: The analysis has not finished.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+  /v1/opportunities/{id}:
+    get:
+      tags: [Analysis]
+      summary: One finding, with its full evidence chain
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: The finding. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -164,6 +415,21 @@ components:
   responses:
     Unauthorized:
       description: Missing or invalid credentials.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    NotFound:
+      description: |
+        No such resource for this company. Returned rather than 403 for a
+        resource belonging to another tenant — whether it exists elsewhere is
+        not the caller's business.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    NoPersistence:
+      description: |
+        No database is configured, so this endpoint cannot work. The stateless
+        `POST /v1/analyses` with inline documents remains available.
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Problem" }
@@ -302,6 +568,13 @@ components:
       description: |
         Whether the accounts are settled. A preliminary year-end is the primary
         case Skattjakt is built for, and it changes what may be concluded.
+
+    Stage:
+      type: string
+      description: The steps shown while an analysis runs.
+      enum: [queued, reading_documents, understanding_structure, identifying_areas,
+             searching_opportunities, checking_rules, falsifying,
+             verifying_calculations, prioritising, done]
 
     Category:
       type: string

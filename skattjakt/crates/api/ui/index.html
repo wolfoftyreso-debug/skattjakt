@@ -1,0 +1,500 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Skattjakt</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<style>
+  /* Light is the base; dark is a token swap, so nothing is defined only inside
+     a media query. */
+  :root {
+    --bg: #fbfaf8;
+    --surface: #ffffff;
+    --border: #e3ded6;
+    --ink: #1c1a17;
+    --muted: #6b655c;
+    --accent: #1f5d4c;
+    --accent-soft: #e8f1ee;
+    --warn: #8a5a1a;
+    --warn-soft: #fbf1e2;
+    --radius: 10px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #171614;
+      --surface: #201e1b;
+      --border: #35322d;
+      --ink: #eeeae4;
+      --muted: #a49d92;
+      --accent: #6fc0a7;
+      --accent-soft: #1d2e29;
+      --warn: #d9a35a;
+      --warn-soft: #2c2519;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 760px; margin: 0 auto; padding: 2.5rem 1.25rem 5rem; }
+  h1 { font-size: 1.9rem; letter-spacing: -0.02em; margin: 0 0 .4rem; }
+  h2 { font-size: 1.15rem; margin: 2rem 0 .75rem; }
+  h3 { font-size: 1rem; margin: 0; }
+  p { margin: 0 0 1rem; }
+  .lede { color: var(--muted); font-size: 1.05rem; }
+  .step { display: none; }
+  .step.active { display: block; }
+
+  label { display: block; font-size: .85rem; color: var(--muted); margin: .9rem 0 .3rem; }
+  input, select, textarea {
+    width: 100%; padding: .6rem .7rem; font: inherit; color: var(--ink);
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  }
+  textarea { min-height: 190px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82rem; }
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 0 1rem; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; } }
+
+  button {
+    font: inherit; font-weight: 550; padding: .65rem 1.2rem; border-radius: 8px;
+    border: 1px solid var(--accent); background: var(--accent); color: var(--bg);
+    cursor: pointer;
+  }
+  button.secondary { background: transparent; color: var(--accent); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .actions { display: flex; gap: .6rem; margin-top: 1.6rem; flex-wrap: wrap; }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 1rem 1.1rem; margin-bottom: .85rem;
+  }
+  .card header { display: flex; justify-content: space-between; gap: 1rem; align-items: baseline; }
+  .amount { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+  .tag {
+    display: inline-block; font-size: .72rem; padding: .12rem .5rem; border-radius: 999px;
+    background: var(--accent-soft); color: var(--accent); border: 1px solid transparent;
+  }
+  .tag.warn { background: var(--warn-soft); color: var(--warn); }
+  .meta { color: var(--muted); font-size: .8rem; margin-top: .5rem; }
+  details { margin-top: .7rem; }
+  summary { cursor: pointer; font-size: .85rem; color: var(--accent); }
+  details ul { margin: .5rem 0 0; padding-left: 1.1rem; font-size: .85rem; color: var(--muted); }
+  details li { margin-bottom: .3rem; }
+  code { font-size: .8rem; }
+
+  .counts { display: flex; gap: 1.5rem; flex-wrap: wrap; margin: 1rem 0 1.5rem; }
+  .counts div { font-size: .85rem; color: var(--muted); }
+  .counts strong { display: block; font-size: 1.7rem; color: var(--ink); font-weight: 600; }
+  .total { font-size: 1.5rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  ol.stages { list-style: none; padding: 0; margin: 1.5rem 0; }
+  ol.stages li { padding: .35rem 0 .35rem 1.7rem; position: relative; color: var(--muted); }
+  ol.stages li::before { content: "○"; position: absolute; left: 0; }
+  ol.stages li.done { color: var(--ink); }
+  ol.stages li.done::before { content: "●"; color: var(--accent); }
+
+  .notice { border-left: 3px solid var(--warn); background: var(--warn-soft); padding: .8rem 1rem; border-radius: 0 8px 8px 0; margin-bottom: 1rem; font-size: .9rem; }
+  .error { border-left-color: #b3452f; }
+  footer { border-top: 1px solid var(--border); margin-top: 3rem; padding-top: 1.2rem; font-size: .78rem; color: var(--muted); }
+  footer details summary { color: var(--muted); }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<main>
+
+<!-- START -->
+<section id="start" class="step active">
+  <h1>Skattjakt</h1>
+  <p class="lede">Det finns ofta mer att hitta i ett bokslut än man tror.</p>
+  <p>Ladda upp ditt preliminära eller färdiga bokslut, så letar Skattjakt efter
+     saker som kan vara värda att undersöka — och visar vad varje fynd bygger på.</p>
+
+  <div class="notice">
+    <strong>Regelverket är ännu inte granskat av en kvalificerad rådgivare.</strong>
+    Inget fynd visas därför som fastställt. Ta med resultatet till din
+    redovisningskonsult innan du agerar på något av det.
+  </div>
+
+  <label for="token">API-token</label>
+  <input id="token" type="password" autocomplete="off" placeholder="Bearer-token för /v1">
+
+  <div class="actions">
+    <button onclick="go('company')">Börja Skattjakten</button>
+  </div>
+</section>
+
+<!-- FÖRETAG -->
+<section id="company" class="step">
+  <h1>Om företaget</h1>
+  <p class="lede">Bara det som behövs. Frågor du hoppar över räknas som
+     obesvarade, inte som nej — och dyker upp igen om ett fynd hänger på dem.</p>
+
+  <div class="row">
+    <div><label for="name">Företagsnamn</label><input id="name" value="Konsultbyrån Nord AB"></div>
+    <div><label for="orgnr">Organisationsnummer</label><input id="orgnr" value="556016-0680"></div>
+  </div>
+  <div class="row">
+    <div><label for="fy-start">Räkenskapsår från</label><input id="fy-start" type="date" value="2025-01-01"></div>
+    <div><label for="fy-end">Till</label><input id="fy-end" type="date" value="2025-12-31"></div>
+  </div>
+  <div class="row">
+    <div><label for="employees">Antal anställda</label><input id="employees" type="number" min="0" value="8"></div>
+    <div><label for="owners">Antal ägare</label><input id="owners" type="number" min="0" value="2"></div>
+  </div>
+  <div class="row">
+    <div>
+      <label for="in-group">Ingår i koncern?</label>
+      <select id="in-group"><option value="">Vet ej</option><option value="false" selected>Nej</option><option value="true">Ja</option></select>
+    </div>
+    <div>
+      <label for="vehicles">Har fordon?</label>
+      <select id="vehicles"><option value="">Vet ej</option><option value="false" selected>Nej</option><option value="true">Ja</option></select>
+    </div>
+  </div>
+  <div class="row">
+    <div>
+      <label for="dev">Bedriver utvecklingsarbete?</label>
+      <select id="dev"><option value="">Vet ej</option><option value="false" selected>Nej</option><option value="true">Ja</option></select>
+    </div>
+    <div>
+      <label for="active">Är ägarna verksamma i bolaget?</label>
+      <select id="active"><option value="">Vet ej</option><option value="false">Nej</option><option value="true" selected>Ja</option></select>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button onclick="go('upload')">Fortsätt</button>
+    <button class="secondary" onclick="go('start')">Tillbaka</button>
+  </div>
+</section>
+
+<!-- LADDA UPP -->
+<section id="upload" class="step">
+  <h1>Ladda upp bokslutet</h1>
+  <p class="lede">Preliminärt eller färdigt. PDF, eller klistra in siffrorna som text.</p>
+
+  <label for="file">Fil (PDF eller text)</label>
+  <input id="file" type="file" accept=".pdf,.txt,.csv,.se,text/plain,text/csv,application/pdf">
+
+  <label for="paste">…eller klistra in</label>
+  <textarea id="paste" spellcheck="false">RESULTATRÄKNING 2025
+Nettoomsättning                     4 200 000
+Övriga externa kostnader             -650 000
+Personalkostnader                  -2 100 000
+Pensionskostnader                     -80 000
+Av- och nedskrivningar                -40 000
+Rörelseresultat                     1 330 000
+Skattemässigt resultat                850 000
+
+BALANSRÄKNING
+Materiella anläggningstillgångar      180 000
+Summa tillgångar                    2 400 000
+Summa eget kapital och skulder      2 400 000</textarea>
+
+  <label for="state">Bokslutets status</label>
+  <select id="state">
+    <option value="preliminary" selected>Preliminärt</option>
+    <option value="final">Färdigt</option>
+    <option value="unknown">Vet ej</option>
+  </select>
+
+  <div class="actions">
+    <button id="analyse-btn" onclick="analyse()">Starta Skattjakten</button>
+    <button class="secondary" onclick="go('company')">Tillbaka</button>
+  </div>
+  <div id="upload-error" class="notice error hidden"></div>
+</section>
+
+<!-- ANALYS -->
+<section id="analysis" class="step">
+  <h1>Skattjakten pågår</h1>
+  <p class="lede">Vi läser underlaget, prövar reglerna och försöker sedan
+     motbevisa det vi hittat.</p>
+  <ol class="stages" id="stages"></ol>
+</section>
+
+<!-- RESULTAT -->
+<section id="result" class="step">
+  <h1>Din Skattjakt</h1>
+  <p class="lede" id="headline"></p>
+
+  <div class="counts" id="counts"></div>
+
+  <h2>Potentiell ekonomisk påverkan</h2>
+  <p class="total" id="total"></p>
+  <p class="meta" id="total-note"></p>
+
+  <h2>Börja här</h2>
+  <div id="start-here"></div>
+
+  <h2>Alla fynd</h2>
+  <div id="opportunities"></div>
+
+  <div id="warnings-section" class="hidden">
+    <h2>Att kontrollera</h2>
+    <div id="warnings"></div>
+  </div>
+
+  <div id="missing-section" class="hidden">
+    <h2>Detta skulle göra analysen bättre</h2>
+    <div id="missing"></div>
+  </div>
+
+  <h2>Vad vi tittade på</h2>
+  <div id="covered"></div>
+
+  <h2>Nästa steg</h2>
+  <div id="next-steps"></div>
+
+  <h2>Begränsningar</h2>
+  <div id="limitations"></div>
+
+  <div class="actions">
+    <button class="secondary" onclick="go('upload')">Ny körning</button>
+  </div>
+</section>
+
+<footer>
+  <details>
+    <summary>Om Skattjakt och vad resultatet inte är</summary>
+    <p id="disclaimer" style="margin-top:.7rem"></p>
+  </details>
+</footer>
+
+</main>
+<script>
+const STAGES = [
+  ["reading_documents", "Läser bokslutet"],
+  ["understanding_structure", "Förstår företagets ekonomiska struktur"],
+  ["identifying_areas", "Identifierar relevanta skattemässiga områden"],
+  ["searching_opportunities", "Söker efter möjliga möjligheter"],
+  ["checking_rules", "Kontrollerar regler och villkor"],
+  ["falsifying", "Försöker falsifiera upptäckterna"],
+  ["verifying_calculations", "Verifierar beräkningar"],
+  ["prioritising", "Prioriterar resultat"],
+];
+
+const DEFAULT_DISCLAIMER =
+  "Skattjakt är ett analys- och upptäcktsverktyg. Resultaten är preliminära och ska " +
+  "inte betraktas som juridisk rådgivning, revisionsuttalande, skattebesked eller " +
+  "garanti om skatteåterbäring eller besparing. Identifierade möjligheter bör " +
+  "verifieras mot aktuella regler och företagets fullständiga underlag innan någon " +
+  "åtgärd vidtas.";
+
+document.getElementById("disclaimer").textContent = DEFAULT_DISCLAIMER;
+
+function go(id) {
+  document.querySelectorAll(".step").forEach(s => s.classList.remove("active"));
+  document.getElementById(id).classList.add("active");
+  window.scrollTo({ top: 0 });
+}
+
+const el = id => document.getElementById(id);
+const tri = id => { const v = el(id).value; return v === "" ? null : v === "true"; };
+
+/** Öre to Swedish kronor, grouped. Money crosses the wire as an integer. */
+function kr(ore) {
+  return (ore / 100).toLocaleString("sv-SE", {
+    style: "currency", currency: "SEK", maximumFractionDigits: 0,
+  });
+}
+function range(low, high) {
+  return low === high ? kr(low) : `${kr(low)}–${kr(high)}`;
+}
+const escape = s => String(s ?? "").replace(/[&<>"]/g, c =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+async function readFile(file) {
+  const buffer = await file.arrayBuffer();
+  let binary = "";
+  const bytes = new Uint8Array(buffer);
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(binary);
+}
+
+function showError(message) {
+  const box = el("upload-error");
+  box.textContent = message;
+  box.classList.remove("hidden");
+  el("analyse-btn").disabled = false;
+  go("upload");
+}
+
+async function analyse() {
+  el("upload-error").classList.add("hidden");
+  el("analyse-btn").disabled = true;
+
+  const file = el("file").files[0];
+  const pasted = el("paste").value.trim();
+  if (!file && !pasted) return showError("Ladda upp en fil eller klistra in siffrorna.");
+
+  let document_ = { filename: "bokslut.txt", mime_type: "text/plain", text: pasted };
+  if (file) {
+    const isPdf = file.name.toLowerCase().endsWith(".pdf");
+    document_ = {
+      filename: file.name,
+      mime_type: isPdf ? "application/pdf"
+        : file.name.toLowerCase().endsWith(".csv") ? "text/csv" : "text/plain",
+      content_base64: await readFile(file),
+    };
+  }
+
+  const body = {
+    company: {
+      name: el("name").value,
+      org_number: el("orgnr").value,
+      fiscal_year: { start: el("fy-start").value, end: el("fy-end").value },
+      employee_count: Number(el("employees").value) || null,
+      owner_count: Number(el("owners").value) || null,
+      in_group: tri("in-group"),
+      has_vehicles: tri("vehicles"),
+      does_development_work: tri("dev"),
+      owners_active_in_company: tri("active"),
+    },
+    documents: [document_],
+    accounts_state: el("state").value,
+  };
+
+  go("analysis");
+  // The stages are shown as the request runs. The server reports the same
+  // sequence; this reflects it rather than inventing progress.
+  const list = el("stages");
+  list.innerHTML = STAGES.map(([, label]) => `<li>${label}</li>`).join("");
+  let step = 0;
+  const ticker = setInterval(() => {
+    if (step < list.children.length) list.children[step++].classList.add("done");
+  }, 260);
+
+  try {
+    const response = await fetch("/v1/analyses", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "authorization": `Bearer ${el("token").value}`,
+      },
+      body: JSON.stringify(body),
+    });
+    clearInterval(ticker);
+    const payload = await response.json();
+
+    if (!response.ok) {
+      return showError(`${payload.title ?? "Något gick fel"}: ${payload.detail ?? ""}`);
+    }
+    render(payload);
+    go("result");
+  } catch (error) {
+    clearInterval(ticker);
+    showError(`Kunde inte nå tjänsten: ${error.message}`);
+  } finally {
+    el("analyse-btn").disabled = false;
+  }
+}
+
+function card(o) {
+  const values = (o.evidence || []).filter(e => e.type === "document_value");
+  const rules = (o.evidence || []).filter(e => e.type === "rule");
+  const assumptions = (o.evidence || []).filter(e => e.type === "assumption");
+  const money = o.impact.low === 0 && o.impact.high === 0
+    ? "Ingen beräknad effekt"
+    : range(o.impact.low, o.impact.high);
+
+  const statusLabels = {
+    identified: "Identifierad", investigate: "Undersök",
+    verify: "Verifiera", warning: "Varning", rejected: "Avvisad",
+  };
+  const categoryLabels = {
+    tax: "Skatt", costs: "Kostnader", vat: "Moms", personnel: "Personal",
+    investments: "Investeringar", research_and_development: "FoU", risk: "Risk",
+  };
+  const warn = o.status === "warning" || o.status === "verify";
+
+  return `<article class="card">
+    <header>
+      <h3>${escape(o.title)}</h3>
+      <span class="amount">${money}</span>
+    </header>
+    <p class="meta">
+      <span class="tag${warn ? " warn" : ""}">${statusLabels[o.status] ?? o.status}</span>
+      · ${escape(categoryLabels[o.category] ?? o.category)} · confidence ${o.confidence.score} %
+    </p>
+    <p style="margin:.7rem 0 0">${escape(o.rationale)}</p>
+    <p class="meta"><strong>Nästa steg:</strong> ${escape(o.recommended_action)}</p>
+    ${values.length || rules.length ? `<details>
+      <summary>Varför säger Skattjakt detta?</summary>
+      <ul>
+        ${values.map(v => `<li>${escape(v.kind)}: <strong>${kr(v.value)}</strong>${
+          v.page ? ` — sida ${v.page}` : ""}${
+          v.excerpt ? `<br><code>${escape(v.excerpt)}</code>` : ""}</li>`).join("")}
+        ${rules.map(r => `<li>${escape(r.title)} — ${escape(r.source)}</li>`).join("")}
+        ${assumptions.map(a => `<li>Antagande: ${escape(a.statement)}</li>`).join("")}
+      </ul>
+    </details>` : ""}
+    ${(o.missing_information || []).length ? `<details>
+      <summary>Vad saknas (${o.missing_information.length})</summary>
+      <ul>${o.missing_information.map(m => `<li>${escape(m)}</li>`).join("")}</ul>
+    </details>` : ""}
+  </article>`;
+}
+
+function render(result) {
+  const s = result.summary;
+  el("disclaimer").textContent = result.disclaimer || DEFAULT_DISCLAIMER;
+
+  el("headline").textContent = s.found_nothing
+    ? "Skattjakten hittade inga tydliga möjligheter på det underlag vi fått. " +
+      "Det betyder inte att det inte finns möjligheter — det betyder att vi inte har " +
+      "tillräckligt stark evidens för att flagga dem."
+    : `Vi hittade ${s.identified_opportunities} ${s.identified_opportunities === 1 ? "sak" : "saker"} som kan vara värda att undersöka.`;
+
+  el("counts").innerHTML = [
+    [s.high_priority_count, "hög prioritet"],
+    [s.needs_investigation_count, "bör undersökas"],
+    [s.missing_information_count, "kräver mer underlag"],
+    [s.warnings_count, "varningar"],
+  ].map(([n, label]) => `<div><strong>${n}</strong>${label}</div>`).join("");
+
+  el("total").textContent = range(s.estimated_total.low, s.estimated_total.high);
+  el("total-note").textContent = s.estimated_total.high === 0
+    ? "Ingen beräknad ekonomisk effekt på det underlag som lämnats."
+    : "Ett intervall, inte ett besked. Verifiera innan du agerar.";
+
+  const high = result.opportunities.filter(o => o.priority.band === "high");
+  el("start-here").innerHTML = high.length
+    ? high.map(card).join("")
+    : `<p class="meta">Inget fynd har nått hög prioritet på det här underlaget.</p>`;
+
+  el("opportunities").innerHTML = result.opportunities.length
+    ? result.opportunities.map(card).join("")
+    : `<p class="meta">Inga fynd.</p>`;
+
+  const warnings = result.warnings || [];
+  el("warnings-section").classList.toggle("hidden", warnings.length === 0);
+  el("warnings").innerHTML = warnings.map(w =>
+    `<div class="card"><p style="margin:0">${escape(w.message)}</p>${
+      w.detail ? `<p class="meta">${escape(w.detail)}</p>` : ""}</div>`).join("");
+
+  const missing = result.missing_information || [];
+  el("missing-section").classList.toggle("hidden", missing.length === 0);
+  el("missing").innerHTML = missing.map(m =>
+    `<div class="card"><p style="margin:0">${escape(m.description)}</p>
+     <p class="meta">${escape(m.unlocks)}</p></div>`).join("");
+
+  el("covered").innerHTML = (result.covered_areas || []).map(a =>
+    `<div class="meta">${escape(a.category)} — ${a.rules_evaluated} regler prövade, ${a.findings} fynd</div>`
+  ).join("");
+
+  el("next-steps").innerHTML = (result.recommended_actions || []).length
+    ? `<ol>${result.recommended_actions.map(a => `<li>${escape(a)}</li>`).join("")}</ol>`
+    : `<p class="meta">Inga åtgärder föreslås på det här underlaget.</p>`;
+
+  el("limitations").innerHTML = (result.limitations || [])
+    .map(l => `<div class="meta">${escape(l.statement)}</div>`).join("");
+}
+</script>
+</body>
+</html>

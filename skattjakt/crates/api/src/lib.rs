@@ -35,6 +35,10 @@ use skattjakt_store::{BlobStore, FilesystemBlobStore, Store};
 /// contract it was built against.
 const OPENAPI: &str = include_str!("../../../api/openapi.yaml");
 
+/// The beta interface. One file, no build step, no dependencies — section 25
+/// asks for a minimal beta, and a bundler would be the largest thing in it.
+const UI: &str = include_str!("../ui/index.html");
+
 /// Uploads are bounded; an unbounded body is a denial-of-service surface and a
 /// very large prompt.
 const MAX_BODY_BYTES: usize = 32 * 1024 * 1024;
@@ -106,8 +110,8 @@ impl AppState {
             }
         };
 
-        let blob_root = std::env::var("SKATTJAKT_BLOB_ROOT")
-            .unwrap_or_else(|_| "./data/documents".to_string());
+        let blob_root =
+            std::env::var("SKATTJAKT_BLOB_ROOT").unwrap_or_else(|_| "./data/documents".to_string());
 
         Ok(Self {
             engine,
@@ -128,6 +132,9 @@ impl AppState {
 
 pub fn router(state: AppState) -> Router {
     Router::new()
+        .route("/", get(ui))
+        .route("/favicon.svg", get(favicon))
+        .route("/favicon.ico", get(favicon))
         .route("/health", get(health))
         .route("/ready", get(ready))
         .route("/v1/openapi.yaml", get(openapi))
@@ -140,7 +147,10 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/analyses/stored", post(routes::start_analysis))
         .route("/v1/analyses/stored", get(routes::list_analyses))
         .route("/v1/analyses/{id}", get(routes::get_analysis))
-        .route("/v1/analyses/{id}/opportunities", get(routes::list_opportunities))
+        .route(
+            "/v1/analyses/{id}/opportunities",
+            get(routes::list_opportunities),
+        )
         .route("/v1/analyses/{id}/report", get(routes::get_report))
         .route("/v1/opportunities/{id}", get(routes::get_opportunity))
         .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
@@ -285,6 +295,20 @@ async fn ready(State(state): State<AppState>) -> impl IntoResponse {
         StatusCode::SERVICE_UNAVAILABLE
     };
     (status, Json(body))
+}
+
+async fn ui() -> impl IntoResponse {
+    ([(header::CONTENT_TYPE, "text/html; charset=utf-8")], UI)
+}
+
+/// An inline mark, so the browser does not request one that does not exist.
+/// Inline rather than a file: the interface loads nothing from anywhere else.
+async fn favicon() -> impl IntoResponse {
+    const MARK: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+<rect width="32" height="32" rx="7" fill="#1f5d4c"/>
+<path d="M9 21c3-1 5-3 6-6 1 3 3 5 6 6" stroke="#fbfaf8" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+<circle cx="16" cy="9" r="2.4" fill="#fbfaf8"/></svg>"##;
+    ([(header::CONTENT_TYPE, "image/svg+xml")], MARK)
 }
 
 async fn openapi() -> impl IntoResponse {
