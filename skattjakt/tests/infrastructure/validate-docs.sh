@@ -99,6 +99,48 @@ else
     fail "no alert queries a metric the code does not emit"
 fi
 
+# --- the contract describes the routes that exist --------------------------
+#
+# The OpenAPI file is the contract (section 17) and the running build serves it.
+# A route the contract does not describe is a surface nobody reviewed; a path
+# the contract describes and the code does not serve is a promise that 404s.
+
+echo
+echo "the contract matches the routes"
+if python3 - <<'PYTHON'
+import re
+import sys
+
+import yaml
+
+spec = yaml.safe_load(open("apps/api/openapi.yaml"))
+documented = set(spec["paths"])
+
+source = open("apps/api/src/lib.rs").read()
+# `.route("/path", …)` — the path may sit on its own line.
+routed = set(re.findall(r'\.route\(\s*"([^"]+)"', source))
+
+# The interface and its icon are pages, not API surface.
+routed -= {"/", "/favicon.svg", "/favicon.ico"}
+
+undocumented = sorted(routed - documented)
+unserved = sorted(documented - routed)
+
+if undocumented:
+    print(f"        routes the contract does not describe: {', '.join(undocumented)}")
+if unserved:
+    print(f"        contract paths the code does not serve: {', '.join(unserved)}")
+if undocumented or unserved:
+    sys.exit(1)
+
+print(f"        {len(documented)} paths, all served and all described")
+PYTHON
+then
+    pass "every route is in the contract and every contract path is served"
+else
+    fail "the contract and the routes have drifted"
+fi
+
 # --- the documents point at files that exist -------------------------------
 
 echo

@@ -68,6 +68,29 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Health" }
 
+  /metrics:
+    get:
+      tags: [Health]
+      summary: Prometheus metrics
+      description: |
+        The scrape endpoint, in the Prometheus text exposition format 0.0.4.
+
+        Unauthenticated, and safe to be: every value on it is PUBLIC by
+        construction, because the metrics registry refuses a label above that
+        classification and rejects unbounded label names outright. No company
+        id, no analysis id, no org number and no amount can appear here.
+
+        In the cluster it is reachable only from the monitoring namespace; the
+        NetworkPolicy is what closes it, so a scrape does not need a credential
+        to rotate.
+      security: []
+      responses:
+        "200":
+          description: The current values of every registered metric.
+          content:
+            text/plain:
+              schema: { type: string }
+
   /ready:
     get:
       tags: [Health]
