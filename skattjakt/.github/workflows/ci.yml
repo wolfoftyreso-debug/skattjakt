@@ -102,6 +102,15 @@ jobs:
           chmod -R a+rX .
           ./tests/security/security-suite.sh
 
+      # Sessions, rotation, reuse detection and roles against a live API. The
+      # policy is unit-tested; this is the wiring, which is where the bugs that
+      # matter live.
+      - name: Sessions and roles
+        run: |
+          export PGBIN=$(ls -d /usr/lib/postgresql/*/bin | tail -1)
+          chmod -R a+rX .
+          ./tests/security/session-suite.sh
+
   end-to-end:
     name: End-to-end product test
     runs-on: ubuntu-latest

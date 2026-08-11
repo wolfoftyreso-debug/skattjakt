@@ -345,6 +345,12 @@ impl Registry {
 pub mod names {
     // Technical
     pub const HTTP_REQUESTS: &str = "skattjakt_http_requests_total";
+    /// Sign-in attempts by client and outcome. Outcome is a closed set —
+    /// succeeded, rejected, locked — never a reason that could name a user.
+    pub const SIGN_INS: &str = "skattjakt_sign_ins_total";
+    /// Refresh exchanges. A rise in `rejected` is what a stolen-token sweep
+    /// looks like from the outside.
+    pub const SESSION_REFRESHES: &str = "skattjakt_session_refreshes_total";
     pub const HTTP_DURATION: &str = "skattjakt_http_request_duration_ms";
     pub const HTTP_IN_FLIGHT: &str = "skattjakt_http_requests_in_flight";
     pub const RATE_LIMITED: &str = "skattjakt_rate_limited_total";
@@ -404,6 +410,12 @@ pub fn register_all(registry: &Registry) {
     );
     registry.register_gauge(HTTP_IN_FLIGHT, "HTTP requests currently being handled.");
     registry.register_counter(RATE_LIMITED, "Requests rejected by the rate limiter.");
+    registry.register_counter(SIGN_INS, "Sign-in attempts, by client kind and outcome.");
+    registry.register_counter(
+        SESSION_REFRESHES,
+        "Refresh-token exchanges, by outcome. A rise in rejections is what a \
+         stolen-token sweep looks like from outside.",
+    );
     registry.register_histogram(
         DB_QUERY_DURATION,
         "Database query duration.",

@@ -41,6 +41,7 @@ fn state() -> AppState {
             provider.clone(),
         )),
         provider,
+        password_verifier: Arc::new(skattjakt_identity::PasswordVerifier::new()),
         config: PipelineConfig::default(),
         api_token: Some(TOKEN.to_string()),
         admin_token: None,

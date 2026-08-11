@@ -20,6 +20,8 @@ use skattjakt_store::RateBucket;
 use skattjakt_telemetry::{names, LabelSet};
 use uuid::Uuid;
 
+use skattjakt_identity::Permission;
+
 use crate::{authorise, correlation_id, AppState, DocumentUpload, Problem, Scope};
 
 /// Generates a bearer token with 256 bits of entropy from the OS.
@@ -33,7 +35,7 @@ fn generate_token() -> String {
     })
 }
 
-fn store(state: &AppState) -> Result<&skattjakt_store::Store, Problem> {
+pub(crate) fn store(state: &AppState) -> Result<&skattjakt_store::Store, Problem> {
     state.store.as_ref().ok_or_else(|| Problem {
         status: StatusCode::NOT_IMPLEMENTED,
         title: "persistence is not configured".into(),
@@ -61,23 +63,49 @@ fn queue_error(error: skattjakt_jobs::QueueError) -> Problem {
     }
 }
 
-fn company_scope(scope: Scope) -> Result<CompanyId, Problem> {
-    match scope {
-        Scope::Company(id) => Ok(id),
-        Scope::Admin => Err(Problem {
+/// Resolves a scope to a tenant, checking that it may do the thing it is about
+/// to do.
+///
+/// The permission is a required argument rather than an optional check, so a
+/// new route cannot be written without stating what it needs. That is the
+/// difference between a permission model and a permission convention.
+pub(crate) fn company_scope(scope: &Scope, permission: Permission) -> Result<CompanyId, Problem> {
+    let company = match scope {
+        Scope::Company(id) => *id,
+        Scope::User(user) => user.company_id,
+        Scope::Admin => {
+            return Err(Problem {
+                status: StatusCode::FORBIDDEN,
+                title: "wrong credential".into(),
+                detail: "this endpoint needs a company credential, not the admin token".into(),
+            })
+        }
+        Scope::Stateless => {
+            return Err(Problem {
+                status: StatusCode::NOT_IMPLEMENTED,
+                title: "persistence is not configured".into(),
+                detail: "the static API token has no company behind it".into(),
+            })
+        }
+    };
+
+    if !scope.may(permission) {
+        // Says which role is held and what was needed. Unlike a 404 for
+        // another tenant's data — which must stay uninformative — this tells a
+        // legitimate colleague why they were refused and who can fix it.
+        return Err(Problem {
             status: StatusCode::FORBIDDEN,
-            title: "wrong credential".into(),
-            detail: "this endpoint needs a company token, not the admin token".into(),
-        }),
-        Scope::Stateless => Err(Problem {
-            status: StatusCode::NOT_IMPLEMENTED,
-            title: "persistence is not configured".into(),
-            detail: "the static API token has no company behind it".into(),
-        }),
+            title: "insufficient permission".into(),
+            detail: "this action needs a role your account does not have; \
+                     ask an owner of the company"
+                .into(),
+        });
     }
+
+    Ok(company)
 }
 
-fn internal(error: impl std::fmt::Display) -> Problem {
+pub(crate) fn internal(error: impl std::fmt::Display) -> Problem {
     Problem {
         status: StatusCode::INTERNAL_SERVER_ERROR,
         title: "storage failure".into(),
@@ -106,7 +134,7 @@ pub async fn create_company(
     Json(request): Json<CreateCompanyRequest>,
 ) -> Result<Response, Problem> {
     let scope = authorise(&state, &headers).await?;
-    if scope != Scope::Admin {
+    if !matches!(scope, Scope::Admin) {
         return Err(Problem {
             status: StatusCode::FORBIDDEN,
             title: "admin credential required".into(),
@@ -142,7 +170,7 @@ pub async fn get_company(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Response, Problem> {
-    let company_id = company_scope(authorise(&state, &headers).await?)?;
+    let company_id = company_scope(&authorise(&state, &headers).await?, Permission::ReadCompany)?;
     let store = store(&state)?;
 
     let mut tenant = store.tenant(company_id).await.map_err(internal)?;
@@ -187,7 +215,10 @@ pub async fn upload_document(
     headers: HeaderMap,
     Json(request): Json<UploadDocumentRequest>,
 ) -> Result<Response, Problem> {
-    let company_id = company_scope(authorise(&state, &headers).await?)?;
+    let company_id = company_scope(
+        &authorise(&state, &headers).await?,
+        Permission::UploadDocument,
+    )?;
     let store = store(&state)?;
 
     let filename = request.document.filename.clone();
@@ -274,7 +305,10 @@ pub async fn list_documents(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Response, Problem> {
-    let company_id = company_scope(authorise(&state, &headers).await?)?;
+    let company_id = company_scope(
+        &authorise(&state, &headers).await?,
+        Permission::ReadDocument,
+    )?;
     let store = store(&state)?;
 
     let mut tenant = store.tenant(company_id).await.map_err(internal)?;
@@ -313,7 +347,10 @@ pub async fn start_analysis(
     headers: HeaderMap,
     Json(request): Json<StartAnalysisRequest>,
 ) -> Result<Response, Problem> {
-    let company_id = company_scope(authorise(&state, &headers).await?)?;
+    let company_id = company_scope(
+        &authorise(&state, &headers).await?,
+        Permission::StartAnalysis,
+    )?;
     let store = store(&state)?.clone();
 
     if request.document_version_ids.is_empty() {
@@ -450,7 +487,10 @@ pub async fn get_analysis(
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<Response, Problem> {
-    let company_id = company_scope(authorise(&state, &headers).await?)?;
+    let company_id = company_scope(
+        &authorise(&state, &headers).await?,
+        Permission::ReadAnalysis,
+    )?;
     let store = store(&state)?;
 
     let mut tenant = store.tenant(company_id).await.map_err(internal)?;
@@ -484,7 +524,10 @@ pub async fn list_analyses(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Response, Problem> {
-    let company_id = company_scope(authorise(&state, &headers).await?)?;
+    let company_id = company_scope(
+        &authorise(&state, &headers).await?,
+        Permission::ReadAnalysis,
+    )?;
     let store = store(&state)?;
 
     let mut tenant = store.tenant(company_id).await.map_err(internal)?;
@@ -507,7 +550,10 @@ pub async fn list_opportunities(
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<Response, Problem> {
-    let company_id = company_scope(authorise(&state, &headers).await?)?;
+    let company_id = company_scope(
+        &authorise(&state, &headers).await?,
+        Permission::ReadAnalysis,
+    )?;
     let store = store(&state)?;
 
     let mut tenant = store.tenant(company_id).await.map_err(internal)?;
@@ -529,7 +575,10 @@ pub async fn get_opportunity(
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<Response, Problem> {
-    let company_id = company_scope(authorise(&state, &headers).await?)?;
+    let company_id = company_scope(
+        &authorise(&state, &headers).await?,
+        Permission::ReadAnalysis,
+    )?;
     let store = store(&state)?;
 
     let mut tenant = store.tenant(company_id).await.map_err(internal)?;
@@ -554,7 +603,7 @@ pub async fn get_report(
     Path(id): Path<Uuid>,
     Query(query): Query<ReportQuery>,
 ) -> Result<Response, Problem> {
-    let company_id = company_scope(authorise(&state, &headers).await?)?;
+    let company_id = company_scope(&authorise(&state, &headers).await?, Permission::ReadReport)?;
     let store = store(&state)?;
 
     let mut tenant = store.tenant(company_id).await.map_err(internal)?;

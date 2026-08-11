@@ -185,6 +185,251 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Problem" }
 
+  /v1/auth/sign-in:
+    post:
+      tags: [Sessions]
+      summary: Sign in and open a session
+      description: |
+        Exchanges an email address and password for an access token and a
+        refresh token, bound to a device.
+
+        Send `x-skattjakt-client: web | ios | android`. It selects the session
+        lifetimes: a browser cannot hold a secret away from script on its own
+        page, so a web refresh token lives 12 hours, while iOS and Android put
+        it in the Keychain or the Keystore and get 30 days.
+
+        Send a stable `install_id` your installation generates once and keeps.
+        Without it every sign-in creates a new device row, and the customer's
+        device list fills with duplicates of the same phone.
+
+        A wrong password and an unknown address return the identical body.
+        The difference would enumerate which businesses are customers.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, format: password }
+                install_id:
+                  type: string
+                  maxLength: 200
+                  description: Stable per-installation identifier.
+                device_name:
+                  type: string
+                  maxLength: 120
+                  description: Shown in the customer's device list.
+      responses:
+        "201":
+          description: A session was opened.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Session" }
+        "401":
+          description: The credentials are not valid.
+        "429":
+          description: Too many failed attempts; the account is locked for a while.
+
+  /v1/auth/refresh:
+    post:
+      tags: [Sessions]
+      summary: Exchange a refresh token for a new pair
+      description: |
+        Rotates. The presented refresh token stops working and a new pair is
+        returned.
+
+        Presenting a refresh token that was already rotated away revokes the
+        **whole session family** — that is what a stolen token looks like, and
+        the customer signing in again is the intended outcome. A short grace
+        window exempts the immediately previous token, so a response lost to a
+        tunnel does not cost a sign-in.
+
+        Expired, revoked, unknown and reuse-detected all answer 401 with the
+        same body: every one of them means "sign in again", and telling a thief
+        which they hit is free intelligence.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token: { type: string }
+      responses:
+        "200":
+          description: A new pair.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Session" }
+        "401":
+          description: Sign in again.
+
+  /v1/auth/sign-out:
+    post:
+      tags: [Sessions]
+      summary: End this session
+      responses:
+        "204": { description: The session was ended. }
+
+  /v1/auth/sign-out-everywhere:
+    post:
+      tags: [Sessions]
+      summary: End every session for this user
+      description: What a customer reaches for when a device is lost.
+      responses:
+        "200":
+          description: How many sessions were ended.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sessions_ended: { type: integer }
+
+  /v1/auth/devices:
+    get:
+      tags: [Sessions]
+      summary: The devices this user is signed in on
+      responses:
+        "200":
+          description: The device list.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  devices:
+                    type: array
+                    items: { $ref: "#/components/schemas/Device" }
+
+  /v1/auth/devices/{id}/push-token:
+    put:
+      tags: [Sessions]
+      summary: Register or clear a push token
+      description: |
+        `push_token: null` clears it — how a client says notifications were
+        turned off without removing the device the customer can still see.
+
+        Scoped to the signed-in user, so knowing another customer's device id
+        is not enough to redirect their notifications; that answers 404.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                push_token: { type: string, nullable: true }
+                provider:
+                  type: string
+                  enum: [apns, fcm, web_push]
+                  nullable: true
+      responses:
+        "204": { description: Registered. }
+        "404": { description: No such device. }
+        "422": { description: A token was sent without naming its provider. }
+
+  /v1/auth/switch-company:
+    post:
+      tags: [Sessions]
+      summary: Change which company this session acts in
+      description: |
+        For an accountant with several clients — the normal case in this market.
+        Membership is verified rather than trusted from the request, and the
+        tokens are not rotated: the session keeps its credentials and changes
+        which tenant it acts in.
+
+        A company the caller is not a member of answers 404, not 403: whether it
+        exists is not their business.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [company_id]
+              properties:
+                company_id: { type: string, format: uuid }
+      responses:
+        "200":
+          description: The session now acts in that company.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  company_id: { type: string, format: uuid }
+                  role: { $ref: "#/components/schemas/Role" }
+        "404": { description: No such company, or you are not a member. }
+
+  /v1/auth/change-password:
+    post:
+      tags: [Sessions]
+      summary: Change this user's password
+      description: |
+        Requires the current password even though the caller holds a session: a
+        borrowed unlocked laptop must not be a permanent account takeover.
+
+        Ends every **other** session. A password change after a suspected
+        compromise that leaves the attacker signed in is theatre.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [current_password, new_password]
+              properties:
+                current_password: { type: string, format: password }
+                new_password: { type: string, format: password, minLength: 12 }
+      responses:
+        "200":
+          description: Changed.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  other_sessions_ended: { type: integer }
+        "401": { description: The current password is not correct. }
+        "422": { description: The new password does not meet the policy. }
+
+  /v1/users:
+    post:
+      tags: [Sessions]
+      summary: Create a person in this company
+      description: |
+        Needs the `manage_members` permission, which only an owner has — so a
+        member cannot quietly widen access and an advisor cannot invite a
+        colleague.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, format: password, minLength: 12 }
+                role: { $ref: "#/components/schemas/Role" }
+      responses:
+        "201":
+          description: Created.
+        "403": { description: Your role may not manage members. }
+        "409": { description: An account with that address already exists. }
+
   /v1/companies:
     post:
       tags: [Companies]
@@ -458,6 +703,49 @@ components:
           schema: { $ref: "#/components/schemas/Problem" }
 
   schemas:
+    Session:
+      type: object
+      description: |
+        An issued pair. Both tokens are opaque and are stored only as SHA-256,
+        so neither can be recovered from a database dump.
+      properties:
+        access_token:
+          type: string
+          description: "Send as `Authorization: Bearer`. Short-lived."
+        token_type: { type: string, enum: [Bearer] }
+        expires_at: { type: string, format: date-time }
+        refresh_token:
+          type: string
+          description: |
+            Store in the Keychain (iOS), the Keystore (Android), or an
+            HttpOnly cookie (web). Single-use: each refresh rotates it.
+        refresh_expires_at: { type: string, format: date-time }
+        company_id: { type: string, format: uuid }
+        role: { $ref: "#/components/schemas/Role" }
+        device_id: { type: string, format: uuid }
+
+    Role:
+      type: string
+      enum: [owner, member, advisor]
+      description: |
+        `owner` — the business; everything, including deletion.
+        `member` — works in the business; runs and reads analyses.
+        `advisor` — an external accountant; may read the accounts and run the
+        analysis they were engaged to interpret, and may not delete data or
+        hand access to anyone else.
+
+    Device:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        platform: { type: string, enum: [web, ios, android] }
+        display_name: { type: string }
+        last_seen_at: { type: string, format: date-time }
+        push_ready: { type: boolean }
+        live_sessions: { type: integer }
+        current:
+          type: boolean
+          description: Whether this is the device making the request.
     Health:
       type: object
       required: [status, version]

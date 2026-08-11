@@ -13,6 +13,7 @@
 
 pub mod blob;
 pub mod governance;
+pub mod identity;
 
 use std::collections::BTreeMap;
 

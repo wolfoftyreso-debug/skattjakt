@@ -1,0 +1,19 @@
+[package]
+name = "skattjakt-identity"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+skattjakt-core.workspace = true
+skattjakt-telemetry.workspace = true
+argon2 = { version = "0.5", features = ["std"] }
+chrono.workspace = true
+getrandom = "0.3"
+serde.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true

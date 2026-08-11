@@ -9,6 +9,7 @@
 #![forbid(unsafe_code)]
 #![warn(missing_debug_implementations)]
 
+pub mod auth_routes;
 pub mod observe;
 pub mod routes;
 
@@ -55,6 +56,9 @@ pub struct AppState {
     /// the cost ceiling, the fallback check and the document-data fence apply
     /// to every call rather than to the ones someone remembered to route.
     pub gateway: Arc<skattjakt_gateway::ModelGateway>,
+    /// Argon2id, constructed once. Building it per request would re-derive its
+    /// parameters on every sign-in for no benefit.
+    pub password_verifier: Arc<skattjakt_identity::PasswordVerifier>,
     pub config: PipelineConfig,
     /// Static bearer token for the stateless surface. When `None` *and* no
     /// database is configured, the `/v1` routes are closed entirely rather
@@ -173,6 +177,7 @@ impl AppState {
             engine,
             provider,
             gateway,
+            password_verifier: Arc::new(skattjakt_identity::PasswordVerifier::new()),
             config: PipelineConfig::default(),
             api_token: std::env::var("SKATTJAKT_API_TOKEN")
                 .ok()
@@ -199,6 +204,27 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/openapi.yaml", get(openapi))
         .route("/v1/rules", get(rules))
         .route("/v1/analyses", post(analyse))
+        // The session surface. Built for three clients even though one exists:
+        // adding a refresh token or a device identity after an app has shipped
+        // is a breaking change across every client at once.
+        .route("/v1/auth/sign-in", post(auth_routes::sign_in))
+        .route("/v1/auth/refresh", post(auth_routes::refresh))
+        .route("/v1/auth/sign-out", post(auth_routes::sign_out))
+        .route(
+            "/v1/auth/sign-out-everywhere",
+            post(auth_routes::sign_out_everywhere),
+        )
+        .route("/v1/auth/devices", get(auth_routes::list_devices))
+        .route(
+            "/v1/auth/devices/{id}/push-token",
+            axum::routing::put(auth_routes::set_push_token),
+        )
+        .route("/v1/auth/switch-company", post(auth_routes::switch_company))
+        .route(
+            "/v1/auth/change-password",
+            post(auth_routes::change_password),
+        )
+        .route("/v1/users", post(auth_routes::create_user))
         .route("/v1/companies", post(routes::create_company))
         .route("/v1/companies/me", get(routes::get_company))
         .route("/v1/documents", post(routes::upload_document))
@@ -278,13 +304,58 @@ impl IntoResponse for Problem {
 ///
 /// The tenant comes from the token, never from the request body: a company id
 /// a client sends cannot widen what that client can reach.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub enum Scope {
     /// May create companies. Grants access to no company's data.
     Admin,
+    /// A machine credential: the long-lived company token.
+    ///
+    /// Kept, and kept working, because integrations and the existing web client
+    /// depend on it. It carries no person, so an audit entry written under it
+    /// can only say which company acted — which is exactly why `User` exists.
     Company(skattjakt_core::CompanyId),
+    /// A person, on a device, in a session (section 13).
+    ///
+    /// Carries the four things a company token cannot: who, on what, for how
+    /// long, and with which role.
+    User(Box<skattjakt_store::identity::AuthenticatedUser>),
     /// The static token, used when no database is configured.
     Stateless,
+}
+
+impl Scope {
+    /// The tenant this scope acts in, if any.
+    pub fn company(&self) -> Option<skattjakt_core::CompanyId> {
+        match self {
+            Scope::Company(id) => Some(*id),
+            Scope::User(user) => Some(user.company_id),
+            Scope::Admin | Scope::Stateless => None,
+        }
+    }
+
+    /// Whether this scope may do something.
+    ///
+    /// A company token is a machine credential acting for the business itself,
+    /// so it carries owner permissions. A session carries the role its holder
+    /// actually has — which is how an external advisor is prevented from
+    /// deleting the accounts they were engaged to read.
+    pub fn may(&self, permission: skattjakt_identity::Permission) -> bool {
+        match self {
+            Scope::Company(_) | Scope::Stateless => skattjakt_identity::Role::Owner.may(permission),
+            Scope::User(user) => user.role.may(permission),
+            // The admin credential creates companies and reads none of their
+            // data. It holds no permission inside a company at all.
+            Scope::Admin => false,
+        }
+    }
+
+    /// The user behind this scope, when there is one.
+    pub fn user_id(&self) -> Option<uuid::Uuid> {
+        match self {
+            Scope::User(user) => Some(user.user_id),
+            _ => None,
+        }
+    }
 }
 
 /// Resolves the bearer token to a scope.
@@ -302,6 +373,24 @@ pub async fn authorise(state: &AppState, headers: &HeaderMap) -> Result<Scope, P
     if let Some(admin) = state.admin_token.as_deref() {
         if constant_time_eq(presented.as_bytes(), admin.as_bytes()) {
             return Ok(Scope::Admin);
+        }
+    }
+
+    // Session tokens are checked before company tokens: sessions are the
+    // credential the product is moving to, they are far more numerous, and the
+    // lookup is a single indexed read either way.
+    if let Some(store) = state.store.as_ref() {
+        match store.authenticate_session(presented).await {
+            Ok(Some(user)) => return Ok(Scope::User(Box::new(user))),
+            Ok(None) => {}
+            Err(e) => {
+                tracing::error!(error = %e, "session lookup failed");
+                return Err(Problem {
+                    status: StatusCode::SERVICE_UNAVAILABLE,
+                    title: "authentication unavailable".into(),
+                    detail: "the credential store could not be reached".into(),
+                });
+            }
         }
     }
 
