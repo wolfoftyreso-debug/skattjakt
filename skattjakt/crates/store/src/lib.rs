@@ -14,6 +14,8 @@
 pub mod blob;
 pub mod governance;
 pub mod identity;
+pub mod notifications;
+pub mod uploads;
 
 use std::collections::BTreeMap;
 
@@ -49,6 +51,11 @@ pub enum StoreError {
 
     #[error("stored data could not be read back: {0}")]
     Corrupt(String),
+
+    /// The caller asked for something the domain does not allow. Distinct from
+    /// `Database` so a handler can answer 422 rather than 500.
+    #[error("{0}")]
+    Invalid(String),
 }
 
 pub type StoreResult<T> = Result<T, StoreError>;
