@@ -1,0 +1,50 @@
+{
+  "id": "case-05",
+  "name": "Bolag med stora investeringar",
+  "description": "Stora anläggningstillgångar och låg bokförd avskrivning — skattemässigt utrymme kan finnas.",
+  "profile": {
+    "name": "Fastighetsdrift Syd AB",
+    "org_number": "556016-0680",
+    "fiscal_year": 2025,
+    "industry": "Fastighetsdrift",
+    "employee_count": 6,
+    "owner_count": 2,
+    "in_group": false,
+    "operations_outside_sweden": false,
+    "does_development_work": false,
+    "owns_premises": false,
+    "has_vehicles": false,
+    "owners_active_in_company": true
+  },
+  "documents": [
+    "RESULTATRÄKNING OCH BALANSRÄKNING\nNettoomsättning                               9 800 000\nÖvriga externa kostnader                     -2 400 000\nPersonalkostnader                            -2 900 000\nPensionskostnader                              -120 000\nAv- och nedskrivningar                       -1 000 000\nRörelseresultat                               3 380 000\nSkattemässigt resultat                        3 100 000\nMateriella anläggningstillgångar             12 000 000\nSumma tillgångar                             21 500 000\nSumma eget kapital och skulder               21 500 000\n"
+  ],
+  "accounts_state": "preliminary",
+  "model_candidates": {
+    "candidates": []
+  },
+  "model_verdicts": {
+    "verdicts": []
+  },
+  "expected": {
+    "must_find_rule_ids": [
+      "se.investments.inventarier.avskrivningsutrymme",
+      "se.costs.inventarier.mindre_varde",
+      "se.tax.periodiseringsfond.outnyttjat_utrymme",
+      "se.personnel.pension.avdragsutrymme",
+      "se.costs.representation",
+      "se.tax.k10.lonekrav"
+    ],
+    "must_not_find_rule_ids": [
+      "se.tax.underskott.kvittning",
+      "se.tax.ranteavdrag.ebitda",
+      "se.tax.koncernbidrag",
+      "se.vat.personbil.leasing",
+      "se.rnd.forskningsavdrag",
+      "se.risk.balansrakning_stammer_inte",
+      "se.risk.obeskattade_reserver_utan_specifikation"
+    ],
+    "expect_no_findings": false,
+    "expect_warning_codes": []
+  }
+}

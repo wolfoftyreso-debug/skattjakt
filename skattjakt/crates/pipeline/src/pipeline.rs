@@ -241,11 +241,11 @@ impl AnalysisPipeline {
             // would be a finding with no document behind it, which section 7
             // forbids. What is missing still reaches the user, through the
             // missing-information section built from the same evaluations.
-            if !rule
-                .referenced_facts()
-                .iter()
-                .any(|kind| facts.get(kind).is_some())
-            {
+            // A rule driven purely by the company profile references no facts
+            // and is exempt; it simply cannot reach "actionable", because the
+            // confidence engine caps a finding with no document evidence.
+            let referenced = rule.referenced_facts();
+            if !referenced.is_empty() && !referenced.iter().any(|kind| facts.get(kind).is_some()) {
                 continue;
             }
 

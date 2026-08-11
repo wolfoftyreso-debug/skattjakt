@@ -39,7 +39,18 @@ pub fn build_fact_set(
     for document in documents {
         let confidence = extraction_confidence(&document.extracted);
         for extracted in document.extracted.facts() {
-            let value = match skattjakt_core::Money::from_sek(extracted.amount_sek) {
+            // Costs are presented as negative in a Swedish income statement and
+            // stored as positive magnitudes in the canonical model, so a rule
+            // can compare a cost against a ceiling without every rule carrying
+            // its own `abs`. The source text keeps the sign as printed, so a
+            // reviewer still sees what the document said.
+            let amount = if extracted.kind.is_cost() {
+                extracted.amount_sek.abs()
+            } else {
+                extracted.amount_sek
+            };
+
+            let value = match skattjakt_core::Money::from_sek(amount) {
                 Ok(value) => value,
                 // An amount that cannot be represented is a parse failure, not
                 // a fact; dropping it is safer than storing a wrapped number.
@@ -119,5 +130,54 @@ mod tests {
     fn an_empty_document_set_yields_an_empty_fact_set() {
         let set = build_fact_set(CompanyId::new(), FiscalYear::calendar(2025).unwrap(), &[]);
         assert!(set.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod sign_tests {
+    use super::*;
+    use skattjakt_core::{FactKind, Money};
+    use skattjakt_extract::{Page, Scale};
+
+    fn doc(text: &str) -> DocumentInput {
+        DocumentInput {
+            document_id: DocumentId::new(),
+            document_version_id: DocumentVersionId::new(),
+            extracted: ExtractedDocument {
+                pages: vec![Page { number: 1, text: text.to_string() }],
+                unreadable_pages: vec![],
+                scale: Scale::Kronor,
+            },
+        }
+    }
+
+    #[test]
+    fn costs_are_stored_as_positive_magnitudes() {
+        // As printed: "Personalkostnader   -5 800 000".
+        let set = build_fact_set(
+            CompanyId::new(),
+            FiscalYear::calendar(2025).unwrap(),
+            &[doc("Personalkostnader   -5 800 000")],
+        );
+        let fact = set.get(&FactKind::PersonnelCosts).unwrap();
+        assert_eq!(fact.value, Money::from_sek(5_800_000).unwrap());
+        assert!(
+            fact.source_text.as_ref().unwrap().contains("-5 800 000"),
+            "the source text must still show the sign as printed"
+        );
+    }
+
+    #[test]
+    fn a_negative_result_keeps_its_sign() {
+        // A loss is genuinely negative and must not be flipped.
+        let set = build_fact_set(
+            CompanyId::new(),
+            FiscalYear::calendar(2025).unwrap(),
+            &[doc("Rörelseresultat   -1 200 000")],
+        );
+        assert_eq!(
+            set.value(&FactKind::OperatingProfit),
+            Some(Money::from_sek(-1_200_000).unwrap())
+        );
     }
 }

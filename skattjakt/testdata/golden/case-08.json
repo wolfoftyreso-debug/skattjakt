@@ -1,0 +1,50 @@
+{
+  "id": "case-08",
+  "name": "Bolag med flera typer av möjligheter",
+  "description": "Koncernbolag med fordon, utvecklingsarbete och ett kvarvarande underskott. Koncerntillhörigheten gör att underskottsregeln inte kan avgöras och därför inte visas som ett fynd.",
+  "profile": {
+    "name": "Koncernbolaget AB",
+    "org_number": "556016-0680",
+    "fiscal_year": 2025,
+    "industry": "Industri",
+    "employee_count": 31,
+    "owner_count": 4,
+    "in_group": true,
+    "operations_outside_sweden": false,
+    "does_development_work": true,
+    "owns_premises": false,
+    "has_vehicles": true,
+    "owners_active_in_company": true
+  },
+  "documents": [
+    "RESULTATRÄKNING OCH BALANSRÄKNING\nNettoomsättning                              42 000 000\nÖvriga externa kostnader                     -9 800 000\nPersonalkostnader                           -17 200 000\nPensionskostnader                              -780 000\nAv- och nedskrivningar                       -1 100 000\nRäntekostnader                                 -320 000\nRörelseresultat                              12 800 000\nSkattemässigt resultat                       11 900 000\nOutnyttjat underskott                         3 500 000\nMateriella anläggningstillgångar             14 600 000\nSumma tillgångar                             38 400 000\nSumma eget kapital och skulder               38 400 000\n"
+  ],
+  "accounts_state": "preliminary",
+  "model_candidates": {
+    "candidates": []
+  },
+  "model_verdicts": {
+    "verdicts": []
+  },
+  "expected": {
+    "must_find_rule_ids": [
+      "se.tax.periodiseringsfond.outnyttjat_utrymme",
+      "se.tax.koncernbidrag",
+      "se.investments.inventarier.avskrivningsutrymme",
+      "se.costs.inventarier.mindre_varde",
+      "se.personnel.pension.avdragsutrymme",
+      "se.costs.representation",
+      "se.vat.personbil.leasing",
+      "se.rnd.forskningsavdrag",
+      "se.tax.k10.lonekrav"
+    ],
+    "must_not_find_rule_ids": [
+      "se.tax.underskott.kvittning",
+      "se.tax.ranteavdrag.ebitda",
+      "se.risk.balansrakning_stammer_inte",
+      "se.risk.obeskattade_reserver_utan_specifikation"
+    ],
+    "expect_no_findings": false,
+    "expect_warning_codes": []
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "id": "case-10",
+  "name": "Bolag med tvetydiga signaler",
+  "description": "Balansräkningen går inte ihop, obeskattade reserver saknar specifikation, två underlag anger olika omsättning och en sida är oläsbar.",
+  "profile": {
+    "name": "Otydliga Underlaget AB",
+    "org_number": "556016-0680",
+    "fiscal_year": 2025,
+    "industry": "Tjänster",
+    "employee_count": 7,
+    "owner_count": 2,
+    "in_group": false,
+    "operations_outside_sweden": false,
+    "does_development_work": false,
+    "owns_premises": false,
+    "has_vehicles": false,
+    "owners_active_in_company": true
+  },
+  "documents": [
+    "RESULTATRÄKNING OCH BALANSRÄKNING\nNettoomsättning                               8 400 000\nÖvriga externa kostnader                     -2 100 000\nPersonalkostnader                            -3 300 000\nPensionskostnader                               -95 000\nObeskattade reserver                            900 000\nSumma tillgångar                              6 200 000\nSumma eget kapital och skulder                5 400 000\n",
+    "RESULTATRÄKNING OCH BALANSRÄKNING\nNettoomsättning                               7 900 000\n",
+    ""
+  ],
+  "accounts_state": "preliminary",
+  "model_candidates": {
+    "candidates": []
+  },
+  "model_verdicts": {
+    "verdicts": []
+  },
+  "expected": {
+    "must_find_rule_ids": [
+      "se.risk.balansrakning_stammer_inte",
+      "se.risk.obeskattade_reserver_utan_specifikation",
+      "se.personnel.pension.avdragsutrymme",
+      "se.costs.representation",
+      "se.tax.k10.lonekrav"
+    ],
+    "must_not_find_rule_ids": [
+      "se.tax.periodiseringsfond.outnyttjat_utrymme",
+      "se.tax.underskott.kvittning",
+      "se.tax.koncernbidrag",
+      "se.vat.personbil.leasing",
+      "se.rnd.forskningsavdrag"
+    ],
+    "expect_no_findings": false,
+    "expect_warning_codes": [
+      "conflicting_values",
+      "unreadable_page"
+    ]
+  }
+}

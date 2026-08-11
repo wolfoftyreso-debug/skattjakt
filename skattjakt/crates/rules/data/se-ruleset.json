@@ -75,12 +75,37 @@
       "conditions": {
         "type": "all",
         "of": [
-          { "type": "compare", "left": { "op": "fact", "fact": "taxable_result" }, "op": "gt", "right": { "op": "amount", "sek": 0 } },
+          {
+            "type": "fact_present",
+            "fact": "taxable_result"
+          },
           {
             "type": "compare",
-            "left": { "op": "fact_or_zero", "fact": "tax_allocation_reserve_this_year" },
+            "left": {
+              "op": "fact",
+              "fact": "taxable_result"
+            },
+            "op": "gt",
+            "right": {
+              "op": "amount",
+              "sek": 0
+            }
+          },
+          {
+            "type": "compare",
+            "left": {
+              "op": "fact_or_zero",
+              "fact": "tax_allocation_reserve_this_year"
+            },
             "op": "lt",
-            "right": { "op": "mul_rate", "of": { "op": "fact", "fact": "taxable_result" }, "rate": "periodiseringsfond_andel" }
+            "right": {
+              "op": "mul_rate",
+              "of": {
+                "op": "fact",
+                "fact": "taxable_result"
+              },
+              "rate": "periodiseringsfond_andel"
+            }
           }
         ]
       },
@@ -93,15 +118,27 @@
             "op": "max0",
             "of": {
               "op": "sub",
-              "a": { "op": "mul_rate", "of": { "op": "fact", "fact": "taxable_result" }, "rate": "periodiseringsfond_andel" },
-              "b": { "op": "fact_or_zero", "fact": "tax_allocation_reserve_this_year" }
+              "a": {
+                "op": "mul_rate",
+                "of": {
+                  "op": "fact",
+                  "fact": "taxable_result"
+                },
+                "rate": "periodiseringsfond_andel"
+              },
+              "b": {
+                "op": "fact_or_zero",
+                "fact": "tax_allocation_reserve_this_year"
+              }
             }
           },
           "rate": "corporate_tax"
         },
         "uncertainty_bp": 1500
       },
-      "required_evidence": ["taxable_result"],
+      "required_evidence": [
+        "taxable_result"
+      ],
       "missing_information_hints": [
         "Skattemässigt resultat före avsättning enligt deklarationsunderlaget",
         "Befintliga periodiseringsfonder från tidigare år"
@@ -132,13 +169,31 @@
       "conditions": {
         "type": "all",
         "of": [
-          { "type": "fact_present", "fact": "tax_allocation_reserve" },
-          { "type": "compare", "left": { "op": "fact", "fact": "tax_allocation_reserve" }, "op": "gt", "right": { "op": "amount", "sek": 0 } }
+          {
+            "type": "fact_present",
+            "fact": "tax_allocation_reserve"
+          },
+          {
+            "type": "compare",
+            "left": {
+              "op": "fact",
+              "fact": "tax_allocation_reserve"
+            },
+            "op": "gt",
+            "right": {
+              "op": "amount",
+              "sek": 0
+            }
+          }
         ]
       },
       "exceptions": [],
-      "impact": { "kind": "none" },
-      "required_evidence": ["tax_allocation_reserve"],
+      "impact": {
+        "kind": "none"
+      },
+      "required_evidence": [
+        "tax_allocation_reserve"
+      ],
       "missing_information_hints": [
         "Avsättningsår för varje enskild periodiseringsfond",
         "Föregående års deklaration"
@@ -169,14 +224,44 @@
       "conditions": {
         "type": "all",
         "of": [
-          { "type": "compare", "left": { "op": "fact", "fact": "carried_forward_loss" }, "op": "gt", "right": { "op": "amount", "sek": 0 } },
-          { "type": "compare", "left": { "op": "fact", "fact": "taxable_result" }, "op": "gt", "right": { "op": "amount", "sek": 0 } }
+          {
+            "type": "fact_present",
+            "fact": "carried_forward_loss"
+          },
+          {
+            "type": "compare",
+            "left": {
+              "op": "fact",
+              "fact": "carried_forward_loss"
+            },
+            "op": "gt",
+            "right": {
+              "op": "amount",
+              "sek": 0
+            }
+          },
+          {
+            "type": "compare",
+            "left": {
+              "op": "fact",
+              "fact": "taxable_result"
+            },
+            "op": "gt",
+            "right": {
+              "op": "amount",
+              "sek": 0
+            }
+          }
         ]
       },
       "exceptions": [
         {
           "id": "agarforandring",
-          "when": { "type": "profile", "flag": "in_group", "is": true },
+          "when": {
+            "type": "profile",
+            "flag": "in_group",
+            "is": true
+          },
           "explanation": "Vid ägarförändring kan beloppsspärr och koncernbidragsspärr begränsa hur mycket av underskottet som får utnyttjas. Koncerntillhörighet gör att detta måste utredas."
         }
       ],
@@ -186,14 +271,23 @@
           "op": "mul_rate",
           "of": {
             "op": "min",
-            "a": { "op": "fact", "fact": "carried_forward_loss" },
-            "b": { "op": "fact", "fact": "taxable_result" }
+            "a": {
+              "op": "fact",
+              "fact": "carried_forward_loss"
+            },
+            "b": {
+              "op": "fact",
+              "fact": "taxable_result"
+            }
           },
           "rate": "corporate_tax"
         },
         "uncertainty_bp": 1000
       },
-      "required_evidence": ["carried_forward_loss", "taxable_result"],
+      "required_evidence": [
+        "carried_forward_loss",
+        "taxable_result"
+      ],
       "missing_information_hints": [
         "Föregående års deklaration med fastställt underskott",
         "Eventuella ägarförändringar under året"
@@ -224,33 +318,74 @@
       "conditions": {
         "type": "all",
         "of": [
-          { "type": "compare", "left": { "op": "fact", "fact": "fixed_assets" }, "op": "gt", "right": { "op": "amount", "sek": 0 } },
+          {
+            "type": "fact_present",
+            "fact": "fixed_assets"
+          },
           {
             "type": "compare",
-            "left": { "op": "fact_or_zero", "fact": "depreciation" },
+            "left": {
+              "op": "fact",
+              "fact": "fixed_assets"
+            },
+            "op": "gt",
+            "right": {
+              "op": "amount",
+              "sek": 0
+            }
+          },
+          {
+            "type": "compare",
+            "left": {
+              "op": "fact_or_zero",
+              "fact": "depreciation"
+            },
             "op": "lt",
-            "right": { "op": "mul_rate", "of": { "op": "fact", "fact": "fixed_assets" }, "rate": "inventarier_huvudregel_avskrivning" }
+            "right": {
+              "op": "mul_rate",
+              "of": {
+                "op": "fact",
+                "fact": "fixed_assets"
+              },
+              "rate": "inventarier_huvudregel_avskrivning"
+            }
           }
         ]
       },
       "exceptions": [],
       "impact": {
         "kind": "range",
-        "low": { "op": "amount", "sek": 0 },
+        "low": {
+          "op": "amount",
+          "sek": 0
+        },
         "high": {
           "op": "mul_rate",
           "of": {
             "op": "max0",
             "of": {
               "op": "sub",
-              "a": { "op": "mul_rate", "of": { "op": "fact", "fact": "fixed_assets" }, "rate": "inventarier_huvudregel_avskrivning" },
-              "b": { "op": "fact_or_zero", "fact": "depreciation" }
+              "a": {
+                "op": "mul_rate",
+                "of": {
+                  "op": "fact",
+                  "fact": "fixed_assets"
+                },
+                "rate": "inventarier_huvudregel_avskrivning"
+              },
+              "b": {
+                "op": "fact_or_zero",
+                "fact": "depreciation"
+              }
             }
           },
           "rate": "corporate_tax"
         }
       },
-      "required_evidence": ["fixed_assets", "depreciation"],
+      "required_evidence": [
+        "fixed_assets",
+        "depreciation"
+      ],
       "missing_information_hints": [
         "Anläggningsregister med avskrivningsunderlag per tillgång",
         "Vilken avskrivningsmetod bolaget tillämpar",
@@ -280,14 +415,37 @@
       "description": "Inventarier av mindre värde får dras av omedelbart i stället för att skrivas av över tid. Gränsen är ett halvt prisbasbelopp exklusive moms per inventarium.",
       "category": "costs",
       "conditions": {
-        "type": "compare",
-        "left": { "op": "fact", "fact": "fixed_assets" },
-        "op": "gt",
-        "right": { "op": "mul_bp", "of": { "op": "constant", "name": "prisbasbelopp" }, "bp": 5000 }
+        "type": "all",
+        "of": [
+          {
+            "type": "fact_present",
+            "fact": "fixed_assets"
+          },
+          {
+            "type": "compare",
+            "left": {
+              "op": "fact",
+              "fact": "fixed_assets"
+            },
+            "op": "gt",
+            "right": {
+              "op": "mul_bp",
+              "of": {
+                "op": "constant",
+                "name": "prisbasbelopp"
+              },
+              "bp": 5000
+            }
+          }
+        ]
       },
       "exceptions": [],
-      "impact": { "kind": "none" },
-      "required_evidence": ["fixed_assets"],
+      "impact": {
+        "kind": "none"
+      },
+      "required_evidence": [
+        "fixed_assets"
+      ],
       "missing_information_hints": [
         "Anläggningsregister med anskaffningsvärde per inventarium",
         "Uppgift om vilka inköp som aktiverats i stället för att kostnadsföras"
@@ -316,14 +474,35 @@
       "description": "Ett negativt räntenetto får dras av med högst 30 procent av ett skattemässigt EBITDA. Enligt förenklingsregeln får ett negativt räntenetto upp till fem miljoner kronor dras av utan denna begränsning.",
       "category": "tax",
       "conditions": {
-        "type": "compare",
-        "left": { "op": "fact", "fact": "interest_expense" },
-        "op": "gt",
-        "right": { "op": "constant", "name": "ranteavdrag_forenklingsregel" }
+        "type": "all",
+        "of": [
+          {
+            "type": "fact_present",
+            "fact": "interest_expense"
+          },
+          {
+            "type": "compare",
+            "left": {
+              "op": "fact",
+              "fact": "interest_expense"
+            },
+            "op": "gt",
+            "right": {
+              "op": "constant",
+              "name": "ranteavdrag_forenklingsregel"
+            }
+          }
+        ]
       },
       "exceptions": [],
-      "impact": { "kind": "none" },
-      "required_evidence": ["interest_expense", "operating_profit", "depreciation"],
+      "impact": {
+        "kind": "none"
+      },
+      "required_evidence": [
+        "interest_expense",
+        "operating_profit",
+        "depreciation"
+      ],
       "missing_information_hints": [
         "Räntenetto uppdelat på interna och externa räntor",
         "Skattemässigt EBITDA enligt deklarationsunderlaget"
@@ -354,14 +533,48 @@
       "conditions": {
         "type": "all",
         "of": [
-          { "type": "profile", "flag": "in_group", "is": true },
-          { "type": "compare", "left": { "op": "fact", "fact": "taxable_result" }, "op": "gt", "right": { "op": "amount", "sek": 0 } },
-          { "type": "compare", "left": { "op": "fact_or_zero", "fact": "group_contribution" }, "op": "eq", "right": { "op": "amount", "sek": 0 } }
+          {
+            "type": "fact_present",
+            "fact": "taxable_result"
+          },
+          {
+            "type": "profile",
+            "flag": "in_group",
+            "is": true
+          },
+          {
+            "type": "compare",
+            "left": {
+              "op": "fact",
+              "fact": "taxable_result"
+            },
+            "op": "gt",
+            "right": {
+              "op": "amount",
+              "sek": 0
+            }
+          },
+          {
+            "type": "compare",
+            "left": {
+              "op": "fact_or_zero",
+              "fact": "group_contribution"
+            },
+            "op": "eq",
+            "right": {
+              "op": "amount",
+              "sek": 0
+            }
+          }
         ]
       },
       "exceptions": [],
-      "impact": { "kind": "none" },
-      "required_evidence": ["taxable_result"],
+      "impact": {
+        "kind": "none"
+      },
+      "required_evidence": [
+        "taxable_result"
+      ],
       "missing_information_hints": [
         "Resultat i övriga koncernbolag",
         "Ägarandel och hur länge den innehafts under året"
@@ -392,18 +605,48 @@
       "conditions": {
         "type": "all",
         "of": [
-          { "type": "compare", "left": { "op": "fact", "fact": "personnel_costs" }, "op": "gt", "right": { "op": "amount", "sek": 0 } },
+          {
+            "type": "fact_present",
+            "fact": "personnel_costs"
+          },
           {
             "type": "compare",
-            "left": { "op": "fact_or_zero", "fact": "pension_costs" },
+            "left": {
+              "op": "fact",
+              "fact": "personnel_costs"
+            },
+            "op": "gt",
+            "right": {
+              "op": "amount",
+              "sek": 0
+            }
+          },
+          {
+            "type": "compare",
+            "left": {
+              "op": "fact_or_zero",
+              "fact": "pension_costs"
+            },
             "op": "lt",
-            "right": { "op": "mul_rate", "of": { "op": "fact", "fact": "personnel_costs" }, "rate": "pension_andel_av_lon" }
+            "right": {
+              "op": "mul_rate",
+              "of": {
+                "op": "fact",
+                "fact": "personnel_costs"
+              },
+              "rate": "pension_andel_av_lon"
+            }
           }
         ]
       },
       "exceptions": [],
-      "impact": { "kind": "none" },
-      "required_evidence": ["personnel_costs", "pension_costs"],
+      "impact": {
+        "kind": "none"
+      },
+      "required_evidence": [
+        "personnel_costs",
+        "pension_costs"
+      ],
       "missing_information_hints": [
         "Löneunderlag per anställd",
         "Befintliga pensionsutfästelser och försäkringslösningar"
@@ -431,9 +674,15 @@
       "title": "Moms på leasing av personbil",
       "description": "Vid förhyrning av personbil som används i verksamheten får hälften av den ingående momsen på hyran dras av. Bolag med fordon bör kontrollera att avdraget hanterats.",
       "category": "vat",
-      "conditions": { "type": "profile", "flag": "has_vehicles", "is": true },
+      "conditions": {
+        "type": "profile",
+        "flag": "has_vehicles",
+        "is": true
+      },
       "exceptions": [],
-      "impact": { "kind": "none" },
+      "impact": {
+        "kind": "none"
+      },
       "required_evidence": [],
       "missing_information_hints": [
         "Leasingfakturor för bolagets fordon",
@@ -463,10 +712,17 @@
       "title": "Representation",
       "description": "Avdrag för måltidsrepresentation medges inte vid inkomstbeskattningen, medan enklare förtäring är avdragsgill upp till ett belopp per person. Moms får dras av på ett begränsat underlag per person.",
       "category": "costs",
-      "conditions": { "type": "fact_present", "fact": "external_costs" },
+      "conditions": {
+        "type": "fact_present",
+        "fact": "external_costs"
+      },
       "exceptions": [],
-      "impact": { "kind": "none" },
-      "required_evidence": ["external_costs"],
+      "impact": {
+        "kind": "none"
+      },
+      "required_evidence": [
+        "external_costs"
+      ],
       "missing_information_hints": [
         "Kontospecifikation för representationskonton",
         "Underlag med deltagare och syfte"
@@ -497,13 +753,32 @@
       "conditions": {
         "type": "all",
         "of": [
-          { "type": "profile", "flag": "does_development_work", "is": true },
-          { "type": "compare", "left": { "op": "fact", "fact": "personnel_costs" }, "op": "gt", "right": { "op": "amount", "sek": 0 } }
+          {
+            "type": "profile",
+            "flag": "does_development_work",
+            "is": true
+          },
+          {
+            "type": "compare",
+            "left": {
+              "op": "fact",
+              "fact": "personnel_costs"
+            },
+            "op": "gt",
+            "right": {
+              "op": "amount",
+              "sek": 0
+            }
+          }
         ]
       },
       "exceptions": [],
-      "impact": { "kind": "none" },
-      "required_evidence": ["personnel_costs"],
+      "impact": {
+        "kind": "none"
+      },
+      "required_evidence": [
+        "personnel_costs"
+      ],
       "missing_information_hints": [
         "Vilka anställda som arbetar med forskning eller utveckling och i vilken omfattning",
         "Arbetsgivardeklarationer för året",
@@ -535,14 +810,42 @@
       "conditions": {
         "type": "all",
         "of": [
-          { "type": "profile", "flag": "owners_active_in_company", "is": true },
-          { "type": "profile_number", "field": "owner_count", "op": "lte", "value": 4 },
-          { "type": "compare", "left": { "op": "fact", "fact": "personnel_costs" }, "op": "gt", "right": { "op": "amount", "sek": 0 } }
+          {
+            "type": "fact_present",
+            "fact": "personnel_costs"
+          },
+          {
+            "type": "profile",
+            "flag": "owners_active_in_company",
+            "is": true
+          },
+          {
+            "type": "profile_number",
+            "field": "owner_count",
+            "op": "lte",
+            "value": 4
+          },
+          {
+            "type": "compare",
+            "left": {
+              "op": "fact",
+              "fact": "personnel_costs"
+            },
+            "op": "gt",
+            "right": {
+              "op": "amount",
+              "sek": 0
+            }
+          }
         ]
       },
       "exceptions": [],
-      "impact": { "kind": "none" },
-      "required_evidence": ["personnel_costs"],
+      "impact": {
+        "kind": "none"
+      },
+      "required_evidence": [
+        "personnel_costs"
+      ],
       "missing_information_hints": [
         "Delägarens kontanta lön föregående år",
         "Total kontant lön i bolaget och i eventuella dotterbolag",
@@ -574,20 +877,39 @@
       "conditions": {
         "type": "all",
         "of": [
-          { "type": "fact_present", "fact": "total_assets" },
-          { "type": "fact_present", "fact": "total_equity_and_liabilities" },
+          {
+            "type": "fact_present",
+            "fact": "total_assets"
+          },
+          {
+            "type": "fact_present",
+            "fact": "total_equity_and_liabilities"
+          },
           {
             "type": "compare",
-            "left": { "op": "fact", "fact": "total_assets" },
+            "left": {
+              "op": "fact",
+              "fact": "total_assets"
+            },
             "op": "neq",
-            "right": { "op": "fact", "fact": "total_equity_and_liabilities" }
+            "right": {
+              "op": "fact",
+              "fact": "total_equity_and_liabilities"
+            }
           }
         ]
       },
       "exceptions": [],
-      "impact": { "kind": "none" },
-      "required_evidence": ["total_assets", "total_equity_and_liabilities"],
-      "missing_information_hints": ["Fullständig balansräkning med samtliga sidor"],
+      "impact": {
+        "kind": "none"
+      },
+      "required_evidence": [
+        "total_assets",
+        "total_equity_and_liabilities"
+      ],
+      "missing_information_hints": [
+        "Fullständig balansräkning med samtliga sidor"
+      ],
       "recommended_action": "Kontrollera att hela balansräkningen kommit med i underlaget, och stäm av differensen med din redovisningskonsult.",
       "source": {
         "citation": "Årsredovisningslagen (1995:1554) 3 kap. 1 §",
@@ -614,13 +936,35 @@
       "conditions": {
         "type": "all",
         "of": [
-          { "type": "compare", "left": { "op": "fact", "fact": "untaxed_reserves" }, "op": "gt", "right": { "op": "amount", "sek": 0 } },
-          { "type": "fact_absent", "fact": "tax_allocation_reserve" }
+          {
+            "type": "fact_present",
+            "fact": "untaxed_reserves"
+          },
+          {
+            "type": "compare",
+            "left": {
+              "op": "fact",
+              "fact": "untaxed_reserves"
+            },
+            "op": "gt",
+            "right": {
+              "op": "amount",
+              "sek": 0
+            }
+          },
+          {
+            "type": "fact_absent",
+            "fact": "tax_allocation_reserve"
+          }
         ]
       },
       "exceptions": [],
-      "impact": { "kind": "none" },
-      "required_evidence": ["untaxed_reserves"],
+      "impact": {
+        "kind": "none"
+      },
+      "required_evidence": [
+        "untaxed_reserves"
+      ],
       "missing_information_hints": [
         "Not till obeskattade reserver",
         "Specifikation av periodiseringsfonder per avsättningsår",

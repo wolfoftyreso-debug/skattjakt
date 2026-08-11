@@ -1,0 +1,50 @@
+{
+  "id": "case-01",
+  "name": "Litet konsultbolag",
+  "description": "Fyra anställda, två ägare, inga fordon, ingen koncern. Normalt överskott.",
+  "profile": {
+    "name": "Konsultbyrån Nord AB",
+    "org_number": "556016-0680",
+    "fiscal_year": 2025,
+    "industry": "Tjänster",
+    "employee_count": 4,
+    "owner_count": 2,
+    "in_group": false,
+    "operations_outside_sweden": false,
+    "does_development_work": false,
+    "owns_premises": false,
+    "has_vehicles": false,
+    "owners_active_in_company": true
+  },
+  "documents": [
+    "RESULTATRÄKNING OCH BALANSRÄKNING\nNettoomsättning                               4 200 000\nÖvriga externa kostnader                       -650 000\nPersonalkostnader                            -2 100 000\nPensionskostnader                               -80 000\nAv- och nedskrivningar                          -40 000\nRörelseresultat                               1 330 000\nSkattemässigt resultat                          850 000\nMateriella anläggningstillgångar                180 000\nSumma tillgångar                              2 400 000\nSumma eget kapital och skulder                2 400 000\n"
+  ],
+  "accounts_state": "preliminary",
+  "model_candidates": {
+    "candidates": []
+  },
+  "model_verdicts": {
+    "verdicts": []
+  },
+  "expected": {
+    "must_find_rule_ids": [
+      "se.tax.periodiseringsfond.outnyttjat_utrymme",
+      "se.investments.inventarier.avskrivningsutrymme",
+      "se.costs.inventarier.mindre_varde",
+      "se.personnel.pension.avdragsutrymme",
+      "se.costs.representation",
+      "se.tax.k10.lonekrav"
+    ],
+    "must_not_find_rule_ids": [
+      "se.tax.underskott.kvittning",
+      "se.tax.ranteavdrag.ebitda",
+      "se.tax.koncernbidrag",
+      "se.vat.personbil.leasing",
+      "se.rnd.forskningsavdrag",
+      "se.risk.balansrakning_stammer_inte",
+      "se.risk.obeskattade_reserver_utan_specifikation"
+    ],
+    "expect_no_findings": false,
+    "expect_warning_codes": []
+  }
+}

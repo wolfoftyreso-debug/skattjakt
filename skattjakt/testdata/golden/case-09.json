@@ -1,0 +1,50 @@
+{
+  "id": "case-09",
+  "name": "Bolag utan relevanta möjligheter",
+  "description": "Litet vilande bolag. Underlaget ger inget att flagga — och det ska sägas rakt ut.",
+  "profile": {
+    "name": "Vilande Holding AB",
+    "org_number": "556016-0680",
+    "fiscal_year": 2025,
+    "industry": "Förvaltning",
+    "employee_count": 0,
+    "owner_count": 1,
+    "in_group": false,
+    "operations_outside_sweden": false,
+    "does_development_work": false,
+    "owns_premises": false,
+    "has_vehicles": false,
+    "owners_active_in_company": false
+  },
+  "documents": [
+    "RESULTATRÄKNING OCH BALANSRÄKNING\nNettoomsättning                                 300 000\nRörelseresultat                                 -50 000\nSkattemässigt resultat                          -50 000\nSumma tillgångar                                200 000\nSumma eget kapital och skulder                  200 000\n"
+  ],
+  "accounts_state": "preliminary",
+  "model_candidates": {
+    "candidates": []
+  },
+  "model_verdicts": {
+    "verdicts": []
+  },
+  "expected": {
+    "must_find_rule_ids": [],
+    "must_not_find_rule_ids": [
+      "se.tax.periodiseringsfond.outnyttjat_utrymme",
+      "se.tax.periodiseringsfond.aterforing",
+      "se.tax.underskott.kvittning",
+      "se.investments.inventarier.avskrivningsutrymme",
+      "se.costs.inventarier.mindre_varde",
+      "se.tax.ranteavdrag.ebitda",
+      "se.tax.koncernbidrag",
+      "se.personnel.pension.avdragsutrymme",
+      "se.vat.personbil.leasing",
+      "se.costs.representation",
+      "se.rnd.forskningsavdrag",
+      "se.tax.k10.lonekrav",
+      "se.risk.balansrakning_stammer_inte",
+      "se.risk.obeskattade_reserver_utan_specifikation"
+    ],
+    "expect_no_findings": true,
+    "expect_warning_codes": []
+  }
+}

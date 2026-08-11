@@ -1,0 +1,49 @@
+{
+  "id": "case-04",
+  "name": "Konsultbolag med utvecklingsarbete",
+  "description": "Bedriver eget utvecklingsarbete — nedsättning av arbetsgivaravgifter kan vara aktuell.",
+  "profile": {
+    "name": "Produktstudion AB",
+    "org_number": "556016-0680",
+    "fiscal_year": 2025,
+    "industry": "Programvara",
+    "employee_count": 14,
+    "owner_count": 3,
+    "in_group": false,
+    "operations_outside_sweden": false,
+    "does_development_work": true,
+    "owns_premises": false,
+    "has_vehicles": false,
+    "owners_active_in_company": true
+  },
+  "documents": [
+    "RESULTATRÄKNING OCH BALANSRÄKNING\nNettoomsättning                              19 200 000\nÖvriga externa kostnader                     -3 100 000\nPersonalkostnader                           -10 800 000\nPensionskostnader                              -450 000\nAv- och nedskrivningar                         -260 000\nRörelseresultat                               4 590 000\nSkattemässigt resultat                        4 400 000\nMateriella anläggningstillgångar              1 300 000\nSumma tillgångar                             11 400 000\nSumma eget kapital och skulder               11 400 000\n"
+  ],
+  "accounts_state": "preliminary",
+  "model_candidates": {
+    "candidates": []
+  },
+  "model_verdicts": {
+    "verdicts": []
+  },
+  "expected": {
+    "must_find_rule_ids": [
+      "se.rnd.forskningsavdrag",
+      "se.tax.periodiseringsfond.outnyttjat_utrymme",
+      "se.investments.inventarier.avskrivningsutrymme",
+      "se.costs.inventarier.mindre_varde",
+      "se.personnel.pension.avdragsutrymme",
+      "se.costs.representation",
+      "se.tax.k10.lonekrav"
+    ],
+    "must_not_find_rule_ids": [
+      "se.tax.underskott.kvittning",
+      "se.tax.koncernbidrag",
+      "se.vat.personbil.leasing",
+      "se.risk.balansrakning_stammer_inte",
+      "se.risk.obeskattade_reserver_utan_specifikation"
+    ],
+    "expect_no_findings": false,
+    "expect_warning_codes": []
+  }
+}

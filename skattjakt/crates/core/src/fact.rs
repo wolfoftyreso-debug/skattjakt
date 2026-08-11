@@ -102,6 +102,28 @@ impl FactKind {
         )
     }
 
+    /// Whether the quantity is a cost or an expense.
+    ///
+    /// Swedish income statements present costs as negative numbers. The
+    /// canonical model stores them as positive magnitudes instead, so a rule
+    /// can write `personnel_costs > 0` and mean it. Without this, every rule
+    /// touching a cost would need its own `abs`, and the one that forgot would
+    /// fail silently rather than loudly.
+    pub fn is_cost(&self) -> bool {
+        use FactKind::*;
+        matches!(
+            self,
+            ExternalCosts
+                | PersonnelCosts
+                | Depreciation
+                | InterestExpense
+                | TaxExpense
+                | PensionCosts
+                | PayrollTax
+                | NonDeductibleCosts
+        )
+    }
+
     /// A stable key for storage and for grouping.
     pub fn key(&self) -> String {
         match self {
@@ -365,6 +387,16 @@ mod tests {
         set.insert(fact(FactKind::Other("bilförmån".into()), 20, 1.0));
         assert_eq!(set.value(&FactKind::Other("konstverk".into())), Some(Money::from_sek(10).unwrap()));
         assert_eq!(set.value(&FactKind::Other("bilförmån".into())), Some(Money::from_sek(20).unwrap()));
+    }
+
+    #[test]
+    fn cost_kinds_are_identified_for_sign_normalisation() {
+        assert!(FactKind::PersonnelCosts.is_cost());
+        assert!(FactKind::Depreciation.is_cost());
+        assert!(FactKind::InterestExpense.is_cost());
+        assert!(!FactKind::Revenue.is_cost());
+        assert!(!FactKind::OperatingProfit.is_cost(), "a result may legitimately be negative");
+        assert!(!FactKind::TaxableResult.is_cost());
     }
 
     #[test]
