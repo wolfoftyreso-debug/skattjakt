@@ -17,10 +17,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .init();
 
-    let state = AppState::from_env().map_err(|e| format!("could not start: {e}"))?;
+    let state = AppState::from_env()
+        .await
+        .map_err(|e| format!("could not start: {e}"))?;
     tracing::info!(
         rule_set = state.engine.version(),
         model_configured = state.model_configured,
+        persistent = state.store.is_some(),
         "skattjakt starting"
     );
 

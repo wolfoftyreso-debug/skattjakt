@@ -9,6 +9,8 @@
 #![forbid(unsafe_code)]
 #![warn(missing_debug_implementations)]
 
+pub mod routes;
+
 use std::sync::Arc;
 
 use axum::extract::{DefaultBodyLimit, State};
@@ -27,6 +29,7 @@ use skattjakt_pipeline::pipeline::{
 };
 use skattjakt_pipeline::{AnalysisInput, DocumentInput};
 use skattjakt_rules::{ReviewState, RuleEngine};
+use skattjakt_store::{BlobStore, FilesystemBlobStore, Store};
 
 /// The contract, compiled in so a deployed build can always serve the exact
 /// contract it was built against.
@@ -41,10 +44,17 @@ pub struct AppState {
     pub engine: Arc<RuleEngine>,
     pub provider: Arc<dyn ModelProvider>,
     pub config: PipelineConfig,
-    /// Bearer token required on `/v1` routes. When `None`, those routes are
-    /// closed entirely rather than left open.
+    /// Static bearer token for the stateless surface. When `None` *and* no
+    /// database is configured, the `/v1` routes are closed entirely rather
+    /// than left open.
     pub api_token: Option<String>,
+    /// Token that may create companies. Never grants access to any company's data.
+    pub admin_token: Option<String>,
     pub model_configured: bool,
+    /// Persistence. `None` runs the service statelessly: analyses are computed
+    /// and returned, never stored.
+    pub store: Option<Store>,
+    pub blobs: Arc<dyn BlobStore>,
 }
 
 impl std::fmt::Debug for AppState {
@@ -63,7 +73,7 @@ impl AppState {
     /// A missing model provider is not fatal: the rule engine produces
     /// evidence-backed findings on its own, and a rules-only analysis is more
     /// useful than no service. Readiness reports the degraded state.
-    pub fn from_env() -> Result<Self, String> {
+    pub async fn from_env() -> Result<Self, String> {
         let engine = Arc::new(RuleEngine::load_embedded().map_err(|e| e.to_string())?);
 
         let (provider, model_configured): (Arc<dyn ModelProvider>, bool) =
@@ -81,6 +91,24 @@ impl AppState {
                 }
             };
 
+        let store = match std::env::var("DATABASE_URL") {
+            Ok(url) if !url.is_empty() => match Store::connect(&url).await {
+                Ok(store) => Some(store),
+                Err(e) => {
+                    // A configured-but-unreachable database is a misconfiguration,
+                    // not a reason to silently run without persistence.
+                    return Err(format!("DATABASE_URL is set but unusable: {e}"));
+                }
+            },
+            _ => {
+                tracing::warn!("DATABASE_URL is not set; running statelessly");
+                None
+            }
+        };
+
+        let blob_root = std::env::var("SKATTJAKT_BLOB_ROOT")
+            .unwrap_or_else(|_| "./data/documents".to_string());
+
         Ok(Self {
             engine,
             provider,
@@ -88,7 +116,12 @@ impl AppState {
             api_token: std::env::var("SKATTJAKT_API_TOKEN")
                 .ok()
                 .filter(|t| !t.is_empty()),
+            admin_token: std::env::var("SKATTJAKT_ADMIN_TOKEN")
+                .ok()
+                .filter(|t| !t.is_empty()),
             model_configured,
+            store,
+            blobs: Arc::new(FilesystemBlobStore::new(blob_root)),
         })
     }
 }
@@ -100,6 +133,16 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/openapi.yaml", get(openapi))
         .route("/v1/rules", get(rules))
         .route("/v1/analyses", post(analyse))
+        .route("/v1/companies", post(routes::create_company))
+        .route("/v1/companies/me", get(routes::get_company))
+        .route("/v1/documents", post(routes::upload_document))
+        .route("/v1/documents", get(routes::list_documents))
+        .route("/v1/analyses/stored", post(routes::start_analysis))
+        .route("/v1/analyses/stored", get(routes::list_analyses))
+        .route("/v1/analyses/{id}", get(routes::get_analysis))
+        .route("/v1/analyses/{id}/opportunities", get(routes::list_opportunities))
+        .route("/v1/analyses/{id}/report", get(routes::get_report))
+        .route("/v1/opportunities/{id}", get(routes::get_opportunity))
         .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
         .with_state(state)
 }
@@ -109,14 +152,14 @@ pub fn router(state: AppState) -> Router {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug)]
-struct Problem {
-    status: StatusCode,
-    title: String,
-    detail: String,
+pub struct Problem {
+    pub status: StatusCode,
+    pub title: String,
+    pub detail: String,
 }
 
 impl Problem {
-    fn bad_request(title: &str, detail: impl Into<String>) -> Self {
+    pub fn bad_request(title: &str, detail: impl Into<String>) -> Self {
         Self {
             status: StatusCode::BAD_REQUEST,
             title: title.into(),
@@ -124,7 +167,7 @@ impl Problem {
         }
     }
 
-    fn unauthorized() -> Self {
+    pub fn unauthorized() -> Self {
         Self {
             status: StatusCode::UNAUTHORIZED,
             title: "unauthorized".into(),
@@ -145,24 +188,61 @@ impl IntoResponse for Problem {
     }
 }
 
-/// Checks the bearer token in constant time, so a timing difference cannot be
-/// used to recover it byte by byte.
-fn authorise(state: &AppState, headers: &HeaderMap) -> Result<(), Problem> {
-    let Some(expected) = state.api_token.as_deref() else {
-        // No token configured means the authenticated surface is closed, not open.
-        return Err(Problem::unauthorized());
-    };
+/// What a credential is allowed to do.
+///
+/// The tenant comes from the token, never from the request body: a company id
+/// a client sends cannot widen what that client can reach.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Scope {
+    /// May create companies. Grants access to no company's data.
+    Admin,
+    Company(skattjakt_core::CompanyId),
+    /// The static token, used when no database is configured.
+    Stateless,
+}
+
+/// Resolves the bearer token to a scope.
+///
+/// Token comparisons are constant-time so a timing difference cannot be used to
+/// recover a token byte by byte. The database lookup is by SHA-256, which is
+/// constant-time by construction.
+pub async fn authorise(state: &AppState, headers: &HeaderMap) -> Result<Scope, Problem> {
     let presented = headers
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
         .ok_or_else(Problem::unauthorized)?;
 
-    if constant_time_eq(presented.as_bytes(), expected.as_bytes()) {
-        Ok(())
-    } else {
-        Err(Problem::unauthorized())
+    if let Some(admin) = state.admin_token.as_deref() {
+        if constant_time_eq(presented.as_bytes(), admin.as_bytes()) {
+            return Ok(Scope::Admin);
+        }
     }
+
+    if let Some(store) = state.store.as_ref() {
+        match store.authenticate(presented).await {
+            Ok(Some(company_id)) => return Ok(Scope::Company(company_id)),
+            Ok(None) => {}
+            Err(e) => {
+                tracing::error!(error = %e, "token lookup failed");
+                return Err(Problem {
+                    status: StatusCode::SERVICE_UNAVAILABLE,
+                    title: "authentication unavailable".into(),
+                    detail: "the credential store could not be reached".into(),
+                });
+            }
+        }
+    }
+
+    if let Some(expected) = state.api_token.as_deref() {
+        if constant_time_eq(presented.as_bytes(), expected.as_bytes()) {
+            return Ok(Scope::Stateless);
+        }
+    }
+
+    // Nothing matched — including the case where no token is configured at all,
+    // which closes the authenticated surface rather than opening it.
+    Err(Problem::unauthorized())
 }
 
 fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
@@ -216,7 +296,7 @@ async fn openapi() -> impl IntoResponse {
 // ---------------------------------------------------------------------------
 
 async fn rules(State(state): State<AppState>, headers: HeaderMap) -> Result<Response, Problem> {
-    authorise(&state, &headers)?;
+    authorise(&state, &headers).await?;
 
     let rules: Vec<serde_json::Value> = state
         .engine
@@ -317,7 +397,7 @@ async fn analyse(
     headers: HeaderMap,
     Json(request): Json<AnalysisRequest>,
 ) -> Result<Response, Problem> {
-    authorise(&state, &headers)?;
+    authorise(&state, &headers).await?;
 
     if request.documents.is_empty() {
         return Err(Problem::bad_request(
@@ -326,48 +406,14 @@ async fn analyse(
         ));
     }
 
-    let org_number = OrgNumber::parse(&request.company.org_number)
-        .map_err(|e| Problem::bad_request("invalid organisationsnummer", e.to_string()))?;
-
-    let fiscal_year = FiscalYear::new(
-        request.company.fiscal_year.start,
-        request.company.fiscal_year.end,
-    )
-    .map_err(|e| Problem::bad_request("invalid fiscal year", e.to_string()))?;
-
-    let company = CompanyProfile {
-        id: CompanyId::new(),
-        name: request.company.name,
-        org_number,
-        fiscal_year,
-        industry: request.company.industry,
-        sni_code: request.company.sni_code,
-        employee_count: request.company.employee_count,
-        owner_count: request.company.owner_count,
-        in_group: request.company.in_group,
-        operations_outside_sweden: request.company.operations_outside_sweden,
-        does_development_work: request.company.does_development_work,
-        owns_premises: request.company.owns_premises,
-        has_vehicles: request.company.has_vehicles,
-        owners_active_in_company: request.company.owners_active_in_company,
-    };
+    let company = build_profile(request.company)?;
 
     let mut documents = Vec::with_capacity(request.documents.len());
     for upload in request.documents {
         documents.push(prepare_document(upload)?);
     }
 
-    let accounts_state = match request.accounts_state.as_deref() {
-        Some("final") => AccountsState::Final,
-        Some("unknown") => AccountsState::Unknown,
-        Some("preliminary") | None => AccountsState::Preliminary,
-        Some(other) => {
-            return Err(Problem::bad_request(
-                "invalid accounts_state",
-                format!("`{other}` is not one of preliminary, final, unknown"),
-            ))
-        }
-    };
+    let accounts_state = parse_accounts_state(request.accounts_state.as_deref())?;
 
     let pipeline = AnalysisPipeline::new(
         state.engine.clone(),
@@ -404,38 +450,79 @@ async fn analyse(
     }
 }
 
-fn prepare_document(upload: DocumentUpload) -> Result<DocumentInput, Problem> {
-    let mime = MimeType::from_content_type(&upload.mime_type).ok_or_else(|| {
+/// Builds a validated company profile from a request body.
+pub fn build_profile(request: CompanyProfileRequest) -> Result<CompanyProfile, Problem> {
+    let org_number = OrgNumber::parse(&request.org_number)
+        .map_err(|e| Problem::bad_request("invalid organisationsnummer", e.to_string()))?;
+    let fiscal_year = FiscalYear::new(request.fiscal_year.start, request.fiscal_year.end)
+        .map_err(|e| Problem::bad_request("invalid fiscal year", e.to_string()))?;
+
+    Ok(CompanyProfile {
+        id: CompanyId::new(),
+        name: request.name,
+        org_number,
+        fiscal_year,
+        industry: request.industry,
+        sni_code: request.sni_code,
+        employee_count: request.employee_count,
+        owner_count: request.owner_count,
+        in_group: request.in_group,
+        operations_outside_sweden: request.operations_outside_sweden,
+        does_development_work: request.does_development_work,
+        owns_premises: request.owns_premises,
+        has_vehicles: request.has_vehicles,
+        owners_active_in_company: request.owners_active_in_company,
+    })
+}
+
+pub fn parse_accounts_state(value: Option<&str>) -> Result<AccountsState, Problem> {
+    match value {
+        Some("final") => Ok(AccountsState::Final),
+        Some("unknown") => Ok(AccountsState::Unknown),
+        Some("preliminary") | None => Ok(AccountsState::Preliminary),
+        Some(other) => Err(Problem::bad_request(
+            "invalid accounts_state",
+            format!("`{other}` is not one of preliminary, final, unknown"),
+        )),
+    }
+}
+
+pub fn parse_mime(content_type: &str) -> Result<MimeType, Problem> {
+    MimeType::from_content_type(content_type).ok_or_else(|| {
         Problem::bad_request(
             "unsupported document type",
-            format!("`{}` is not a supported content type", upload.mime_type),
+            format!("`{content_type}` is not a supported content type"),
         )
-    })?;
+    })
+}
 
-    let bytes = match (upload.text, upload.content_base64) {
-        (Some(_), Some(_)) => {
-            return Err(Problem::bad_request(
-                "ambiguous document",
-                format!(
-                    "{}: supply either text or content_base64, not both",
-                    upload.filename
-                ),
-            ))
-        }
-        (Some(text), None) => text.into_bytes(),
-        (None, Some(encoded)) => decode_base64(&encoded).ok_or_else(|| {
+/// Reads the bytes out of an upload, refusing an ambiguous or empty one.
+pub fn upload_bytes(upload: &DocumentUpload) -> Result<Vec<u8>, Problem> {
+    match (&upload.text, &upload.content_base64) {
+        (Some(_), Some(_)) => Err(Problem::bad_request(
+            "ambiguous document",
+            format!(
+                "{}: supply either text or content_base64, not both",
+                upload.filename
+            ),
+        )),
+        (Some(text), None) => Ok(text.clone().into_bytes()),
+        (None, Some(encoded)) => decode_base64(encoded).ok_or_else(|| {
             Problem::bad_request(
                 "invalid base64",
                 format!("{} could not be decoded", upload.filename),
             )
-        })?,
-        (None, None) => {
-            return Err(Problem::bad_request(
-                "empty document",
-                format!("{}: supply either text or content_base64", upload.filename),
-            ))
-        }
-    };
+        }),
+        (None, None) => Err(Problem::bad_request(
+            "empty document",
+            format!("{}: supply either text or content_base64", upload.filename),
+        )),
+    }
+}
+
+fn prepare_document(upload: DocumentUpload) -> Result<DocumentInput, Problem> {
+    let mime = parse_mime(&upload.mime_type)?;
+    let bytes = upload_bytes(&upload)?;
 
     // The declared type is a claim; check it against the bytes before parsing.
     if !mime.matches_content(&bytes) {

@@ -36,7 +36,13 @@ fn state() -> AppState {
         ),
         config: PipelineConfig::default(),
         api_token: Some(TOKEN.to_string()),
+        admin_token: None,
         model_configured: true,
+        // The stateless surface: analyses are computed and returned, never stored.
+        store: None,
+        blobs: Arc::new(skattjakt_store::FilesystemBlobStore::new(
+            std::env::temp_dir().join("skattjakt-tests"),
+        )),
     }
 }
 

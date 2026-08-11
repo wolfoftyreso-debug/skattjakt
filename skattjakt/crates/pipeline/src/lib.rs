@@ -16,6 +16,8 @@
 
 pub mod facts;
 pub mod pipeline;
+pub mod report;
 
 pub use facts::{build_fact_set, DocumentInput};
 pub use pipeline::{AnalysisInput, AnalysisPipeline, PipelineConfig, PipelineError};
+pub use report::{build as build_report, to_markdown, Report};
