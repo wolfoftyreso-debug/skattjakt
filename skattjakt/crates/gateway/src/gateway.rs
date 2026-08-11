@@ -30,7 +30,7 @@ use skattjakt_model::{
 use skattjakt_telemetry::{names, CorrelationId, LabelSet, LogRecord, Registry, SpanContext};
 
 use crate::cost::{estimate_tokens, worst_case_cost, Budget, BudgetError, PriceError, PriceList};
-use crate::injection::{has_intact_single_block, scan, InjectionScan};
+use crate::injection::{has_intact_single_block, scan, scan_wrapped, InjectionScan};
 
 #[derive(Debug, thiserror::Error)]
 pub enum GatewayError {
@@ -163,6 +163,36 @@ impl ModelGateway {
         self.provider.model_id()
     }
 
+    /// A gateway for tests and for the golden dataset.
+    ///
+    /// Prices the provider's model at zero and allows a generous ceiling, so a
+    /// test exercises the real gateway path — the fence check, the fallback
+    /// check, the metrics — without every test needing a price list. It is a
+    /// constructor rather than a default because a zero price in production
+    /// would silently disable the cost ceiling.
+    pub fn for_testing(provider: Arc<dyn ModelProvider>) -> Self {
+        let prices = PriceList::new().with(
+            provider.model_id(),
+            crate::cost::ModelPrice {
+                input_per_mtok: 0,
+                output_per_mtok: 0,
+                cache_read_per_mtok: 0,
+                cache_write_per_mtok: 0,
+            },
+        );
+        let metrics = Registry::new();
+        skattjakt_telemetry::metrics::register_all(&metrics);
+        Self::new(
+            provider,
+            GatewayConfig {
+                prices,
+                default_budget: Budget::new(i64::MAX / 4, 1_000),
+                allow_fallback: true,
+            },
+            metrics,
+        )
+    }
+
     /// True when the configured model has a price and can therefore be called.
     pub fn is_callable(&self) -> bool {
         self.config.prices.get(self.provider.model_id()).is_ok()
@@ -191,7 +221,14 @@ impl ModelGateway {
         {
             return Err(GatewayError::UnwrappedDocumentContent);
         }
-        let injection = scan(&request.user_content);
+        // `scan_wrapped` rather than `scan`: the body legitimately contains one
+        // fence, and scanning it with the raw scanner would report an attempt
+        // on every document.
+        let injection = if request.user_content.contains("SKATTJAKT_DOCUMENT_DATA") {
+            scan_wrapped(&request.user_content)
+        } else {
+            scan(&request.user_content)
+        };
         if injection.is_suspicious() {
             self.metrics.increment(
                 names::PROMPT_INJECTION_SUSPECTED,

@@ -101,7 +101,9 @@ async fn run_case(case: &GoldenCase) -> AnalysisResult {
 
     let pipeline = AnalysisPipeline::new(
         Arc::new(RuleEngine::load_embedded().expect("rule set loads")),
-        Arc::new(provider),
+        Arc::new(skattjakt_gateway::ModelGateway::for_testing(Arc::new(
+            provider,
+        ))),
         PipelineConfig::default(),
     );
 

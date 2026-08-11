@@ -19,4 +19,4 @@ pub use cost::{Budget, BudgetError, ModelPrice, PriceError, PriceList, MICRO_ORE
 pub use gateway::{
     GatewayConfig, GatewayError, GatewayOutcome, ModelGateway, MODEL_REQUEST_CLASSIFICATION,
 };
-pub use injection::{scan, wrap_document, InjectionScan, DATA_FRAMING};
+pub use injection::{scan, scan_wrapped, wrap_document, InjectionScan, DATA_FRAMING};

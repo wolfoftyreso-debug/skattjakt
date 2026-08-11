@@ -48,7 +48,13 @@ const MAX_BODY_BYTES: usize = 32 * 1024 * 1024;
 #[derive(Clone)]
 pub struct AppState {
     pub engine: Arc<RuleEngine>,
+    /// Kept so `/ready` can report which provider is configured. The pipeline
+    /// is given the gateway, never this — see the note on `gateway`.
     pub provider: Arc<dyn ModelProvider>,
+    /// The one place a model call may originate. The pipeline holds this, so
+    /// the cost ceiling, the fallback check and the document-data fence apply
+    /// to every call rather than to the ones someone remembered to route.
+    pub gateway: Arc<skattjakt_gateway::ModelGateway>,
     pub config: PipelineConfig,
     /// Static bearer token for the stateless surface. When `None` *and* no
     /// database is configured, the `/v1` routes are closed entirely rather
@@ -135,6 +141,24 @@ impl AppState {
         let registry = Registry::new();
         metrics::register_all(&registry);
 
+        let gateway_config = skattjakt_gateway::GatewayConfig::from_env()
+            .map_err(|e| format!("model pricing is misconfigured: {e}"))?;
+        let gateway = Arc::new(skattjakt_gateway::ModelGateway::new(
+            provider.clone(),
+            gateway_config,
+            registry.clone(),
+        ));
+
+        // A configured model with no price cannot be called: an unpriced call
+        // is an unbounded one, and the per-analysis ceiling would not exist for
+        // it. Refuse to start rather than discover this on the first request.
+        if model_configured && !gateway.is_callable() {
+            return Err(format!(
+                "no price is configured for model {} — set SKATTJAKT_MODEL_PRICES",
+                gateway.model_id()
+            ));
+        }
+
         // The API enqueues; it never claims. The worker id is recorded on the
         // enqueue path only for provenance, and is never used to hold a lease.
         let queue = store.as_ref().map(|store| {
@@ -148,6 +172,7 @@ impl AppState {
         Ok(Self {
             engine,
             provider,
+            gateway,
             config: PipelineConfig::default(),
             api_token: std::env::var("SKATTJAKT_API_TOKEN")
                 .ok()
@@ -492,7 +517,7 @@ async fn analyse(
 
     let pipeline = AnalysisPipeline::new(
         state.engine.clone(),
-        state.provider.clone(),
+        state.gateway.clone(),
         state.config.clone(),
     );
 

@@ -21,19 +21,26 @@ Summa eget kapital och skulder  7 720 000
 ";
 
 fn state() -> AppState {
+    let provider: Arc<dyn skattjakt_model::ModelProvider> = Arc::new(
+        ScriptedProvider::new()
+            .with(
+                skattjakt_model::ReasoningTask::OpportunityDiscovery,
+                json!({"candidates": []}),
+            )
+            .with(
+                skattjakt_model::ReasoningTask::ContradictionCheck,
+                json!({"verdicts": []}),
+            ),
+    );
+
     AppState {
         engine: Arc::new(RuleEngine::load_embedded().unwrap()),
-        provider: Arc::new(
-            ScriptedProvider::new()
-                .with(
-                    skattjakt_model::ReasoningTask::OpportunityDiscovery,
-                    json!({"candidates": []}),
-                )
-                .with(
-                    skattjakt_model::ReasoningTask::ContradictionCheck,
-                    json!({"verdicts": []}),
-                ),
-        ),
+        // The tests go through the real gateway, so they exercise the fence
+        // check and the fallback check rather than a shortcut around them.
+        gateway: Arc::new(skattjakt_gateway::ModelGateway::for_testing(
+            provider.clone(),
+        )),
+        provider,
         config: PipelineConfig::default(),
         api_token: Some(TOKEN.to_string()),
         admin_token: None,

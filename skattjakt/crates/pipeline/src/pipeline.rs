@@ -14,10 +14,10 @@ use skattjakt_core::{
     InvestigationEffort, MoneyRange, Opportunity, OpportunityCategory, OpportunityId,
     OpportunityStatus, PriorityWeights, RiskLevel, UnitInterval, Urgency,
 };
-use skattjakt_model::{
-    ModelProvider, ModelRequest, ModelRunRecord, ModelRunStatus, ProviderError, ReasoningTask,
-};
+use skattjakt_gateway::{wrap_document, Budget, GatewayError, InjectionScan, ModelGateway};
+use skattjakt_model::{ModelRequest, ModelRunRecord, ModelRunStatus, ProviderError, ReasoningTask};
 use skattjakt_rules::{ImpactSpec, ReviewState, Rule, RuleEngine, RuleEvaluation, RuleOutcome};
+use skattjakt_telemetry::{CorrelationId, SpanContext, TraceContext};
 use thiserror::Error;
 
 use crate::facts::{build_fact_set, DocumentInput};
@@ -89,7 +89,13 @@ impl StageObserver for SilentObserver {
 
 pub struct AnalysisPipeline {
     engine: Arc<RuleEngine>,
-    provider: Arc<dyn ModelProvider>,
+    /// Every model call goes through the gateway, never through a provider
+    /// directly. That is not a style preference: the gateway is where the cost
+    /// ceiling is checked, where a fallback is detected, and where the
+    /// document-data fence is verified. A pipeline holding a bare
+    /// `ModelProvider` would bypass all three, and would do so invisibly —
+    /// which is exactly what it did before this type changed.
+    gateway: Arc<ModelGateway>,
     config: PipelineConfig,
 }
 
@@ -97,8 +103,7 @@ impl std::fmt::Debug for AnalysisPipeline {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AnalysisPipeline")
             .field("rule_set", &self.engine.version())
-            .field("provider", &self.provider.name())
-            .field("model", &self.provider.model_id())
+            .field("model", &self.gateway.model_id())
             .finish()
     }
 }
@@ -127,12 +132,12 @@ struct Verdict {
 impl AnalysisPipeline {
     pub fn new(
         engine: Arc<RuleEngine>,
-        provider: Arc<dyn ModelProvider>,
+        gateway: Arc<ModelGateway>,
         config: PipelineConfig,
     ) -> Self {
         Self {
             engine,
-            provider,
+            gateway,
             config,
         }
     }
@@ -150,9 +155,31 @@ impl AnalysisPipeline {
         input: &AnalysisInput,
         observer: &dyn StageObserver,
     ) -> Result<(AnalysisResult, Vec<ModelRunRecord>), PipelineError> {
+        let mut budget = self.gateway.config().budget();
+        self.run_with_budget(input, observer, &mut budget, CorrelationId::new(), None)
+            .await
+    }
+
+    /// Runs an analysis against a caller-supplied budget and trace.
+    ///
+    /// The worker uses this so a retried attempt resumes against what earlier
+    /// attempts already spent — three attempts must cost one budget, not three
+    /// — and so the model calls join the trace that started at the request.
+    pub async fn run_with_budget(
+        &self,
+        input: &AnalysisInput,
+        observer: &dyn StageObserver,
+        budget: &mut Budget,
+        correlation_id: CorrelationId,
+        trace: Option<TraceContext>,
+    ) -> Result<(AnalysisResult, Vec<ModelRunRecord>), PipelineError> {
         if input.documents.is_empty() {
             return Err(PipelineError::NoDocuments);
         }
+
+        let span = trace
+            .unwrap_or_else(TraceContext::root)
+            .start_span("analysis.pipeline");
 
         let mut runs = Vec::new();
         let mut warnings = Vec::new();
@@ -213,7 +240,45 @@ impl AnalysisPipeline {
         );
 
         observer.stage(AnalysisStage::SearchingOpportunities);
-        let (candidates, discovery_run) = self.discover(input, &facts).await;
+        let (candidates, discovery_run, gateway_scan) = self
+            .discover(input, &facts, budget, correlation_id, span)
+            .await;
+
+        // Both scans, taking the worse of each. The gateway sees the assembled
+        // request; this sees the raw pages before `wrap_document` escaped a
+        // forged fence out of existence. Neither alone is complete.
+        let raw_scan = self.scan_documents(input);
+        let injection = InjectionScan {
+            instruction_like: gateway_scan.instruction_like.max(raw_scan.instruction_like),
+            delimiter_attempts: gateway_scan
+                .delimiter_attempts
+                .max(raw_scan.delimiter_attempts),
+            role_impersonation: gateway_scan
+                .role_impersonation
+                .max(raw_scan.role_impersonation),
+            capability_probes: gateway_scan
+                .capability_probes
+                .max(raw_scan.capability_probes),
+        };
+
+        // A document that contains text addressed to an automated reader is
+        // worth telling the customer about: they may not know it is there. The
+        // threshold is deliberately above one match, because an accountant's
+        // "ignorera ovanstående jämförelsetal" is ordinary bookkeeping language.
+        if injection.warrants_a_warning() {
+            warnings.push(Warning {
+                code: "instruction_like_content".to_string(),
+                message: "Underlaget innehåller text som är formulerad som en instruktion \
+                          till ett automatiskt system."
+                    .to_string(),
+                detail: Some(
+                    "Skattjakt behandlar allt innehåll i uppladdade dokument som underlag, \
+                     aldrig som instruktioner, och analysen påverkas inte. Kontrollera gärna \
+                     varifrån dokumentet kommer."
+                        .to_string(),
+                ),
+            });
+        }
         if let Some(run) = discovery_run {
             runs.push(run);
         }
@@ -222,7 +287,16 @@ impl AnalysisPipeline {
         let evaluations = self.engine.evaluate_all(&context);
 
         observer.stage(AnalysisStage::Falsifying);
-        let (verdicts, skeptic_run) = self.falsify(input, &evaluations, &candidates).await;
+        let (verdicts, skeptic_run) = self
+            .falsify(
+                input,
+                &evaluations,
+                &candidates,
+                budget,
+                correlation_id,
+                span,
+            )
+            .await;
         if let Some(run) = skeptic_run {
             runs.push(run);
         }
@@ -336,7 +410,10 @@ impl AnalysisPipeline {
         &self,
         input: &AnalysisInput,
         facts: &FactSet,
-    ) -> (Vec<Candidate>, Option<ModelRunRecord>) {
+        budget: &mut Budget,
+        correlation_id: CorrelationId,
+        span: SpanContext,
+    ) -> (Vec<Candidate>, Option<ModelRunRecord>, InjectionScan) {
         let request = ModelRequest {
             task: ReasoningTask::OpportunityDiscovery,
             prompt_version: skattjakt_model::PROMPT_VERSION.to_string(),
@@ -348,32 +425,41 @@ impl AnalysisPipeline {
         };
 
         let started = Utc::now();
-        match self.provider.run(&request).await {
-            Ok(response) => {
-                let candidates = parse_candidates(&response.output);
+        match self
+            .gateway
+            .run(&request, budget, correlation_id, span)
+            .await
+        {
+            Ok(outcome) => {
+                let candidates = parse_candidates(&outcome.response.output);
                 let record = self.record(
                     input,
                     &request,
                     ModelRunStatus::Succeeded,
                     started,
-                    Some(&response),
+                    Some(&outcome.response),
                     None,
                 );
-                (candidates, Some(record))
+                (candidates, Some(record), outcome.injection)
             }
             Err(error) => {
                 let record = self.record(
                     input,
                     &request,
-                    match error {
-                        ProviderError::Refused { .. } => ModelRunStatus::Refused,
+                    match &error {
+                        GatewayError::Provider(ProviderError::Refused { .. }) => {
+                            ModelRunStatus::Refused
+                        }
                         _ => ModelRunStatus::Failed,
                     },
                     started,
                     None,
-                    Some(error.to_string()),
+                    // The error *kind*, not its message. A provider message can
+                    // quote the request, and the request contains the customer's
+                    // figures.
+                    Some(error.kind().to_string()),
                 );
-                (Vec::new(), Some(record))
+                (Vec::new(), Some(record), InjectionScan::default())
             }
         }
     }
@@ -388,6 +474,9 @@ impl AnalysisPipeline {
         input: &AnalysisInput,
         evaluations: &[RuleEvaluation],
         candidates: &[Candidate],
+        budget: &mut Budget,
+        correlation_id: CorrelationId,
+        span: SpanContext,
     ) -> (BTreeMap<String, Verdict>, Option<ModelRunRecord>) {
         let mut listing = String::new();
         for evaluation in evaluations.iter().filter(|e| e.outcome.produces_finding()) {
@@ -427,15 +516,19 @@ impl AnalysisPipeline {
         };
 
         let started = Utc::now();
-        match self.provider.run(&request).await {
-            Ok(response) => {
-                let verdicts = parse_verdicts(&response.output);
+        match self
+            .gateway
+            .run(&request, budget, correlation_id, span)
+            .await
+        {
+            Ok(outcome) => {
+                let verdicts = parse_verdicts(&outcome.response.output);
                 let record = self.record(
                     input,
                     &request,
                     ModelRunStatus::Succeeded,
                     started,
-                    Some(&response),
+                    Some(&outcome.response),
                     None,
                 );
                 (verdicts, Some(record))
@@ -444,13 +537,15 @@ impl AnalysisPipeline {
                 let record = self.record(
                     input,
                     &request,
-                    match error {
-                        ProviderError::Refused { .. } => ModelRunStatus::Refused,
+                    match &error {
+                        GatewayError::Provider(ProviderError::Refused { .. }) => {
+                            ModelRunStatus::Refused
+                        }
                         _ => ModelRunStatus::Failed,
                     },
                     started,
                     None,
-                    Some(error.to_string()),
+                    Some(error.kind().to_string()),
                 );
                 (BTreeMap::new(), Some(record))
             }
@@ -905,21 +1000,57 @@ impl AnalysisPipeline {
             ));
         }
 
-        text.push_str("\nUnderlagets text:\n");
+        // Document text is the one part of this prompt an attacker controls.
+        // It goes in wrapped as data, through the only function permitted to
+        // put it there, and the gateway verifies the fence is intact before the
+        // request leaves. Concatenating it directly — which is what this did
+        // before — is exactly the mistake section 51 names.
+        let mut raw = String::new();
         let mut budget = self.config.max_document_chars;
+        let mut truncated = false;
         for document in &input.documents {
             for page in &document.extracted.pages {
                 if budget == 0 {
-                    text.push_str("\n[underlaget är avkortat här]\n");
-                    return text;
+                    truncated = true;
+                    break;
                 }
                 let take = page.text.chars().take(budget).collect::<String>();
                 budget = budget.saturating_sub(take.chars().count());
-                text.push_str(&format!("\n--- sida {} ---\n{}\n", page.number, take));
+                raw.push_str(&format!("\n--- sida {} ---\n{}\n", page.number, take));
+            }
+            if truncated {
+                break;
             }
         }
+        if truncated {
+            raw.push_str("\n[underlaget är avkortat här]\n");
+        }
+
+        text.push_str("\nUnderlagets text:\n");
+        text.push_str(&wrap_document("uppladdat underlag", &raw));
 
         text
+    }
+
+    /// Scans the raw document text, before wrapping.
+    ///
+    /// Before, not after, and the order is the point: `wrap_document` escapes a
+    /// forged fence out of existence, so a document whose only hostile feature
+    /// was an attempt to close the block would look clean by the time the
+    /// gateway sees it. The gateway's scan catches everything else; this
+    /// catches the one thing wrapping removes.
+    fn scan_documents(&self, input: &AnalysisInput) -> InjectionScan {
+        let mut total = InjectionScan::default();
+        for document in &input.documents {
+            for page in &document.extracted.pages {
+                let scan = skattjakt_gateway::scan(&page.text);
+                total.instruction_like += scan.instruction_like;
+                total.delimiter_attempts += scan.delimiter_attempts;
+                total.role_impersonation += scan.role_impersonation;
+                total.capability_probes += scan.capability_probes;
+            }
+        }
+        total
     }
 
     fn describe_profile(&self, profile: &CompanyProfile) -> String {
@@ -967,8 +1098,8 @@ impl AnalysisPipeline {
             id: skattjakt_core::ModelRunId::new(),
             analysis_id: input.analysis_id,
             company_id: input.company.id,
-            provider: self.provider.name().to_string(),
-            model: self.provider.model_id().to_string(),
+            provider: "gateway".to_string(),
+            model: self.gateway.model_id().to_string(),
             task: request.task,
             prompt_version: request.prompt_version.clone(),
             document_version_ids: input

@@ -13,8 +13,10 @@ serde.workspace = true
 serde_json.workspace = true
 skattjakt-core.workspace = true
 skattjakt-extract.workspace = true
+skattjakt-gateway.workspace = true
 skattjakt-model.workspace = true
 skattjakt-rules.workspace = true
+skattjakt-telemetry.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]

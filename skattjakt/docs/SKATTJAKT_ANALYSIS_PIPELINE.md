@@ -267,6 +267,12 @@ that is making things up.
 
 ## 11. Cost control, throughout
 
+Every model call the pipeline makes goes through `ModelGateway` — the pipeline
+holds the gateway and no provider of its own, and a test asserts that of the
+source. That is not a stylistic point: it was briefly untrue, and while it was,
+the gateway's own tests all passed while every production call bypassed the cost
+ceiling, the fallback check and the document-data fence.
+
 The budget is opened before the first model call and charged after each one:
 
 - checked **before** the call using the worst-case cost, because checking
@@ -307,6 +313,10 @@ guessed at.
 | Two-year columns parse as two figures | `extract::swedish` |
 | The state machine admits no impossible transition | `core::state_machine` (10 tests) |
 | A dead pod's analysis is retried, not lost | `tests/failure/job-failures.sh` |
+| The pipeline cannot reach a model except through the gateway | `pipeline_tests.rs` |
+| Document text reaches the model wrapped as data | `pipeline_tests.rs` |
+| An escaped forged fence is still reported to the customer | `pipeline_tests.rs` |
+| An exhausted budget degrades to rules-only rather than failing | `pipeline_tests.rs` |
 | The whole product works end to end | `tests/e2e/end-to-end.sh` (20 steps) |
 
 Current golden dataset: **57 true positives, 0 false positives, 0 false

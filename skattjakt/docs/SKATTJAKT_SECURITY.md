@@ -203,6 +203,13 @@ rule and a document value before it can be presented as actionable. A model that
 is fully compromised by an injected instruction can, at most, propose a finding
 that the rule engine then rejects.
 
+**Both scans run, and the order matters.** The pipeline scans the raw pages
+before wrapping, and the gateway scans the assembled request. Neither alone is
+complete: `wrap_document` escapes a forged fence out of existence, so the
+gateway would not see it, and the gateway sees the whole request including
+anything prompt assembly added. The customer-facing warning takes the worse of
+the two.
+
 **What is deliberately not done:** sanitising. Removing suspicious lines from a
 customer's financial document would corrupt the analysis in order to defend
 against a threat the architecture already contains. A hostile document is

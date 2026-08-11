@@ -95,9 +95,11 @@ async fn main() -> anyhow::Result<()> {
         );
     }
 
+    // The pipeline holds the gateway, not the provider. Every model call it
+    // makes is therefore priced, budgeted, fence-checked and fallback-checked.
     let pipeline = Arc::new(AnalysisPipeline::new(
         engine,
-        provider,
+        gateway.clone(),
         PipelineConfig::default(),
     ));
 

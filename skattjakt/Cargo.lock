@@ -1849,6 +1849,7 @@ dependencies = [
  "serde_json",
  "skattjakt-core",
  "skattjakt-extract",
+ "skattjakt-gateway",
  "skattjakt-jobs",
  "skattjakt-model",
  "skattjakt-pipeline",
@@ -1940,8 +1941,10 @@ dependencies = [
  "serde_json",
  "skattjakt-core",
  "skattjakt-extract",
+ "skattjakt-gateway",
  "skattjakt-model",
  "skattjakt-rules",
+ "skattjakt-telemetry",
  "thiserror",
  "tokio",
 ]
