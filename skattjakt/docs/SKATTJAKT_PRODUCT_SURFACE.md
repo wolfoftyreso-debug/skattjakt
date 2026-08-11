@@ -40,7 +40,7 @@ duplicate platform, and the difference is where the seams are:
 | ID verification (§13) | `VerificationLevel` is a modelled axis with no provider behind it | Wire BankID to set the level; decide which operations demand `Strong` |
 | Secrets (§14) | No secret in git, not even a placeholder. `Secret` objects are referenced and never rendered | Point External Secrets or sealed-secrets at the same names |
 | Observability (§17) | Prometheus text on `/metrics`; W3C trace context minted and propagated | Scrape the endpoint; add an OTLP exporter |
-| Object storage (§21) | `BlobStore` trait, filesystem implementation, MinIO manifests | Implement the S3 client behind the trait |
+| Object storage (§21) | `BlobStore` trait with **both** a filesystem and an S3 implementation, selected by configuration | Point `SKATTJAKT_S3_*` at the platform's endpoint |
 | Push delivery (§22) | Outbox, device tokens, APNs/FCM/web-push provider slots | Implement the sender |
 | Model serving (§15) | `ModelProvider` trait behind `ModelGateway` | Point at the platform's inference endpoint |
 
@@ -62,14 +62,14 @@ building it — not rewriting the core (§32, §36).
 | **Apple / iOS** | — | ✓ | — deliberately not | — | — |
 | **Android** | — | ✓ | — deliberately not | — | — |
 | **API** | ✓ | ✓ | ✓ 23 paths | ✓ contract + live suites | ✓ |
-| **Backend** | ✓ | ✓ | ✓ API + worker | ✓ 422 unit, 20-step e2e | ✓ |
+| **Backend** | ✓ | ✓ | ✓ API + worker | ✓ 451 unit, 20-step e2e on both backends | ✓ |
 | **Database** | ✓ | ✓ | ✓ 28 tables, RLS | ✓ isolation 10/10 | ✓ |
 | **Memory / state** | ✓ | ✓ | ✓ four layers, §11 doc | ✓ | ✓ |
 | **Authentication** | ✓ | ✓ | ✓ sessions, rotation, devices | ✓ 44 live checks | ◐ local verifier, not the platform IdP |
 | **Identity** | ✓ | ✓ | ✓ users, membership | ✓ | ✓ |
 | **Authorization** | ✓ | ✓ | ✓ 3 roles × 12 permissions | ✓ | ✓ |
 | **ID verification** | — | ✓ | — no provider reachable | — | — |
-| **File storage** | ✓ | ✓ | ◐ filesystem; tickets done | ✓ ticket lifecycle | ◐ needs the S3 client |
+| **File storage** | ✓ | ✓ | ✓ S3 + filesystem, presigned URLs | ✓ 7 live ops + full e2e on MinIO | ✓ |
 | **Notifications** | — | ✓ | ◐ outbox + preferences | ✓ policy tested | ◐ needs the sender |
 | **Background jobs** | ✓ | ✓ | ✓ leases, retries, DLQ | ✓ failure 24/24 | ✓ |
 | **Observability** | ✓ | ✓ | ✓ metrics, logs, correlation | ✓ | ◐ no trace export |
@@ -131,18 +131,21 @@ different columns for a reason.
 Verified in this environment, in this session:
 
 ```
-422 unit and integration tests          golden dataset  precision 1.000 recall 1.000
+451 unit and integration tests          golden dataset  precision 1.000 recall 1.000
  44 session checks (live API)            10 tenant isolation checks (real Postgres)
  39 security checks (live API)           24 failure-injection checks (real Postgres)
- 20 end-to-end product steps             99 Kubernetes objects schema-valid
+ 20 end-to-end product steps              5 S3 checks against a real MinIO
+ 20 end-to-end steps again, on S3        99 Kubernetes objects schema-valid
   9 container image assertions          305 SBOM components, all checksummed
- 13 documentation coupling checks
+ 17 documentation coupling checks
 ```
 
 Not verified, and not claimed:
 
 - Applying the manifests to a live cluster, and therefore NetworkPolicy
   *enforcement*, HPA behaviour, Argo CD reconciliation, ingress and TLS.
+- The upload-ticket HTTP endpoints. The store layer and presigning are tested;
+  nothing serves them yet.
 - The backup and restore CronJobs running for real.
 - Trivy, cosign signing, SLSA provenance against a registry.
 - Any mobile client, because none was built.
@@ -155,14 +158,17 @@ Not verified, and not claimed:
 
 **Phase 3 — platform completeness.** In the order that removes the most risk:
 
-1. The S3 client behind `BlobStore`. It is the last thing blocking more than
-   one API replica sharing document storage, and it makes upload tickets real
-   rather than architectural.
+1. ~~The S3 client behind `BlobStore`.~~ **Done.** Hand-written SigV4,
+   verified against a real MinIO: seven live operations, presigned PUT and GET
+   used by `curl` with no credential, and the whole 20-step product test on S3
+   instead of the filesystem.
 2. The notification delivery worker. The outbox is written and nothing drains
-   it.
+   it. **Now the top item.**
 3. The OTLP exporter. Context is propagated and goes nowhere.
 4. Move the web interface onto sessions, and retire the company token for
    human access — keeping it for integrations.
+5. Wire the upload-ticket routes into the API. The store layer and the
+   presigning are done; no HTTP endpoint issues a ticket yet.
 
 **Phase 4 — mobile.** Only after (1) and (2), because a phone without upload
 tickets and without push is a worse product than the web client.

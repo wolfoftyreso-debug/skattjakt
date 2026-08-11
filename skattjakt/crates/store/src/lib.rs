@@ -16,6 +16,7 @@ pub mod governance;
 pub mod identity;
 pub mod notifications;
 pub mod page;
+pub mod s3;
 pub mod uploads;
 
 use std::collections::BTreeMap;

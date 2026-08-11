@@ -61,6 +61,18 @@ done
 "${PSQL[@]}" -d "$DB" -c "ALTER ROLE skattjakt_app LOGIN PASSWORD 'e2e'" >/dev/null
 DATABASE_URL="postgres://skattjakt_app:e2e@127.0.0.1:$PGPORT/$DB"
 
+# --- object storage ---------------------------------------------------------
+#
+# When SKATTJAKT_S3_ENDPOINT is set, the whole product runs against S3 instead
+# of the local filesystem. `tests/integration/e2e-on-s3.sh` sets it and starts a
+# MinIO; without it this is the filesystem run, unchanged.
+
+if [[ -n "${SKATTJAKT_S3_ENDPOINT:-}" ]]; then
+    step "storage backend: S3 at $SKATTJAKT_S3_ENDPOINT"
+else
+    step "storage backend: filesystem"
+fi
+
 # --- api --------------------------------------------------------------------
 
 step "starting the api"
@@ -159,9 +171,20 @@ echo "  version $VERSION_ID sha ${SHA:0:12}…"
 # --- 5. document ingestion --------------------------------------------------
 
 step "5. document ingestion"
-BLOBS="$(find "$WORKDIR/documents" -type f | wc -l)"
-[[ "$BLOBS" -eq 1 ]] || fail "expected exactly one stored blob, found $BLOBS"
-find "$WORKDIR/documents" -type f | grep -q "$COMPANY_A" || fail "the blob is not tenant-prefixed"
+if [[ -n "${SKATTJAKT_S3_ENDPOINT:-}" ]]; then
+    # On S3 the assertion is the same property, asked of the object store: one
+    # object, under this company's prefix.
+    OBJECTS="$(curl -s "$SKATTJAKT_S3_ENDPOINT/$SKATTJAKT_S3_BUCKET?list-type=2&prefix=companies/$COMPANY_A/" \
+        --user "$SKATTJAKT_S3_ACCESS_KEY:$SKATTJAKT_S3_SECRET_KEY" \
+        --aws-sigv4 "aws:amz:${SKATTJAKT_S3_REGION:-us-east-1}:s3" \
+        | grep -c '<Key>' || true)"
+    [[ "$OBJECTS" -eq 1 ]] || fail "expected exactly one stored object, found $OBJECTS"
+    echo "  one object under companies/$COMPANY_A/"
+else
+    BLOBS="$(find "$WORKDIR/documents" -type f | wc -l)"
+    [[ "$BLOBS" -eq 1 ]] || fail "expected exactly one stored blob, found $BLOBS"
+    find "$WORKDIR/documents" -type f | grep -q "$COMPANY_A" || fail "the blob is not tenant-prefixed"
+fi
 
 # --- 4. run the analysis ----------------------------------------------------
 

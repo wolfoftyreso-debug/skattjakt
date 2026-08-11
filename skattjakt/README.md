@@ -34,7 +34,7 @@ job is to help you ask better questions of the person qualified to answer them.
 
 | Area | State |
 |---|---|
-| Domain model, rule engine, extraction, pipeline | Implemented, 422 tests |
+| Domain model, rule engine, extraction, pipeline | Implemented, 451 tests |
 | Golden dataset, 10 cases | Precision 1.000, recall 1.000, zero false positives |
 | Tenant isolation (Postgres RLS) | 10 checks verified against a real cluster |
 | Security suite (§50) | 39 checks verified against a live API |
@@ -44,12 +44,13 @@ job is to help you ask better questions of the person qualified to answer them.
 | Durable job system, analysis state machine | Implemented and verified |
 | Model gateway: cost, budgets, fallback, injection defence | Implemented and verified |
 | Observability: `/metrics`, correlation ids, trace context | Implemented and verified |
+| Object storage | S3 and filesystem behind one trait; verified against a real MinIO |
 | Container images | Built and inspected — 13 MB distroless, 9 checks |
 | SBOM | Generated — 305 components, all checksummed |
 | Kubernetes manifests | 33 resources × 3 environments, schema-valid, properties asserted |
 | Kubernetes cluster | **Never applied** — no cluster is reachable from this environment |
 | OTLP trace export | **Not implemented** — context is propagated, spans reach the logs |
-| S3 blob store | **Not implemented** — filesystem behind the trait; MinIO manifests exist |
+
 | OCR for scanned PDFs | **Not implemented** — unreadable pages are reported, not read |
 
 A full account of what has and has not been verified is in
@@ -60,7 +61,7 @@ A full account of what has and has not been verified is in
 ## Quick start
 
 ```sh
-cargo test --workspace                                  # 422 tests
+cargo test --workspace                                  # 451 tests
 cargo test -p skattjakt-pipeline --test golden -- --nocapture   # the golden dataset
 
 export PGBIN=$(ls -d /usr/lib/postgresql/*/bin | tail -1)
@@ -70,6 +71,8 @@ export PGBIN=$(ls -d /usr/lib/postgresql/*/bin | tail -1)
 ./tests/failure/job-failures.sh                         # what a dead pod does
 ./tests/e2e/end-to-end.sh                               # the whole product
 
+./tests/integration/s3-blobstore.sh                     # S3 against a real MinIO
+./tests/integration/e2e-on-s3.sh                        # the whole product on S3
 ./tests/infrastructure/validate-manifests.sh            # 3 environments
 ./tests/infrastructure/validate-docs.sh                 # the docs still describe it
 

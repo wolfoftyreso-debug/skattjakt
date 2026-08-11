@@ -23,7 +23,7 @@ use skattjakt_jobs::{JobKind, Queue};
 use skattjakt_model::{AnthropicConfig, AnthropicProvider};
 use skattjakt_pipeline::{AnalysisPipeline, PipelineConfig};
 use skattjakt_rules::RuleEngine;
-use skattjakt_store::{FilesystemBlobStore, Store};
+use skattjakt_store::Store;
 use skattjakt_telemetry::{logging, metrics, LogRecord, Registry};
 
 use crate::runner::{spawn_heartbeat, Runner};
@@ -55,7 +55,11 @@ async fn main() -> anyhow::Result<()> {
 
     let blob_root = std::env::var("SKATTJAKT_BLOB_ROOT")
         .unwrap_or_else(|_| "/var/lib/skattjakt/blobs".to_string());
-    let blobs = Arc::new(FilesystemBlobStore::new(&blob_root));
+    // S3 when it is configured, the filesystem otherwise — and fatal if it is
+    // half-configured, because silently writing a customer's documents to a
+    // local disk that is not backed up and not shared between replicas is a
+    // worse outcome than refusing to start.
+    let blobs = skattjakt_store::blob::from_env(&blob_root).map_err(anyhow::Error::msg)?;
 
     let engine = Arc::new(RuleEngine::load_embedded().context("the embedded rule set is invalid")?);
 

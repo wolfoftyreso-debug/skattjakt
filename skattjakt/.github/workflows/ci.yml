@@ -142,6 +142,38 @@ jobs:
           chmod -R a+rX .
           ./tests/e2e/end-to-end.sh
 
+  object-storage:
+    name: S3 object storage
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: skattjakt
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: skattjakt
+
+      - name: Install PostgreSQL
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql
+
+      # SigV4 is hand-written, so the only thing that proves a request is
+      # well-formed is a server that verifies the signature and refuses when it
+      # does not match. This runs one.
+      - name: The blob store against a real MinIO
+        run: ./tests/integration/s3-blobstore.sh
+
+      # And the whole product against it, because "the client works" and "the
+      # product works on this backend" are different claims.
+      - name: End-to-end on S3
+        run: |
+          export PGBIN=$(ls -d /usr/lib/postgresql/*/bin | tail -1)
+          chmod -R a+rX .
+          ./tests/integration/e2e-on-s3.sh
+
   contract:
     name: OpenAPI contract
     runs-on: ubuntu-latest

@@ -101,7 +101,20 @@ if any `Secret` is rendered from the repository.
 | `ANTHROPIC_API_KEY` | Absent → rules-only mode, reported on `/ready` |
 | `SKATTJAKT_MODEL_PRICES` | JSON, micro-öre per Mtok. A model with no price cannot be called |
 | `SKATTJAKT_ADMIN_TOKEN` | May create companies; grants no company's data |
-| `SKATTJAKT_BLOB_ROOT` | Document storage path |
+| `SKATTJAKT_BLOB_ROOT` | Document storage path, when S3 is not configured |
+
+### Object storage
+
+Set all four or none. Half-configured is fatal at startup.
+
+| Variable | Notes |
+|---|---|
+| `SKATTJAKT_S3_ENDPOINT` | e.g. `http://minio.skattjakt-prod.svc.cluster.local:9000` |
+| `SKATTJAKT_S3_BUCKET` | |
+| `SKATTJAKT_S3_ACCESS_KEY` | |
+| `SKATTJAKT_S3_SECRET_KEY` | |
+| `SKATTJAKT_S3_REGION` | Defaults to `us-east-1`; MinIO ignores it, AWS does not |
+| `SKATTJAKT_S3_PATH_STYLE` | Defaults on. MinIO needs it; AWS buckets created after 2020 do not offer it |
 
 ### Optional
 
@@ -265,9 +278,10 @@ to work.
 
 ### Known gaps in the code itself
 
-- **Blob storage is a filesystem implementation** of the `BlobStore` trait. The
-  MinIO manifests exist; the S3 client does not. Single-node deployments work;
-  multiple API replicas would need a shared volume until the S3 client lands.
+- **Blob storage supports both** a filesystem backend and S3, selected by
+  `SKATTJAKT_S3_*`. A half-set S3 configuration is fatal at startup rather than
+  falling back to a local disk that is neither backed up nor shared between
+  replicas.
 - **Traces are propagated but not exported.** W3C trace context is parsed,
   minted and carried across the queue, and span ids reach the log stream. There
   is no OTLP exporter and no collector configured.

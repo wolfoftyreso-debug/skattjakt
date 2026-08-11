@@ -121,6 +121,50 @@ impl BlobStore for FilesystemBlobStore {
     }
 }
 
+/// Chooses the blob store a deployment should use.
+///
+/// S3 when it is configured, the filesystem otherwise. The filesystem is a
+/// supported single-node mode rather than a fallback for a broken
+/// configuration — but a *partially* configured S3 is a misconfiguration, and
+/// silently serving from the local disk instead would mean a customer's
+/// documents landing somewhere that is not backed up and is not shared between
+/// replicas. So a half-set S3 configuration is fatal at startup.
+pub fn from_env(filesystem_root: &str) -> Result<std::sync::Arc<dyn BlobStore>, String> {
+    let any_s3_variable_set = [
+        "SKATTJAKT_S3_ENDPOINT",
+        "SKATTJAKT_S3_BUCKET",
+        "SKATTJAKT_S3_ACCESS_KEY",
+        "SKATTJAKT_S3_SECRET_KEY",
+    ]
+    .iter()
+    .any(|name| std::env::var(name).is_ok_and(|v| !v.trim().is_empty()));
+
+    match crate::s3::S3Config::from_env() {
+        Some(config) => {
+            let bucket = config.bucket.clone();
+            let store = crate::s3::S3BlobStore::new(config)
+                .map_err(|e| format!("the S3 client could not be built: {e}"))?;
+            skattjakt_telemetry::LogRecord::info("using S3 object storage")
+                .internal("bucket", bucket)
+                .emit();
+            Ok(std::sync::Arc::new(store))
+        }
+        None if any_s3_variable_set => Err(
+            "object storage is half-configured: SKATTJAKT_S3_ENDPOINT, _BUCKET, \
+             _ACCESS_KEY and _SECRET_KEY must all be set, or none of them"
+                .to_string(),
+        ),
+        None => {
+            skattjakt_telemetry::LogRecord::info("using filesystem storage")
+                .internal("root", filesystem_root.to_string())
+                .emit();
+            Ok(std::sync::Arc::new(FilesystemBlobStore::new(
+                filesystem_root,
+            )))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

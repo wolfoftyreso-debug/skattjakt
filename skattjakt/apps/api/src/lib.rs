@@ -31,7 +31,7 @@ use skattjakt_pipeline::pipeline::{
 };
 use skattjakt_pipeline::{AnalysisInput, DocumentInput};
 use skattjakt_rules::{ReviewState, RuleEngine};
-use skattjakt_store::{BlobStore, FilesystemBlobStore, Store};
+use skattjakt_store::{BlobStore, Store};
 use skattjakt_telemetry::{metrics, CorrelationId, Registry, CORRELATION_HEADER};
 
 /// The contract, compiled in so a deployed build can always serve the exact
@@ -187,7 +187,7 @@ impl AppState {
                 .filter(|t| !t.is_empty()),
             model_configured,
             store,
-            blobs: Arc::new(FilesystemBlobStore::new(blob_root)),
+            blobs: skattjakt_store::blob::from_env(&blob_root)?,
             queue,
             metrics: registry,
         })
