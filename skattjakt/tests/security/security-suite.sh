@@ -24,6 +24,23 @@
 
 set -euo pipefail
 
+# Build before dropping privileges: cargo lives in the invoking user's home,
+# and the unprivileged user re-exec'd into below cannot see it.
+if [[ -z "${SKATTJAKT_PG_REEXEC:-}" ]] && command -v cargo >/dev/null 2>&1; then
+    cargo build --quiet --bin skattjakt-api \
+        --manifest-path "$(dirname "${BASH_SOURCE[0]}")/../../Cargo.toml"
+fi
+
+# Postgres refuses to run as root. In containers that start as root — CI images,
+# most notably — re-exec as an unprivileged user rather than failing.
+if [[ "${EUID:-$(id -u)}" -eq 0 && -z "${SKATTJAKT_PG_REEXEC:-}" ]]; then
+    RUNAS="${SKATTJAKT_PG_USER:-postgres}"
+    id "$RUNAS" >/dev/null 2>&1 || RUNAS=nobody
+    export SKATTJAKT_PG_REEXEC=1
+    exec su -s /bin/bash "$RUNAS" -c \
+        "SKATTJAKT_PG_REEXEC=1 PGBIN='${PGBIN:-}' $(printf '%q ' "$0" "$@")"
+fi
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 WORKDIR="$(mktemp -d)"
 PGDATA="$WORKDIR/data"
@@ -75,17 +92,26 @@ mkdir -p "$SOCKET"
 "$PGBIN/initdb" -D "$PGDATA" -U postgres --auth=trust >/dev/null
 "$PGBIN/pg_ctl" -D "$PGDATA" -o "-k $SOCKET -h 127.0.0.1 -p 5433" -l "$WORKDIR/pg.log" start >/dev/null
 
-psql() { "$PGBIN/psql" -h "$SOCKET" -U postgres -v ON_ERROR_STOP=1 -q "$@"; }
+psql() { "$PGBIN/psql" -h "$SOCKET" -p 5433 -U postgres -v ON_ERROR_STOP=1 -q "$@"; }
 psql -d postgres -c "CREATE DATABASE $DB" >/dev/null
 for migration in "$ROOT"/migrations/*.sql; do
     psql -d "$DB" -f "$migration" >/dev/null
 done
+# The role is created NOLOGIN by the migration, because in production it
+# authenticates by certificate rather than by password. Here it needs a
+# password so the API can connect over TCP — and it must be this role, not the
+# owner, or row-level security would not apply and the whole suite would pass
+# for the wrong reason.
+psql -d "$DB" -c "ALTER ROLE skattjakt_app LOGIN PASSWORD 'security-suite'" >/dev/null
 echo "database ready"
 
-cargo build --quiet --bin skattjakt-api --manifest-path "$ROOT/Cargo.toml"
+[[ -x "$ROOT/target/debug/skattjakt-api" ]] || {
+    echo "build the API first: cargo build --bin skattjakt-api" >&2
+    exit 1
+}
 
 ADMIN_TOKEN="admin-$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
-export DATABASE_URL="postgres://skattjakt_app@127.0.0.1:5433/$DB"
+export DATABASE_URL="postgres://skattjakt_app:security-suite@127.0.0.1:5433/$DB"
 export SKATTJAKT_ADMIN_TOKEN="$ADMIN_TOKEN"
 export SKATTJAKT_BLOB_ROOT="$WORKDIR/documents"
 export PORT="$PORT"
@@ -106,22 +132,53 @@ new_company() {
     curl -fsS -X POST "$BASE/v1/companies" \
         -H "authorization: Bearer $ADMIN_TOKEN" \
         -H "content-type: application/json" \
-        -d "{\"name\":\"$1\",\"org_number\":\"$2\",\"fiscal_year_start\":\"2025-01-01\",\"fiscal_year_end\":\"2025-12-31\"}"
+        -d "{\"company\":{\"name\":\"$1\",\"org_number\":\"$2\",
+             \"fiscal_year\":{\"start\":\"2025-01-01\",\"end\":\"2025-12-31\"}},
+             \"token_label\":\"security-suite\"}"
 }
 
 ALFA="$(new_company "Alfa AB" 5560160680)"
 BETA="$(new_company "Beta AB" 5567037485)"
-ALFA_TOKEN="$(python3 -c 'import json,sys;print(json.load(sys.stdin)["token"])' <<<"$ALFA")"
-BETA_TOKEN="$(python3 -c 'import json,sys;print(json.load(sys.stdin)["token"])' <<<"$BETA")"
+ALFA_TOKEN="$(python3 -c 'import json,sys;print(json.load(sys.stdin)["api_token"])' <<<"$ALFA")"
+BETA_TOKEN="$(python3 -c 'import json,sys;print(json.load(sys.stdin)["api_token"])' <<<"$BETA")"
 ALFA_ID="$(python3 -c 'import json,sys;print(json.load(sys.stdin)["company_id"])' <<<"$ALFA")"
 BETA_ID="$(python3 -c 'import json,sys;print(json.load(sys.stdin)["company_id"])' <<<"$BETA")"
 
 upload() {
     local token="$1" name="$2" body="$3"
+    local payload
+    payload="$(python3 -c '
+import json, sys
+print(json.dumps({
+    "filename": sys.argv[1],
+    "mime_type": "text/plain",
+    "text": sys.argv[2],
+    "kind": "annual_accounts",
+    "accounts_state": "preliminary",
+}))' "$name" "$body")"
     curl -fsS -X POST "$BASE/v1/documents" \
         -H "authorization: Bearer $token" \
-        -F "kind=annual_accounts" \
-        -F "file=@-;filename=$name;type=text/plain" <<<"$body"
+        -H "content-type: application/json" \
+        -d "$payload"
+}
+
+# The same upload, returning the status code instead of failing on a 4xx.
+upload_status() {
+    local token="$1" name="$2" body="$3"
+    local payload
+    payload="$(python3 -c '
+import json, sys
+print(json.dumps({
+    "filename": sys.argv[1],
+    "mime_type": "text/plain",
+    "text": sys.argv[2],
+    "kind": "annual_accounts",
+    "accounts_state": "preliminary",
+}))' "$name" "$body")"
+    curl -s -o "$WORKDIR/upload.out" -w '%{http_code}' -X POST "$BASE/v1/documents" \
+        -H "authorization: Bearer $token" \
+        -H "content-type: application/json" \
+        -d "$payload"
 }
 
 STATEMENT='Resultaträkning 2024
@@ -152,15 +209,15 @@ check "Beta's document list does not contain Alfa's document" 0 \
 
 # The tenant comes from the token, never from the request. A body that names
 # another company must not widen what the caller can reach.
-check "a company id in the request body does not change the tenant" "$BETA_ID" \
-    "$(curl -fsS -X POST "$BASE/v1/documents" \
-        -H "authorization: Bearer $BETA_TOKEN" \
-        -F "kind=annual_accounts" \
-        -F "company_id=$ALFA_ID" \
-        -F "file=@-;filename=beta.txt;type=text/plain" <<<"$STATEMENT" \
-        | python3 -c 'import json,sys;print(json.load(sys.stdin).get("company_id",""))' 2>/dev/null \
-        || curl -fsS -H "authorization: Bearer $BETA_TOKEN" "$BASE/v1/companies/me" \
-        | python3 -c 'import json,sys;print(json.load(sys.stdin)["company_id"])')"
+BETA_UPLOAD="$(curl -fsS -X POST "$BASE/v1/documents" \
+    -H "authorization: Bearer $BETA_TOKEN" \
+    -H "content-type: application/json" \
+    -d "{\"filename\":\"beta.txt\",\"mime_type\":\"text/plain\",\"text\":\"Nettoomsättning 1 000 000\",
+         \"kind\":\"annual_accounts\",\"accounts_state\":\"preliminary\",
+         \"company_id\":\"$ALFA_ID\"}")"
+BETA_DOC_ID="$(python3 -c 'import json,sys;print(json.load(sys.stdin)["document_version_id"])' <<<"$BETA_UPLOAD")"
+check "a document uploaded by Beta is not visible to Alfa" 404 \
+    "$(status -H "authorization: Bearer $ALFA_TOKEN" "$BASE/v1/documents/$BETA_DOC_ID")"
 
 check "no token is unauthorised" 401 "$(status "$BASE/v1/documents")"
 check "a wrong token is unauthorised" 401 \
@@ -198,13 +255,11 @@ for name in "../../../../etc/passwd" \
             "..\\..\\windows\\system32\\config\\sam" \
             "/etc/shadow" \
             "....//....//etc/passwd"; do
-    code="$(curl -s -o "$WORKDIR/out" -w '%{http_code}' -X POST "$BASE/v1/documents" \
-        -H "authorization: Bearer $ALFA_TOKEN" \
-        -F "kind=annual_accounts" \
-        -F "file=@-;filename=$name;type=text/plain" <<<"$STATEMENT")"
+    code="$(upload_status "$ALFA_TOKEN" "$name" "Nettoomsättning 1 000 000")"
     # Accepting is fine; escaping the blob root is not.
     if [[ "$code" == "200" || "$code" == "201" ]]; then
-        key="$(python3 -c 'import json,sys;print(json.load(sys.stdin).get("storage_key",""))' < "$WORKDIR/out" 2>/dev/null || true)"
+        key="$(python3 -c 'import json,sys;print(json.load(sys.stdin).get("storage_key",""))' \
+            < "$WORKDIR/upload.out" 2>/dev/null || true)"
         if [[ "$key" == *".."* || "$key" == /* ]]; then
             fail "traversal filename produced an escaping key: $key"
         else

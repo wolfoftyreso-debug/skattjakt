@@ -31,6 +31,7 @@ ADMIN_TOKEN="admin-$(date +%s)-e2e"
 
 cleanup() {
     [[ -n "${API_PID:-}" ]] && kill "$API_PID" 2>/dev/null || true
+    [[ -n "${WORKER_PID:-}" ]] && kill "$WORKER_PID" 2>/dev/null || true
     "$PGBIN/pg_ctl" -D "$PGDATA" -m immediate stop >/dev/null 2>&1 || true
     rm -rf "$WORKDIR"
 }
@@ -78,6 +79,25 @@ for _ in $(seq 1 60); do
 done
 curl -sf "http://127.0.0.1:$APIPORT/health" >/dev/null || { cat "$LOG"; fail "the API did not start"; }
 echo "  up on :$APIPORT"
+
+# --- worker -----------------------------------------------------------------
+#
+# A second process, because that is how it is deployed. The API enqueues and
+# the worker runs; testing the API alone would leave the analysis queued
+# forever and would not exercise the path that actually runs in production.
+
+step "starting the analysis worker"
+DATABASE_URL="$DATABASE_URL" \
+SKATTJAKT_BLOB_ROOT="$WORKDIR/documents" \
+HOSTNAME=e2e-worker \
+RUST_LOG=skattjakt=info \
+    "$ROOT/target/debug/skattjakt-analysis-worker" > "$WORKDIR/worker.log" 2>&1 &
+WORKER_PID=$!
+
+# The worker has no HTTP surface, so readiness is "it did not exit".
+sleep 1
+kill -0 "$WORKER_PID" 2>/dev/null || { cat "$WORKDIR/worker.log"; fail "the worker did not start"; }
+echo "  worker $WORKER_PID"
 
 api() { # method path token [body]
     local method="$1" path="$2" token="$3" body="${4:-}"

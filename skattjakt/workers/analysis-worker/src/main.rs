@@ -59,11 +59,23 @@ async fn main() -> anyhow::Result<()> {
 
     let engine = Arc::new(RuleEngine::load_embedded().context("the embedded rule set is invalid")?);
 
-    let provider = Arc::new(
-        AnthropicConfig::from_env()
-            .and_then(AnthropicProvider::new)
-            .context("the model provider is not configured; set SKATTJAKT_MODEL_ID and ANTHROPIC_API_KEY")?,
-    );
+    // A missing model provider is not fatal, for the same reason it is not
+    // fatal in the API: the rule engine produces evidence-backed findings on
+    // its own, and a rules-only analysis is more useful than no service. The
+    // two processes must agree on this — a deployment where the API accepts
+    // work that the worker refuses to run is a deployment that queues
+    // analyses forever.
+    let (provider, model_configured): (Arc<dyn skattjakt_model::ModelProvider>, bool) =
+        match AnthropicConfig::from_env().and_then(AnthropicProvider::new) {
+            Ok(provider) => (Arc::new(provider), true),
+            Err(error) => {
+                LogRecord::warn("model provider not configured; running rules-only")
+                    .internal("reason", error.to_string())
+                    .emit();
+                (Arc::new(skattjakt_model::ScriptedProvider::new()), false)
+            }
+        };
+
     let gateway_config = GatewayConfig::from_env().context("model pricing is misconfigured")?;
     let gateway = Arc::new(ModelGateway::new(
         provider.clone(),
@@ -71,11 +83,12 @@ async fn main() -> anyhow::Result<()> {
         metrics_registry.clone(),
     ));
 
-    if !gateway.is_callable() {
-        // Failing at startup rather than on the first job. A worker that starts
-        // and then dead-letters everything it claims is worse than one that
-        // refuses to start: the first loses work, the second is a failed
-        // rollout that a readiness probe catches.
+    // A configured model with no price is a different matter, and it is fatal.
+    // An unpriced call is an unbounded call: the budget check would pass for
+    // it, and the ceiling of section 69 would not exist. Failing here makes it
+    // a failed rollout that a readiness probe catches, rather than a worker
+    // that starts and dead-letters everything it claims.
+    if model_configured && !gateway.is_callable() {
         anyhow::bail!(
             "no price is configured for model {} — set SKATTJAKT_MODEL_PRICES before starting",
             gateway.model_id()
