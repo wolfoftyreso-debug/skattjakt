@@ -1,0 +1,680 @@
+//! The rule engine.
+//!
+//! Decides whether a rule is *actually* relevant, which conditions apply, which
+//! exceptions exist, which period it covers, and how the calculation is done
+//! (section 9). The model proposes; this decides.
+
+use std::collections::BTreeMap;
+
+use serde::{Deserialize, Serialize};
+use skattjakt_core::{FactKind, Money, MoneyRange};
+use thiserror::Error;
+
+use crate::condition::{Condition, EvalContext, Truth};
+use crate::expr::{EvalError, Expr, TaxYearConstants};
+use crate::rule::{
+    CalculationInputRecord, CalculationRecord, ImpactSpec, Rule, RuleEvaluation, RuleOutcome,
+};
+
+/// A versioned set of rules plus the per-year constants they reference.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RuleSet {
+    /// Version of the whole set, recorded on every analysis for reproducibility.
+    pub version: String,
+    pub jurisdiction: String,
+    #[serde(default)]
+    pub constants: Vec<TaxYearConstants>,
+    pub rules: Vec<Rule>,
+}
+
+#[derive(Debug, Error)]
+pub enum RuleSetError {
+    #[error("rule set is not valid JSON: {0}")]
+    Parse(#[from] serde_json::Error),
+
+    #[error("rule set failed validation:\n{}", .0.join("\n"))]
+    Invalid(Vec<String>),
+}
+
+/// Evaluates a rule set against one company's facts and profile.
+#[derive(Debug, Clone)]
+pub struct RuleEngine {
+    set: RuleSet,
+    constants_by_year: BTreeMap<i32, TaxYearConstants>,
+}
+
+/// The rule set shipped with the binary. Held in the repository, versioned with
+/// the code, and loaded without touching the filesystem so a deployment cannot
+/// end up running rules nobody committed.
+const EMBEDDED_RULES: &str = include_str!("../data/se-ruleset.json");
+
+impl RuleEngine {
+    pub fn load_embedded() -> Result<Self, RuleSetError> {
+        Self::from_json(EMBEDDED_RULES)
+    }
+
+    pub fn from_json(json: &str) -> Result<Self, RuleSetError> {
+        let set: RuleSet = serde_json::from_str(json)?;
+        Self::new(set)
+    }
+
+    pub fn new(set: RuleSet) -> Result<Self, RuleSetError> {
+        let constants_by_year = set
+            .constants
+            .iter()
+            .map(|c| (c.tax_year, c.clone()))
+            .collect();
+        let engine = Self { set, constants_by_year };
+        let problems = engine.validate();
+        if problems.is_empty() {
+            Ok(engine)
+        } else {
+            Err(RuleSetError::Invalid(problems))
+        }
+    }
+
+    pub fn version(&self) -> &str {
+        &self.set.version
+    }
+
+    pub fn rules(&self) -> &[Rule] {
+        &self.set.rules
+    }
+
+    pub fn rule(&self, rule_id: &str) -> Option<&Rule> {
+        self.set.rules.iter().find(|r| r.rule_id == rule_id)
+    }
+
+    pub fn constants_for(&self, tax_year: i32) -> Option<&TaxYearConstants> {
+        self.constants_by_year.get(&tax_year)
+    }
+
+    /// Structural problems that make the set unsafe to run: duplicate ids,
+    /// names that do not resolve, impossible year windows. Checked at load so a
+    /// broken rule never reaches an analysis.
+    pub fn validate(&self) -> Vec<String> {
+        let mut problems = Vec::new();
+        let mut seen: BTreeMap<&str, usize> = BTreeMap::new();
+
+        for rule in &self.set.rules {
+            *seen.entry(rule.rule_id.as_str()).or_insert(0) += 1;
+
+            if let Some(to) = rule.tax_year_to {
+                if to < rule.tax_year_from {
+                    problems.push(format!(
+                        "{}: tax_year_to ({to}) precedes tax_year_from ({})",
+                        rule.rule_id, rule.tax_year_from
+                    ));
+                }
+            }
+
+            if rule.jurisdiction != self.set.jurisdiction {
+                problems.push(format!(
+                    "{}: jurisdiction {} does not match the set's {}",
+                    rule.rule_id, rule.jurisdiction, self.set.jurisdiction
+                ));
+            }
+
+            if !(0.0..=1.0).contains(&rule.relevance) {
+                problems.push(format!("{}: relevance must be within 0.0..=1.0", rule.rule_id));
+            }
+
+            if rule.source.citation.trim().is_empty() {
+                problems.push(format!("{}: a rule must carry a source citation", rule.rule_id));
+            }
+
+            // Every year the rule claims to cover must have constants that
+            // resolve the names it uses.
+            for year in self.years_covered(rule) {
+                let Some(constants) = self.constants_by_year.get(&year) else {
+                    continue;
+                };
+                if let Err(e) = rule.conditions.validate(constants) {
+                    problems.push(format!("{} ({year}): {e}", rule.rule_id));
+                }
+                for exception in &rule.exceptions {
+                    if let Err(e) = exception.when.validate(constants) {
+                        problems.push(format!(
+                            "{} ({year}) exception {}: {e}",
+                            rule.rule_id, exception.id
+                        ));
+                    }
+                }
+                if let Err(e) = validate_impact(&rule.impact, constants) {
+                    problems.push(format!("{} ({year}) impact: {e}", rule.rule_id));
+                }
+            }
+        }
+
+        for (id, count) in seen {
+            if count > 1 {
+                problems.push(format!("duplicate rule_id `{id}` appears {count} times"));
+            }
+        }
+
+        problems
+    }
+
+    fn years_covered(&self, rule: &Rule) -> Vec<i32> {
+        self.constants_by_year
+            .keys()
+            .copied()
+            .filter(|y| rule.applies_to_tax_year(*y))
+            .collect()
+    }
+
+    /// Evaluates every rule in scope for the year. Rules outside the year are
+    /// skipped rather than reported, to keep the output about the company.
+    pub fn evaluate_all(&self, ctx: &EvalContext<'_>) -> Vec<RuleEvaluation> {
+        self.set
+            .rules
+            .iter()
+            .filter(|r| r.applies_to_tax_year(ctx.tax_year))
+            .map(|r| self.evaluate(r, ctx))
+            .collect()
+    }
+
+    /// Whether the engine has rules and constants for a tax year at all.
+    /// Section 31 requires this to be an explicit state, not an empty result.
+    pub fn covers_tax_year(&self, tax_year: i32) -> bool {
+        self.constants_by_year.contains_key(&tax_year)
+            && self.set.rules.iter().any(|r| r.applies_to_tax_year(tax_year))
+    }
+
+    pub fn evaluate(&self, rule: &Rule, ctx: &EvalContext<'_>) -> RuleEvaluation {
+        let awaiting_review = !rule.review.is_reviewed();
+        let base = |outcome: RuleOutcome| RuleEvaluation {
+            rule_id: rule.rule_id.clone(),
+            rule_version: rule.version.clone(),
+            title: rule.title.clone(),
+            category: rule.category,
+            outcome,
+            impact: None,
+            calculation: None,
+            missing_facts: Vec::new(),
+            unanswered_questions: Vec::new(),
+            exception_notes: Vec::new(),
+            awaiting_review,
+        };
+
+        if !rule.applies_to_tax_year(ctx.tax_year) {
+            return base(RuleOutcome::OutOfScope {
+                reason: format!("regeln gäller inte beskattningsår {}", ctx.tax_year),
+            });
+        }
+
+        // A rule whose constants are missing for the year must not quietly
+        // evaluate to "not applicable" — that would hide a stale rule set.
+        if let Err(problem) = self.check_resolvable(rule, ctx.constants) {
+            return base(RuleOutcome::RuleError { reason: problem });
+        }
+
+        let verdict = rule.conditions.eval(ctx);
+        if verdict == Truth::False {
+            return base(RuleOutcome::NotApplicable {
+                reason: "villkoren för regeln är inte uppfyllda".to_string(),
+            });
+        }
+
+        // Exceptions are checked even when the main conditions are undecided:
+        // a definite exception disqualifies the rule regardless.
+        let mut exception_notes = Vec::new();
+        for exception in &rule.exceptions {
+            match exception.when.eval(ctx) {
+                Truth::True => {
+                    let mut eval = base(RuleOutcome::ExceptionApplies {
+                        exception_id: exception.id.clone(),
+                        explanation: exception.explanation.clone(),
+                    });
+                    eval.exception_notes.push(exception.explanation.clone());
+                    return eval;
+                }
+                Truth::Unknown => exception_notes.push(exception.explanation.clone()),
+                Truth::False => {}
+            }
+        }
+
+        let missing_facts = self.missing_facts_for(rule, ctx);
+        let unanswered_questions = rule.conditions.unanswered_profile_questions(ctx);
+
+        let (impact, calculation, impact_error) = self.compute_impact(rule, ctx);
+
+        let outcome = if verdict == Truth::Unknown {
+            RuleOutcome::Indeterminate {
+                reason: "det saknas underlag för att avgöra om regeln är tillämplig".to_string(),
+            }
+        } else if let Some(err) = impact_error {
+            if err.is_missing_information() {
+                RuleOutcome::Indeterminate {
+                    reason: "regeln är tillämplig men underlaget räcker inte för att beräkna effekten"
+                        .to_string(),
+                }
+            } else {
+                RuleOutcome::RuleError { reason: err.to_string() }
+            }
+        } else if !exception_notes.is_empty() {
+            RuleOutcome::Indeterminate {
+                reason: "ett undantag kan inte uteslutas på tillgängligt underlag".to_string(),
+            }
+        } else {
+            RuleOutcome::Matched
+        };
+
+        RuleEvaluation {
+            rule_id: rule.rule_id.clone(),
+            rule_version: rule.version.clone(),
+            title: rule.title.clone(),
+            category: rule.category,
+            outcome,
+            impact,
+            calculation,
+            missing_facts,
+            unanswered_questions,
+            exception_notes,
+            awaiting_review,
+        }
+    }
+
+    fn check_resolvable(&self, rule: &Rule, constants: &TaxYearConstants) -> Result<(), String> {
+        rule.conditions
+            .validate(constants)
+            .map_err(|e| e.to_string())?;
+        validate_impact(&rule.impact, constants).map_err(|e| e.to_string())
+    }
+
+    fn missing_facts_for(&self, rule: &Rule, ctx: &EvalContext<'_>) -> Vec<FactKind> {
+        let mut needed = rule.impact.required_facts();
+        needed.extend(rule.required_evidence.iter().cloned());
+        needed.dedup_by_key(|f| f.key());
+        ctx.facts.missing_among(&needed)
+    }
+
+    fn compute_impact(
+        &self,
+        rule: &Rule,
+        ctx: &EvalContext<'_>,
+    ) -> (Option<MoneyRange>, Option<CalculationRecord>, Option<EvalError>) {
+        match &rule.impact {
+            ImpactSpec::None => (None, None, None),
+
+            ImpactSpec::Point { expr, uncertainty_bp } => {
+                match expr.eval(ctx.facts, ctx.constants) {
+                    Ok(value) => match MoneyRange::around(value, *uncertainty_bp) {
+                        Ok(range) => {
+                            let record = self.record(expr, "point_with_uncertainty", ctx, range);
+                            (Some(range), Some(record), None)
+                        }
+                        Err(_) => (None, None, Some(EvalError::Overflow("uncertainty".into()))),
+                    },
+                    Err(e) => (None, None, Some(e)),
+                }
+            }
+
+            ImpactSpec::Range { low, high } => {
+                let lo = low.eval(ctx.facts, ctx.constants);
+                let hi = high.eval(ctx.facts, ctx.constants);
+                match (lo, hi) {
+                    (Ok(a), Ok(b)) => {
+                        let range = MoneyRange::new(a, b);
+                        let record = self.record(low, "explicit_range", ctx, range);
+                        (Some(range), Some(record), None)
+                    }
+                    (Err(e), _) | (_, Err(e)) => (None, None, Some(e)),
+                }
+            }
+        }
+    }
+
+    /// Captures the inputs that went into a calculation so it can be re-run and
+    /// so the evidence card can show its working.
+    fn record(
+        &self,
+        expr: &Expr,
+        method: &str,
+        ctx: &EvalContext<'_>,
+        range: MoneyRange,
+    ) -> CalculationRecord {
+        let inputs = expr
+            .referenced_facts()
+            .into_iter()
+            .map(|kind| CalculationInputRecord {
+                name: kind.key(),
+                value: ctx.facts.value(&kind).unwrap_or(Money::ZERO),
+            })
+            .collect();
+
+        CalculationRecord {
+            method: method.to_string(),
+            inputs,
+            result_low: range.low,
+            result_high: range.high,
+            expression: serde_json::to_value(expr).unwrap_or(serde_json::Value::Null),
+        }
+    }
+}
+
+fn validate_impact(impact: &ImpactSpec, constants: &TaxYearConstants) -> Result<(), EvalError> {
+    match impact {
+        ImpactSpec::None => Ok(()),
+        ImpactSpec::Point { expr, .. } => crate::condition::validate_expr(expr, constants),
+        ImpactSpec::Range { low, high } => {
+            crate::condition::validate_expr(low, constants)?;
+            crate::condition::validate_expr(high, constants)
+        }
+    }
+}
+
+/// Convenience: a context builder used by the pipeline and by tests.
+pub fn context<'a>(
+    facts: &'a skattjakt_core::FactSet,
+    profile: &'a skattjakt_core::CompanyProfile,
+    constants: &'a TaxYearConstants,
+    tax_year: i32,
+    accounts_state: skattjakt_core::document::AccountsState,
+) -> EvalContext<'a> {
+    EvalContext { facts, profile, constants, tax_year, accounts_state }
+}
+
+#[allow(unused_imports)]
+use crate::condition::CmpOp as _CmpOpReexport;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::condition::CmpOp;
+    use crate::rule::{Exception, ReviewState, RuleSource};
+    use skattjakt_core::document::AccountsState;
+    use skattjakt_core::{
+        CompanyId, CompanyProfile, DocumentVersionId, FactSet, FinancialFact, FinancialFactId,
+        FiscalYear, InvestigationEffort, OpportunityCategory, OrgNumber, RiskLevel, UnitInterval,
+        Urgency,
+    };
+
+    fn constants(year: i32) -> TaxYearConstants {
+        let mut c = TaxYearConstants { tax_year: year, ..Default::default() };
+        c.rates_bp.insert("corporate_tax".into(), 2060);
+        c.amounts.insert("prisbasbelopp".into(), 5_880_000);
+        c
+    }
+
+    fn profile() -> CompanyProfile {
+        CompanyProfile {
+            id: CompanyId::new(),
+            name: "Testbolaget AB".into(),
+            org_number: OrgNumber::parse("556016-0680").unwrap(),
+            fiscal_year: FiscalYear::calendar(2025).unwrap(),
+            industry: None,
+            sni_code: None,
+            employee_count: None,
+            owner_count: None,
+            in_group: Some(false),
+            operations_outside_sweden: Some(false),
+            does_development_work: Some(false),
+            owns_premises: Some(false),
+            has_vehicles: Some(false),
+            owners_active_in_company: Some(true),
+        }
+    }
+
+    fn facts(pairs: &[(FactKind, i64)]) -> FactSet {
+        FactSet::from_facts(pairs.iter().map(|(kind, sek)| FinancialFact {
+            id: FinancialFactId::new(),
+            company_id: CompanyId::new(),
+            document_version_id: DocumentVersionId::new(),
+            period: FiscalYear::calendar(2025).unwrap(),
+            kind: kind.clone(),
+            value: Money::from_sek(*sek).unwrap(),
+            currency: "SEK".into(),
+            account: None,
+            source_page: Some(1),
+            source_text: Some("x".into()),
+            extraction_confidence: UnitInterval::ONE,
+        }))
+    }
+
+    fn test_rule() -> Rule {
+        Rule {
+            rule_id: "se.test.headroom".into(),
+            version: "2025.1".into(),
+            jurisdiction: "SE".into(),
+            tax_year_from: 2021,
+            tax_year_to: None,
+            title: "Testregel".into(),
+            description: "d".into(),
+            category: OpportunityCategory::Tax,
+            conditions: Condition::Compare {
+                left: Expr::Fact { fact: FactKind::TaxableResult },
+                op: CmpOp::Gt,
+                right: Expr::Amount { sek: 0 },
+            },
+            exceptions: vec![],
+            impact: ImpactSpec::Point {
+                expr: Expr::MulRate {
+                    of: Box::new(Expr::MulBp {
+                        of: Box::new(Expr::Fact { fact: FactKind::TaxableResult }),
+                        bp: 2500,
+                    }),
+                    rate: "corporate_tax".into(),
+                },
+                uncertainty_bp: 1000,
+            },
+            required_evidence: vec![FactKind::TaxableResult],
+            missing_information_hints: vec![],
+            recommended_action: "Fråga redovisningskonsulten.".into(),
+            source: RuleSource {
+                citation: "IL 30 kap.".into(),
+                source_version: "2025".into(),
+                url: None,
+            },
+            review: ReviewState::AwaitingProfessionalReview { note: String::new() },
+            effort: InvestigationEffort::Low,
+            risk: RiskLevel::Low,
+            urgency: Urgency::BeforeFiling,
+            relevance: 0.9,
+        }
+    }
+
+    fn engine_with(rules: Vec<Rule>) -> RuleEngine {
+        RuleEngine::new(RuleSet {
+            version: "test.1".into(),
+            jurisdiction: "SE".into(),
+            constants: vec![constants(2025)],
+            rules,
+        })
+        .expect("test rule set should be valid")
+    }
+
+    fn ctx<'a>(
+        f: &'a FactSet,
+        p: &'a CompanyProfile,
+        c: &'a TaxYearConstants,
+    ) -> EvalContext<'a> {
+        context(f, p, c, 2025, AccountsState::Preliminary)
+    }
+
+    #[test]
+    fn a_matching_rule_computes_its_impact() {
+        let engine = engine_with(vec![test_rule()]);
+        let (f, p, c) = (facts(&[(FactKind::TaxableResult, 1_000_000)]), profile(), constants(2025));
+        let eval = engine.evaluate(&engine.rules()[0], &ctx(&f, &p, &c));
+
+        assert_eq!(eval.outcome, RuleOutcome::Matched);
+        // 25 % of 1 000 000 = 250 000, taxed at 20.6 % = 51 500, ±10 %.
+        let impact = eval.impact.expect("impact should be computed");
+        assert_eq!(impact.low, Money::from_sek(46_350).unwrap());
+        assert_eq!(impact.high, Money::from_sek(56_650).unwrap());
+        assert!(eval.calculation.is_some());
+        assert!(eval.awaiting_review);
+    }
+
+    #[test]
+    fn a_failing_condition_is_not_applicable_rather_than_a_finding() {
+        let engine = engine_with(vec![test_rule()]);
+        let (f, p, c) = (facts(&[(FactKind::TaxableResult, -5_000)]), profile(), constants(2025));
+        let eval = engine.evaluate(&engine.rules()[0], &ctx(&f, &p, &c));
+        assert!(matches!(eval.outcome, RuleOutcome::NotApplicable { .. }));
+        assert!(!eval.outcome.produces_finding());
+    }
+
+    #[test]
+    fn a_missing_fact_yields_indeterminate_and_names_what_is_missing() {
+        let engine = engine_with(vec![test_rule()]);
+        let (f, p, c) = (facts(&[]), profile(), constants(2025));
+        let eval = engine.evaluate(&engine.rules()[0], &ctx(&f, &p, &c));
+        assert!(matches!(eval.outcome, RuleOutcome::Indeterminate { .. }));
+        assert!(eval.outcome.produces_finding(), "a gap is still worth surfacing");
+        assert!(eval.missing_facts.contains(&FactKind::TaxableResult));
+    }
+
+    #[test]
+    fn a_definite_exception_disqualifies_the_rule() {
+        let mut rule = test_rule();
+        rule.exceptions.push(Exception {
+            id: "koncern".into(),
+            when: Condition::Profile {
+                flag: crate::condition::ProfileFlag::InGroup,
+                is: true,
+            },
+            explanation: "Koncernbidrag kan påverka bedömningen.".into(),
+        });
+        let engine = engine_with(vec![rule]);
+        let p = CompanyProfile { in_group: Some(true), ..profile() };
+        let (f, c) = (facts(&[(FactKind::TaxableResult, 1_000_000)]), constants(2025));
+        let eval = engine.evaluate(&engine.rules()[0], &ctx(&f, &p, &c));
+        assert!(matches!(eval.outcome, RuleOutcome::ExceptionApplies { .. }));
+        assert!(eval.impact.is_none(), "a disqualified rule must not report money");
+    }
+
+    #[test]
+    fn an_undecidable_exception_downgrades_a_match_to_indeterminate() {
+        let mut rule = test_rule();
+        rule.exceptions.push(Exception {
+            id: "koncern".into(),
+            when: Condition::Profile {
+                flag: crate::condition::ProfileFlag::InGroup,
+                is: true,
+            },
+            explanation: "Koncernförhållande är inte utrett.".into(),
+        });
+        let engine = engine_with(vec![rule]);
+        let p = CompanyProfile { in_group: None, ..profile() };
+        let (f, c) = (facts(&[(FactKind::TaxableResult, 1_000_000)]), constants(2025));
+        let eval = engine.evaluate(&engine.rules()[0], &ctx(&f, &p, &c));
+        assert!(matches!(eval.outcome, RuleOutcome::Indeterminate { .. }));
+        assert!(!eval.exception_notes.is_empty());
+    }
+
+    #[test]
+    fn a_rule_outside_its_year_window_is_out_of_scope() {
+        let mut rule = test_rule();
+        rule.tax_year_to = Some(2022);
+        let engine = engine_with(vec![rule]);
+        let (f, p, c) = (facts(&[(FactKind::TaxableResult, 1)]), profile(), constants(2025));
+        let eval = engine.evaluate(&engine.rules()[0], &ctx(&f, &p, &c));
+        assert!(matches!(eval.outcome, RuleOutcome::OutOfScope { .. }));
+    }
+
+    #[test]
+    fn evaluate_all_skips_rules_outside_the_year() {
+        let mut old = test_rule();
+        old.rule_id = "se.test.old".into();
+        old.tax_year_to = Some(2022);
+        let engine = engine_with(vec![test_rule(), old]);
+        let (f, p, c) = (facts(&[(FactKind::TaxableResult, 1_000)]), profile(), constants(2025));
+        let evals = engine.evaluate_all(&ctx(&f, &p, &c));
+        assert_eq!(evals.len(), 1);
+        assert_eq!(evals[0].rule_id, "se.test.headroom");
+    }
+
+    #[test]
+    fn a_missing_constant_for_the_year_is_a_rule_error_not_a_silent_pass() {
+        let engine = engine_with(vec![test_rule()]);
+        // A year the constants table does not cover.
+        let empty = TaxYearConstants { tax_year: 2030, ..Default::default() };
+        let (f, p) = (facts(&[(FactKind::TaxableResult, 1_000_000)]), profile());
+        let context = context(&f, &p, &empty, 2030, AccountsState::Preliminary);
+        let eval = engine.evaluate(&engine.rules()[0], &context);
+        assert!(matches!(eval.outcome, RuleOutcome::RuleError { .. }));
+        assert!(!eval.outcome.produces_finding());
+    }
+
+    #[test]
+    fn covers_tax_year_reports_gaps_in_the_rule_set() {
+        let engine = engine_with(vec![test_rule()]);
+        assert!(engine.covers_tax_year(2025));
+        assert!(!engine.covers_tax_year(2030), "no constants for 2030");
+    }
+
+    #[test]
+    fn duplicate_rule_ids_are_rejected_at_load() {
+        let err = RuleEngine::new(RuleSet {
+            version: "v".into(),
+            jurisdiction: "SE".into(),
+            constants: vec![constants(2025)],
+            rules: vec![test_rule(), test_rule()],
+        })
+        .unwrap_err();
+        assert!(err.to_string().contains("duplicate rule_id"));
+    }
+
+    #[test]
+    fn a_rule_without_a_citation_is_rejected_at_load() {
+        let mut rule = test_rule();
+        rule.source.citation = "  ".into();
+        let err = RuleEngine::new(RuleSet {
+            version: "v".into(),
+            jurisdiction: "SE".into(),
+            constants: vec![constants(2025)],
+            rules: vec![rule],
+        })
+        .unwrap_err();
+        assert!(err.to_string().contains("source citation"));
+    }
+
+    #[test]
+    fn a_rule_naming_an_unknown_rate_is_rejected_at_load() {
+        let mut rule = test_rule();
+        rule.impact = ImpactSpec::Point {
+            expr: Expr::MulRate {
+                of: Box::new(Expr::Fact { fact: FactKind::TaxableResult }),
+                rate: "does_not_exist".into(),
+            },
+            uncertainty_bp: 0,
+        };
+        let err = RuleEngine::new(RuleSet {
+            version: "v".into(),
+            jurisdiction: "SE".into(),
+            constants: vec![constants(2025)],
+            rules: vec![rule],
+        })
+        .unwrap_err();
+        assert!(err.to_string().contains("unknown rate"));
+    }
+
+    #[test]
+    fn an_inverted_year_window_is_rejected_at_load() {
+        let mut rule = test_rule();
+        rule.tax_year_from = 2025;
+        rule.tax_year_to = Some(2021);
+        let err = RuleEngine::new(RuleSet {
+            version: "v".into(),
+            jurisdiction: "SE".into(),
+            constants: vec![constants(2025)],
+            rules: vec![rule],
+        })
+        .unwrap_err();
+        assert!(err.to_string().contains("precedes"));
+    }
+
+    #[test]
+    fn the_calculation_record_captures_inputs_for_reproduction() {
+        let engine = engine_with(vec![test_rule()]);
+        let (f, p, c) = (facts(&[(FactKind::TaxableResult, 1_000_000)]), profile(), constants(2025));
+        let eval = engine.evaluate(&engine.rules()[0], &ctx(&f, &p, &c));
+        let calc = eval.calculation.unwrap();
+        assert_eq!(calc.inputs.len(), 1);
+        assert_eq!(calc.inputs[0].name, "taxable_result");
+        assert_eq!(calc.inputs[0].value, Money::from_sek(1_000_000).unwrap());
+        assert!(calc.expression.is_object(), "the expression must be stored verbatim");
+    }
+}

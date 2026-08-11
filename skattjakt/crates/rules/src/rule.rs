@@ -1,0 +1,320 @@
+//! Rule definitions.
+//!
+//! A rule is data, not code, and not a prompt (section 10). It carries its own
+//! validity window, its source, and — importantly — whether a qualified human
+//! has reviewed it. An unreviewed rule can still run; it just cannot produce a
+//! finding presented as established.
+
+use serde::{Deserialize, Serialize};
+use skattjakt_core::{
+    FactKind, InvestigationEffort, Money, MoneyRange, OpportunityCategory, RiskLevel, Urgency,
+};
+
+use crate::condition::{Condition, ProfileFlag};
+use crate::expr::Expr;
+
+/// Where a rule comes from. Section 10: no rule may be fabricated, and every
+/// rule carries a source reference.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RuleSource {
+    /// Primary source, e.g. "Inkomstskattelagen (1999:1229) 30 kap. 5–6 §§".
+    pub citation: String,
+    /// Which edition or retrieval the citation refers to.
+    pub source_version: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+}
+
+/// Whether a qualified person has checked this rule against the current law.
+///
+/// This exists because the rule set in this repository was drafted by a
+/// language model. Marking that state in the data — rather than in a comment
+/// nobody reads — lets the engine enforce a ceiling on what unreviewed rules
+/// may claim.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum ReviewState {
+    /// Checked by a named adviser on a date.
+    Reviewed { reviewer: String, date: String },
+    /// Drafted but not professionally verified. The default.
+    AwaitingProfessionalReview {
+        #[serde(default)]
+        note: String,
+    },
+}
+
+impl ReviewState {
+    pub fn is_reviewed(&self) -> bool {
+        matches!(self, ReviewState::Reviewed { .. })
+    }
+}
+
+/// A named carve-out that disqualifies an otherwise matching rule.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Exception {
+    pub id: String,
+    /// When true, the rule does not apply.
+    pub when: Condition,
+    /// Shown to the user when the exception fires or is undecidable.
+    pub explanation: String,
+}
+
+/// How the economic effect is computed.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ImpactSpec {
+    /// No monetary effect. Risk and control findings use this.
+    None,
+    /// A single computed figure, widened into a range by an uncertainty band
+    /// that reflects how much of the input was assumed.
+    Point { expr: Expr, uncertainty_bp: i64 },
+    /// Explicit lower and upper expressions, for rules whose spread is
+    /// structural rather than a tolerance.
+    Range { low: Expr, high: Expr },
+}
+
+impl ImpactSpec {
+    pub fn required_facts(&self) -> Vec<FactKind> {
+        match self {
+            ImpactSpec::None => Vec::new(),
+            ImpactSpec::Point { expr, .. } => expr.required_facts(),
+            ImpactSpec::Range { low, high } => {
+                let mut facts = low.required_facts();
+                facts.extend(high.required_facts());
+                facts.dedup_by_key(|f| f.key());
+                facts
+            }
+        }
+    }
+
+    pub fn method_name(&self) -> &'static str {
+        match self {
+            ImpactSpec::None => "none",
+            ImpactSpec::Point { .. } => "point_with_uncertainty",
+            ImpactSpec::Range { .. } => "explicit_range",
+        }
+    }
+}
+
+/// One versioned rule.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Rule {
+    /// Stable identifier, e.g. `se.tax.periodiseringsfond.headroom`.
+    pub rule_id: String,
+    pub version: String,
+    /// ISO country code. Only `SE` is served today.
+    pub jurisdiction: String,
+
+    /// First tax year the rule applies to.
+    pub tax_year_from: i32,
+    /// Last tax year, inclusive. `None` means "still current".
+    #[serde(default)]
+    pub tax_year_to: Option<i32>,
+
+    pub title: String,
+    pub description: String,
+    pub category: OpportunityCategory,
+
+    /// All must hold for the rule to match.
+    pub conditions: Condition,
+    #[serde(default)]
+    pub exceptions: Vec<Exception>,
+
+    pub impact: ImpactSpec,
+
+    /// Facts a reviewer should expect to see cited. Used to explain what the
+    /// finding rests on and what is absent.
+    #[serde(default)]
+    pub required_evidence: Vec<FactKind>,
+    /// Things that are not facts but would settle the question, phrased for a
+    /// human, e.g. "föregående års deklaration".
+    #[serde(default)]
+    pub missing_information_hints: Vec<String>,
+
+    /// The next step, written as a question to put to the accountant.
+    pub recommended_action: String,
+
+    pub source: RuleSource,
+    pub review: ReviewState,
+
+    pub effort: InvestigationEffort,
+    pub risk: RiskLevel,
+    pub urgency: Urgency,
+    /// How specific this rule is to the company as opposed to generic advice.
+    /// 0.0–1.0; feeds the priority formula.
+    pub relevance: f64,
+}
+
+impl Rule {
+    pub fn applies_to_tax_year(&self, tax_year: i32) -> bool {
+        tax_year >= self.tax_year_from && self.tax_year_to.is_none_or(|to| tax_year <= to)
+    }
+
+    /// All facts the rule touches, whether in conditions or in the calculation.
+    pub fn referenced_facts(&self) -> Vec<FactKind> {
+        let mut facts = self.conditions.referenced_facts();
+        for exception in &self.exceptions {
+            facts.extend(exception.when.referenced_facts());
+        }
+        facts.extend(self.impact.required_facts());
+        facts.extend(self.required_evidence.iter().cloned());
+        facts.dedup_by_key(|f| f.key());
+        facts
+    }
+}
+
+/// The result of evaluating one rule against one company.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RuleEvaluation {
+    pub rule_id: String,
+    pub rule_version: String,
+    pub title: String,
+    pub category: OpportunityCategory,
+    pub outcome: RuleOutcome,
+    /// Present only when the rule matched and its impact could be computed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub impact: Option<MoneyRange>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub calculation: Option<CalculationRecord>,
+    /// Facts the rule needed but did not find.
+    #[serde(default)]
+    pub missing_facts: Vec<FactKind>,
+    /// Onboarding questions that would resolve an undecidable condition.
+    #[serde(default)]
+    pub unanswered_questions: Vec<ProfileFlag>,
+    /// Exceptions that fired, or that could not be ruled out.
+    #[serde(default)]
+    pub exception_notes: Vec<String>,
+    /// True when the rule has not been professionally reviewed, which caps how
+    /// strongly the finding may be stated.
+    pub awaiting_review: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "outcome", rename_all = "snake_case")]
+pub enum RuleOutcome {
+    /// Conditions held and no exception applied.
+    Matched,
+    /// Conditions did not hold. Not a finding.
+    NotApplicable { reason: String },
+    /// Conditions could not be decided on the available information. This is a
+    /// finding — "something to investigate" — not a silent drop.
+    Indeterminate { reason: String },
+    /// An exception disqualifies the rule.
+    ExceptionApplies { exception_id: String, explanation: String },
+    /// The rule does not cover this tax year.
+    OutOfScope { reason: String },
+    /// The rule is structurally broken — a constant it names does not exist for
+    /// the year. Surfaced loudly rather than swallowed (section 31).
+    RuleError { reason: String },
+}
+
+impl RuleOutcome {
+    /// Whether the evaluation should produce something the user sees.
+    pub fn produces_finding(&self) -> bool {
+        matches!(self, RuleOutcome::Matched | RuleOutcome::Indeterminate { .. })
+    }
+}
+
+/// A reproducible record of one calculation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CalculationRecord {
+    pub method: String,
+    pub inputs: Vec<CalculationInputRecord>,
+    pub result_low: Money,
+    pub result_high: Money,
+    /// The expression as stored, so the arithmetic can be re-run verbatim.
+    pub expression: serde_json::Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CalculationInputRecord {
+    pub name: String,
+    pub value: Money,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rule(from: i32, to: Option<i32>) -> Rule {
+        Rule {
+            rule_id: "se.test".into(),
+            version: "1".into(),
+            jurisdiction: "SE".into(),
+            tax_year_from: from,
+            tax_year_to: to,
+            title: "t".into(),
+            description: "d".into(),
+            category: OpportunityCategory::Tax,
+            conditions: Condition::Always,
+            exceptions: vec![],
+            impact: ImpactSpec::None,
+            required_evidence: vec![],
+            missing_information_hints: vec![],
+            recommended_action: "a".into(),
+            source: RuleSource {
+                citation: "c".into(),
+                source_version: "v".into(),
+                url: None,
+            },
+            review: ReviewState::AwaitingProfessionalReview { note: String::new() },
+            effort: InvestigationEffort::Low,
+            risk: RiskLevel::Low,
+            urgency: Urgency::Routine,
+            relevance: 1.0,
+        }
+    }
+
+    #[test]
+    fn open_ended_rules_apply_to_every_later_year() {
+        let r = rule(2021, None);
+        assert!(r.applies_to_tax_year(2021));
+        assert!(r.applies_to_tax_year(2030));
+        assert!(!r.applies_to_tax_year(2020));
+    }
+
+    #[test]
+    fn closed_rules_stop_applying_after_their_final_year() {
+        let r = rule(2019, Some(2020));
+        assert!(r.applies_to_tax_year(2020));
+        assert!(!r.applies_to_tax_year(2021));
+    }
+
+    #[test]
+    fn unreviewed_is_the_default_review_state() {
+        assert!(!rule(2021, None).review.is_reviewed());
+        let reviewed = ReviewState::Reviewed { reviewer: "X".into(), date: "2026-01-01".into() };
+        assert!(reviewed.is_reviewed());
+    }
+
+    #[test]
+    fn matched_and_indeterminate_both_produce_findings() {
+        assert!(RuleOutcome::Matched.produces_finding());
+        assert!(RuleOutcome::Indeterminate { reason: "r".into() }.produces_finding());
+        assert!(!RuleOutcome::NotApplicable { reason: "r".into() }.produces_finding());
+        assert!(!RuleOutcome::RuleError { reason: "r".into() }.produces_finding());
+    }
+
+    #[test]
+    fn referenced_facts_span_conditions_impact_and_evidence() {
+        let mut r = rule(2021, None);
+        r.conditions = Condition::FactPresent { fact: FactKind::TaxableResult };
+        r.impact = ImpactSpec::Point {
+            expr: Expr::Fact { fact: FactKind::Cash },
+            uncertainty_bp: 1000,
+        };
+        r.required_evidence = vec![FactKind::Equity];
+        let facts = r.referenced_facts();
+        assert!(facts.contains(&FactKind::TaxableResult));
+        assert!(facts.contains(&FactKind::Cash));
+        assert!(facts.contains(&FactKind::Equity));
+    }
+
+    #[test]
+    fn rules_round_trip_through_json() {
+        let r = rule(2021, None);
+        let json = serde_json::to_string(&r).unwrap();
+        assert_eq!(serde_json::from_str::<Rule>(&json).unwrap(), r);
+    }
+}

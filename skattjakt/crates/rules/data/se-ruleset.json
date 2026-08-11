@@ -1,0 +1,645 @@
+{
+  "version": "se-2025.1",
+  "jurisdiction": "SE",
+  "constants": [
+    {
+      "tax_year": 2023,
+      "source": "Prisbasbelopp och inkomstbasbelopp enligt SCB/regeringens fastställande. Bolagsskattesats enligt IL 65 kap. 10 §. Samtliga värden ska verifieras mot Skatteverket före produktionsbruk.",
+      "amounts": {
+        "prisbasbelopp": 5250000,
+        "inkomstbasbelopp": 7430000,
+        "representation_enklare_fortaring_per_person": 6000,
+        "representation_moms_underlag_tak_per_person": 30000,
+        "ranteavdrag_forenklingsregel": 500000000
+      },
+      "rates_bp": {
+        "corporate_tax": 2060,
+        "periodiseringsfond_andel": 2500,
+        "inventarier_huvudregel_avskrivning": 3000,
+        "inventarier_kompletteringsregel_avskrivning": 2000,
+        "ranteavdrag_ebitda_andel": 3000,
+        "moms_leasing_personbil": 5000,
+        "pension_andel_av_lon": 3500
+      }
+    },
+    {
+      "tax_year": 2024,
+      "source": "Prisbasbelopp 57 300 kr och inkomstbasbelopp 76 200 kr för 2024. Bolagsskattesats 20,6 % enligt IL 65 kap. 10 §. Samtliga värden ska verifieras mot Skatteverket före produktionsbruk.",
+      "amounts": {
+        "prisbasbelopp": 5730000,
+        "inkomstbasbelopp": 7620000,
+        "representation_enklare_fortaring_per_person": 6000,
+        "representation_moms_underlag_tak_per_person": 30000,
+        "ranteavdrag_forenklingsregel": 500000000
+      },
+      "rates_bp": {
+        "corporate_tax": 2060,
+        "periodiseringsfond_andel": 2500,
+        "inventarier_huvudregel_avskrivning": 3000,
+        "inventarier_kompletteringsregel_avskrivning": 2000,
+        "ranteavdrag_ebitda_andel": 3000,
+        "moms_leasing_personbil": 5000,
+        "pension_andel_av_lon": 3500
+      }
+    },
+    {
+      "tax_year": 2025,
+      "source": "Prisbasbelopp 58 800 kr och inkomstbasbelopp 80 600 kr för 2025. Bolagsskattesats 20,6 % enligt IL 65 kap. 10 §. Samtliga värden ska verifieras mot Skatteverket före produktionsbruk.",
+      "amounts": {
+        "prisbasbelopp": 5880000,
+        "inkomstbasbelopp": 8060000,
+        "representation_enklare_fortaring_per_person": 6000,
+        "representation_moms_underlag_tak_per_person": 30000,
+        "ranteavdrag_forenklingsregel": 500000000
+      },
+      "rates_bp": {
+        "corporate_tax": 2060,
+        "periodiseringsfond_andel": 2500,
+        "inventarier_huvudregel_avskrivning": 3000,
+        "inventarier_kompletteringsregel_avskrivning": 2000,
+        "ranteavdrag_ebitda_andel": 3000,
+        "moms_leasing_personbil": 5000,
+        "pension_andel_av_lon": 3500
+      }
+    }
+  ],
+  "rules": [
+    {
+      "rule_id": "se.tax.periodiseringsfond.outnyttjat_utrymme",
+      "version": "2025.1",
+      "jurisdiction": "SE",
+      "tax_year_from": 2023,
+      "title": "Periodiseringsfond",
+      "description": "Ett aktiebolag med skattemässigt överskott får sätta av en andel av överskottet till periodiseringsfond. Om årets avsättning understiger det tillgängliga utrymmet finns en outnyttjad möjlighet att skjuta upp beskattning.",
+      "category": "tax",
+      "conditions": {
+        "type": "all",
+        "of": [
+          { "type": "compare", "left": { "op": "fact", "fact": "taxable_result" }, "op": "gt", "right": { "op": "amount", "sek": 0 } },
+          {
+            "type": "compare",
+            "left": { "op": "fact_or_zero", "fact": "tax_allocation_reserve_this_year" },
+            "op": "lt",
+            "right": { "op": "mul_rate", "of": { "op": "fact", "fact": "taxable_result" }, "rate": "periodiseringsfond_andel" }
+          }
+        ]
+      },
+      "exceptions": [],
+      "impact": {
+        "kind": "point",
+        "expr": {
+          "op": "mul_rate",
+          "of": {
+            "op": "max0",
+            "of": {
+              "op": "sub",
+              "a": { "op": "mul_rate", "of": { "op": "fact", "fact": "taxable_result" }, "rate": "periodiseringsfond_andel" },
+              "b": { "op": "fact_or_zero", "fact": "tax_allocation_reserve_this_year" }
+            }
+          },
+          "rate": "corporate_tax"
+        },
+        "uncertainty_bp": 1500
+      },
+      "required_evidence": ["taxable_result"],
+      "missing_information_hints": [
+        "Skattemässigt resultat före avsättning enligt deklarationsunderlaget",
+        "Befintliga periodiseringsfonder från tidigare år"
+      ],
+      "recommended_action": "Fråga din redovisningskonsult om avsättning till periodiseringsfond bör göras innan deklarationen färdigställs, och hur det påverkar kommande års återföringar.",
+      "source": {
+        "citation": "Inkomstskattelagen (1999:1229) 30 kap. 5–6 §§",
+        "source_version": "2025",
+        "url": "https://www.riksdagen.se/sv/dokument-och-lagar/dokument/svensk-forfattningssamling/inkomstskattelag-19991229_sfs-1999-1229/"
+      },
+      "review": {
+        "state": "awaiting_professional_review",
+        "note": "Avsättningsunderlaget är överskottet före avsättning; regeln approximerar detta med det skattemässiga resultatet och behöver verifieras mot deklarationsunderlaget."
+      },
+      "effort": "low",
+      "risk": "low",
+      "urgency": "before_filing",
+      "relevance": 0.95
+    },
+    {
+      "rule_id": "se.tax.periodiseringsfond.aterforing",
+      "version": "2025.1",
+      "jurisdiction": "SE",
+      "tax_year_from": 2023,
+      "title": "Återföring av periodiseringsfond",
+      "description": "En periodiseringsfond ska återföras till beskattning senast det sjätte året efter avsättningsåret. Om bolaget har fonder krävs kontroll av vilket år varje fond avsattes.",
+      "category": "tax",
+      "conditions": {
+        "type": "all",
+        "of": [
+          { "type": "fact_present", "fact": "tax_allocation_reserve" },
+          { "type": "compare", "left": { "op": "fact", "fact": "tax_allocation_reserve" }, "op": "gt", "right": { "op": "amount", "sek": 0 } }
+        ]
+      },
+      "exceptions": [],
+      "impact": { "kind": "none" },
+      "required_evidence": ["tax_allocation_reserve"],
+      "missing_information_hints": [
+        "Avsättningsår för varje enskild periodiseringsfond",
+        "Föregående års deklaration"
+      ],
+      "recommended_action": "Be din redovisningskonsult specificera vilket år varje periodiseringsfond avsattes, så att ingen fond missas vid den obligatoriska återföringen.",
+      "source": {
+        "citation": "Inkomstskattelagen (1999:1229) 30 kap. 7 §",
+        "source_version": "2025",
+        "url": "https://www.riksdagen.se/sv/dokument-och-lagar/dokument/svensk-forfattningssamling/inkomstskattelag-19991229_sfs-1999-1229/"
+      },
+      "review": {
+        "state": "awaiting_professional_review",
+        "note": "Regeln flaggar endast att en kontroll behövs; den beräknar inte återföringsbelopp eftersom avsättningsår saknas i bokslutet."
+      },
+      "effort": "low",
+      "risk": "medium",
+      "urgency": "before_filing",
+      "relevance": 0.8
+    },
+    {
+      "rule_id": "se.tax.underskott.kvittning",
+      "version": "2025.1",
+      "jurisdiction": "SE",
+      "tax_year_from": 2023,
+      "title": "Tidigare års underskott",
+      "description": "Ett outnyttjat underskott från tidigare år rullas vidare och dras av mot senare överskott. Om bolaget både har ett kvarvarande underskott och ett överskott i år kan underskottet minska årets skatt.",
+      "category": "tax",
+      "conditions": {
+        "type": "all",
+        "of": [
+          { "type": "compare", "left": { "op": "fact", "fact": "carried_forward_loss" }, "op": "gt", "right": { "op": "amount", "sek": 0 } },
+          { "type": "compare", "left": { "op": "fact", "fact": "taxable_result" }, "op": "gt", "right": { "op": "amount", "sek": 0 } }
+        ]
+      },
+      "exceptions": [
+        {
+          "id": "agarforandring",
+          "when": { "type": "profile", "flag": "in_group", "is": true },
+          "explanation": "Vid ägarförändring kan beloppsspärr och koncernbidragsspärr begränsa hur mycket av underskottet som får utnyttjas. Koncerntillhörighet gör att detta måste utredas."
+        }
+      ],
+      "impact": {
+        "kind": "point",
+        "expr": {
+          "op": "mul_rate",
+          "of": {
+            "op": "min",
+            "a": { "op": "fact", "fact": "carried_forward_loss" },
+            "b": { "op": "fact", "fact": "taxable_result" }
+          },
+          "rate": "corporate_tax"
+        },
+        "uncertainty_bp": 1000
+      },
+      "required_evidence": ["carried_forward_loss", "taxable_result"],
+      "missing_information_hints": [
+        "Föregående års deklaration med fastställt underskott",
+        "Eventuella ägarförändringar under året"
+      ],
+      "recommended_action": "Stäm av det fastställda underskottet mot föregående års deklaration och kontrollera att inga spärrar efter ägarförändring begränsar avdraget.",
+      "source": {
+        "citation": "Inkomstskattelagen (1999:1229) 40 kap. 2 § samt 15–19 §§ om beloppsspärr och koncernbidragsspärr",
+        "source_version": "2025",
+        "url": "https://www.riksdagen.se/sv/dokument-och-lagar/dokument/svensk-forfattningssamling/inkomstskattelag-19991229_sfs-1999-1229/"
+      },
+      "review": {
+        "state": "awaiting_professional_review",
+        "note": "Spärreglerna vid ägarförändring är förenklade till ett undantag på koncerntillhörighet och täcker inte alla fall."
+      },
+      "effort": "medium",
+      "risk": "medium",
+      "urgency": "before_filing",
+      "relevance": 0.9
+    },
+    {
+      "rule_id": "se.investments.inventarier.avskrivningsutrymme",
+      "version": "2025.1",
+      "jurisdiction": "SE",
+      "tax_year_from": 2023,
+      "title": "Skattemässigt avskrivningsutrymme på inventarier",
+      "description": "Vid räkenskapsenlig avskrivning får inventarier skrivas av med upp till 30 procent av avskrivningsunderlaget enligt huvudregeln. Om den bokförda avskrivningen är lägre kan det finnas ett outnyttjat skattemässigt utrymme.",
+      "category": "investments",
+      "conditions": {
+        "type": "all",
+        "of": [
+          { "type": "compare", "left": { "op": "fact", "fact": "fixed_assets" }, "op": "gt", "right": { "op": "amount", "sek": 0 } },
+          {
+            "type": "compare",
+            "left": { "op": "fact_or_zero", "fact": "depreciation" },
+            "op": "lt",
+            "right": { "op": "mul_rate", "of": { "op": "fact", "fact": "fixed_assets" }, "rate": "inventarier_huvudregel_avskrivning" }
+          }
+        ]
+      },
+      "exceptions": [],
+      "impact": {
+        "kind": "range",
+        "low": { "op": "amount", "sek": 0 },
+        "high": {
+          "op": "mul_rate",
+          "of": {
+            "op": "max0",
+            "of": {
+              "op": "sub",
+              "a": { "op": "mul_rate", "of": { "op": "fact", "fact": "fixed_assets" }, "rate": "inventarier_huvudregel_avskrivning" },
+              "b": { "op": "fact_or_zero", "fact": "depreciation" }
+            }
+          },
+          "rate": "corporate_tax"
+        }
+      },
+      "required_evidence": ["fixed_assets", "depreciation"],
+      "missing_information_hints": [
+        "Anläggningsregister med avskrivningsunderlag per tillgång",
+        "Vilken avskrivningsmetod bolaget tillämpar",
+        "Ackumulerade överavskrivningar"
+      ],
+      "recommended_action": "Be din redovisningskonsult stämma av det skattemässiga avskrivningsunderlaget mot anläggningsregistret och bedöma om överavskrivning är aktuell.",
+      "source": {
+        "citation": "Inkomstskattelagen (1999:1229) 18 kap. 13 § (huvudregeln) och 17 § (kompletteringsregeln)",
+        "source_version": "2025",
+        "url": "https://www.riksdagen.se/sv/dokument-och-lagar/dokument/svensk-forfattningssamling/inkomstskattelag-19991229_sfs-1999-1229/"
+      },
+      "review": {
+        "state": "awaiting_professional_review",
+        "note": "Avskrivningsunderlaget är inte detsamma som posten materiella anläggningstillgångar i balansräkningen. Undre gränsen sätts därför till noll och beloppet ska betraktas som ett tak, inte en uppskattning."
+      },
+      "effort": "medium",
+      "risk": "medium",
+      "urgency": "before_year_end",
+      "relevance": 0.7
+    },
+    {
+      "rule_id": "se.costs.inventarier.mindre_varde",
+      "version": "2025.1",
+      "jurisdiction": "SE",
+      "tax_year_from": 2023,
+      "title": "Inventarier av mindre värde",
+      "description": "Inventarier av mindre värde får dras av omedelbart i stället för att skrivas av över tid. Gränsen är ett halvt prisbasbelopp exklusive moms per inventarium.",
+      "category": "costs",
+      "conditions": {
+        "type": "compare",
+        "left": { "op": "fact", "fact": "fixed_assets" },
+        "op": "gt",
+        "right": { "op": "mul_bp", "of": { "op": "constant", "name": "prisbasbelopp" }, "bp": 5000 }
+      },
+      "exceptions": [],
+      "impact": { "kind": "none" },
+      "required_evidence": ["fixed_assets"],
+      "missing_information_hints": [
+        "Anläggningsregister med anskaffningsvärde per inventarium",
+        "Uppgift om vilka inköp som aktiverats i stället för att kostnadsföras"
+      ],
+      "recommended_action": "Gå igenom årets aktiverade inköp och kontrollera om något understiger ett halvt prisbasbelopp och därmed kunde ha dragits av direkt.",
+      "source": {
+        "citation": "Inkomstskattelagen (1999:1229) 18 kap. 4 §",
+        "source_version": "2025",
+        "url": "https://www.riksdagen.se/sv/dokument-och-lagar/dokument/svensk-forfattningssamling/inkomstskattelag-19991229_sfs-1999-1229/"
+      },
+      "review": {
+        "state": "awaiting_professional_review",
+        "note": "Regeln kan bara flagga att en genomgång behövs. Utan anläggningsregister går det inte att avgöra hur enskilda inventarier ska klassificeras, och något belopp beräknas därför inte."
+      },
+      "effort": "medium",
+      "risk": "low",
+      "urgency": "before_year_end",
+      "relevance": 0.6
+    },
+    {
+      "rule_id": "se.tax.ranteavdrag.ebitda",
+      "version": "2025.1",
+      "jurisdiction": "SE",
+      "tax_year_from": 2023,
+      "title": "Begränsning av ränteavdrag",
+      "description": "Ett negativt räntenetto får dras av med högst 30 procent av ett skattemässigt EBITDA. Enligt förenklingsregeln får ett negativt räntenetto upp till fem miljoner kronor dras av utan denna begränsning.",
+      "category": "tax",
+      "conditions": {
+        "type": "compare",
+        "left": { "op": "fact", "fact": "interest_expense" },
+        "op": "gt",
+        "right": { "op": "constant", "name": "ranteavdrag_forenklingsregel" }
+      },
+      "exceptions": [],
+      "impact": { "kind": "none" },
+      "required_evidence": ["interest_expense", "operating_profit", "depreciation"],
+      "missing_information_hints": [
+        "Räntenetto uppdelat på interna och externa räntor",
+        "Skattemässigt EBITDA enligt deklarationsunderlaget"
+      ],
+      "recommended_action": "Låt din redovisningskonsult räkna fram det skattemässiga räntenettot och avdragsutrymmet, eftersom räntekostnaderna överstiger förenklingsregelns nivå.",
+      "source": {
+        "citation": "Inkomstskattelagen (1999:1229) 24 kap. 24–29 §§",
+        "source_version": "2025",
+        "url": "https://www.riksdagen.se/sv/dokument-och-lagar/dokument/svensk-forfattningssamling/inkomstskattelag-19991229_sfs-1999-1229/"
+      },
+      "review": {
+        "state": "awaiting_professional_review",
+        "note": "Regeln jämför bruttoräntekostnad mot förenklingsregeln eftersom räntenetto sällan framgår av bokslutet. Det gör flaggan försiktig men inte exakt."
+      },
+      "effort": "high",
+      "risk": "high",
+      "urgency": "before_filing",
+      "relevance": 0.75
+    },
+    {
+      "rule_id": "se.tax.koncernbidrag",
+      "version": "2025.1",
+      "jurisdiction": "SE",
+      "tax_year_from": 2023,
+      "title": "Koncernbidrag",
+      "description": "Inom en koncern kan resultat utjämnas med koncernbidrag om ägandet överstigit nio tiondelar under hela beskattningsåret. Ett bolag med överskott i en koncern där andra bolag går med underskott kan ha ett outnyttjat utrymme.",
+      "category": "tax",
+      "conditions": {
+        "type": "all",
+        "of": [
+          { "type": "profile", "flag": "in_group", "is": true },
+          { "type": "compare", "left": { "op": "fact", "fact": "taxable_result" }, "op": "gt", "right": { "op": "amount", "sek": 0 } },
+          { "type": "compare", "left": { "op": "fact_or_zero", "fact": "group_contribution" }, "op": "eq", "right": { "op": "amount", "sek": 0 } }
+        ]
+      },
+      "exceptions": [],
+      "impact": { "kind": "none" },
+      "required_evidence": ["taxable_result"],
+      "missing_information_hints": [
+        "Resultat i övriga koncernbolag",
+        "Ägarandel och hur länge den innehafts under året"
+      ],
+      "recommended_action": "Kontrollera med din redovisningskonsult om något annat bolag i koncernen har underskott som kan utjämnas med koncernbidrag.",
+      "source": {
+        "citation": "Inkomstskattelagen (1999:1229) 35 kap. 3 §",
+        "source_version": "2025",
+        "url": "https://www.riksdagen.se/sv/dokument-och-lagar/dokument/svensk-forfattningssamling/inkomstskattelag-19991229_sfs-1999-1229/"
+      },
+      "review": {
+        "state": "awaiting_professional_review",
+        "note": "Utan resultatet i övriga koncernbolag går det inte att beräkna något belopp; regeln flaggar endast att frågan bör ställas."
+      },
+      "effort": "medium",
+      "risk": "medium",
+      "urgency": "before_filing",
+      "relevance": 0.85
+    },
+    {
+      "rule_id": "se.personnel.pension.avdragsutrymme",
+      "version": "2025.1",
+      "jurisdiction": "SE",
+      "tax_year_from": 2023,
+      "title": "Avdrag för pensionskostnader",
+      "description": "Arbetsgivarens kostnad för tryggande av pension är avdragsgill inom en ram som utgår från den anställdes lön, med ett tak uttryckt i prisbasbelopp. Ett bolag med lönekostnader men utan bokförda pensionskostnader kan ha ett outnyttjat utrymme.",
+      "category": "personnel",
+      "conditions": {
+        "type": "all",
+        "of": [
+          { "type": "compare", "left": { "op": "fact", "fact": "personnel_costs" }, "op": "gt", "right": { "op": "amount", "sek": 0 } },
+          {
+            "type": "compare",
+            "left": { "op": "fact_or_zero", "fact": "pension_costs" },
+            "op": "lt",
+            "right": { "op": "mul_rate", "of": { "op": "fact", "fact": "personnel_costs" }, "rate": "pension_andel_av_lon" }
+          }
+        ]
+      },
+      "exceptions": [],
+      "impact": { "kind": "none" },
+      "required_evidence": ["personnel_costs", "pension_costs"],
+      "missing_information_hints": [
+        "Löneunderlag per anställd",
+        "Befintliga pensionsutfästelser och försäkringslösningar"
+      ],
+      "recommended_action": "Diskutera med din redovisningskonsult om bolagets pensionslösning utnyttjar avdragsutrymmet, och vad det skulle kosta respektive spara.",
+      "source": {
+        "citation": "Inkomstskattelagen (1999:1229) 28 kap. 5–6 §§",
+        "source_version": "2025",
+        "url": "https://www.riksdagen.se/sv/dokument-och-lagar/dokument/svensk-forfattningssamling/inkomstskattelag-19991229_sfs-1999-1229/"
+      },
+      "review": {
+        "state": "awaiting_professional_review",
+        "note": "Avdragsramen beräknas per anställd och kan inte härledas ur den samlade personalkostnaden. Regeln flaggar därför utan belopp."
+      },
+      "effort": "medium",
+      "risk": "low",
+      "urgency": "before_year_end",
+      "relevance": 0.65
+    },
+    {
+      "rule_id": "se.vat.personbil.leasing",
+      "version": "2025.1",
+      "jurisdiction": "SE",
+      "tax_year_from": 2023,
+      "title": "Moms på leasing av personbil",
+      "description": "Vid förhyrning av personbil som används i verksamheten får hälften av den ingående momsen på hyran dras av. Bolag med fordon bör kontrollera att avdraget hanterats.",
+      "category": "vat",
+      "conditions": { "type": "profile", "flag": "has_vehicles", "is": true },
+      "exceptions": [],
+      "impact": { "kind": "none" },
+      "required_evidence": [],
+      "missing_information_hints": [
+        "Leasingfakturor för bolagets fordon",
+        "Uppgift om bilarna ägs eller hyrs",
+        "Hur fordonen används i verksamheten"
+      ],
+      "recommended_action": "Kontrollera att hälften av momsen på leasingavgifterna dragits av, och att avdraget inte gjorts på inköp av personbil där avdragsrätt normalt saknas.",
+      "source": {
+        "citation": "Mervärdesskattelagen (2023:200) 13 kap. 19 §, tidigare mervärdesskattelagen (1994:200) 8 kap. 15–16 §§",
+        "source_version": "2025",
+        "url": "https://www.riksdagen.se/sv/dokument-och-lagar/dokument/svensk-forfattningssamling/mervardesskattelag-2023200_sfs-2023-200/"
+      },
+      "review": {
+        "state": "awaiting_professional_review",
+        "note": "Regeln utlöses av profilsvaret om fordon och inte av bokförda belopp; den ska betraktas som en kontrollfråga."
+      },
+      "effort": "low",
+      "risk": "medium",
+      "urgency": "routine",
+      "relevance": 0.6
+    },
+    {
+      "rule_id": "se.costs.representation",
+      "version": "2025.1",
+      "jurisdiction": "SE",
+      "tax_year_from": 2023,
+      "title": "Representation",
+      "description": "Avdrag för måltidsrepresentation medges inte vid inkomstbeskattningen, medan enklare förtäring är avdragsgill upp till ett belopp per person. Moms får dras av på ett begränsat underlag per person.",
+      "category": "costs",
+      "conditions": { "type": "fact_present", "fact": "external_costs" },
+      "exceptions": [],
+      "impact": { "kind": "none" },
+      "required_evidence": ["external_costs"],
+      "missing_information_hints": [
+        "Kontospecifikation för representationskonton",
+        "Underlag med deltagare och syfte"
+      ],
+      "recommended_action": "Stäm av representationskontona mot underlagen och kontrollera att den ej avdragsgilla delen justerats i deklarationen.",
+      "source": {
+        "citation": "Inkomstskattelagen (1999:1229) 16 kap. 2 §",
+        "source_version": "2025",
+        "url": "https://www.riksdagen.se/sv/dokument-och-lagar/dokument/svensk-forfattningssamling/inkomstskattelag-19991229_sfs-1999-1229/"
+      },
+      "review": {
+        "state": "awaiting_professional_review",
+        "note": "Regeln kan inte se representationskonton i ett bokslut på översiktsnivå och fungerar därför som en generell kontrollpunkt med låg relevansvikt."
+      },
+      "effort": "medium",
+      "risk": "medium",
+      "urgency": "before_filing",
+      "relevance": 0.35
+    },
+    {
+      "rule_id": "se.rnd.forskningsavdrag",
+      "version": "2025.1",
+      "jurisdiction": "SE",
+      "tax_year_from": 2023,
+      "title": "Nedsättning av arbetsgivaravgifter för forskning och utveckling",
+      "description": "Arbetsgivare som har anställda som arbetar med forskning eller utveckling kan få nedsättning av arbetsgivaravgifterna för dessa personer, inom fastställda tak.",
+      "category": "research_and_development",
+      "conditions": {
+        "type": "all",
+        "of": [
+          { "type": "profile", "flag": "does_development_work", "is": true },
+          { "type": "compare", "left": { "op": "fact", "fact": "personnel_costs" }, "op": "gt", "right": { "op": "amount", "sek": 0 } }
+        ]
+      },
+      "exceptions": [],
+      "impact": { "kind": "none" },
+      "required_evidence": ["personnel_costs"],
+      "missing_information_hints": [
+        "Vilka anställda som arbetar med forskning eller utveckling och i vilken omfattning",
+        "Arbetsgivardeklarationer för året",
+        "Dokumentation av utvecklingsarbetets innehåll"
+      ],
+      "recommended_action": "Gå igenom vilka anställda som arbetar med utveckling och hur stor del av deras arbetstid det utgör, och stäm av mot arbetsgivardeklarationerna om nedsättningen utnyttjats.",
+      "source": {
+        "citation": "Socialavgiftslagen (2000:980) 2 kap. 29–31 §§",
+        "source_version": "2025",
+        "url": "https://www.riksdagen.se/sv/dokument-och-lagar/dokument/svensk-forfattningssamling/socialavgiftslag-2000980_sfs-2000-980/"
+      },
+      "review": {
+        "state": "awaiting_professional_review",
+        "note": "Nedsättningens procentsats och tak har ändrats flera gånger och är inte kodade här. Regeln flaggar möjligheten utan att beräkna belopp."
+      },
+      "effort": "high",
+      "risk": "medium",
+      "urgency": "routine",
+      "relevance": 0.8
+    },
+    {
+      "rule_id": "se.tax.k10.lonekrav",
+      "version": "2025.1",
+      "jurisdiction": "SE",
+      "tax_year_from": 2023,
+      "title": "Löneuttag för huvudregeln i fåmansföretag",
+      "description": "För att få använda löneunderlagsregeln vid beräkning av gränsbelopp måste en delägare eller närstående ha tagit ut lön över en viss nivå under året före beskattningsåret. Nivån är kopplad till inkomstbasbeloppet.",
+      "category": "tax",
+      "conditions": {
+        "type": "all",
+        "of": [
+          { "type": "profile", "flag": "owners_active_in_company", "is": true },
+          { "type": "profile_number", "field": "owner_count", "op": "lte", "value": 4 },
+          { "type": "compare", "left": { "op": "fact", "fact": "personnel_costs" }, "op": "gt", "right": { "op": "amount", "sek": 0 } }
+        ]
+      },
+      "exceptions": [],
+      "impact": { "kind": "none" },
+      "required_evidence": ["personnel_costs"],
+      "missing_information_hints": [
+        "Delägarens kontanta lön föregående år",
+        "Total kontant lön i bolaget och i eventuella dotterbolag",
+        "Föregående års K10-blankett"
+      ],
+      "recommended_action": "Stäm av delägarens löneuttag mot lönekravet innan året stängs, eftersom kravet avser lön utbetald under kalenderåret och inte kan rättas i efterhand.",
+      "source": {
+        "citation": "Inkomstskattelagen (1999:1229) 57 kap. 19 §",
+        "source_version": "2025",
+        "url": "https://www.riksdagen.se/sv/dokument-och-lagar/dokument/svensk-forfattningssamling/inkomstskattelag-19991229_sfs-1999-1229/"
+      },
+      "review": {
+        "state": "awaiting_professional_review",
+        "note": "Reglerna för fåmansföretag har varit föremål för omfattande översyn. Nivåerna är inte kodade och regeln flaggar endast att lönekravet bör stämmas av."
+      },
+      "effort": "low",
+      "risk": "high",
+      "urgency": "before_year_end",
+      "relevance": 0.9
+    },
+    {
+      "rule_id": "se.risk.balansrakning_stammer_inte",
+      "version": "2025.1",
+      "jurisdiction": "SE",
+      "tax_year_from": 2023,
+      "title": "Balansräkningen går inte ihop",
+      "description": "Summan av tillgångar ska motsvara summan av eget kapital och skulder. Om de extraherade summorna skiljer sig åt är antingen underlaget ofullständigt eller så finns ett fel i redovisningen.",
+      "category": "risk",
+      "conditions": {
+        "type": "all",
+        "of": [
+          { "type": "fact_present", "fact": "total_assets" },
+          { "type": "fact_present", "fact": "total_equity_and_liabilities" },
+          {
+            "type": "compare",
+            "left": { "op": "fact", "fact": "total_assets" },
+            "op": "neq",
+            "right": { "op": "fact", "fact": "total_equity_and_liabilities" }
+          }
+        ]
+      },
+      "exceptions": [],
+      "impact": { "kind": "none" },
+      "required_evidence": ["total_assets", "total_equity_and_liabilities"],
+      "missing_information_hints": ["Fullständig balansräkning med samtliga sidor"],
+      "recommended_action": "Kontrollera att hela balansräkningen kommit med i underlaget, och stäm av differensen med din redovisningskonsult.",
+      "source": {
+        "citation": "Årsredovisningslagen (1995:1554) 3 kap. 1 §",
+        "source_version": "2025",
+        "url": "https://www.riksdagen.se/sv/dokument-och-lagar/dokument/svensk-forfattningssamling/arsredovisningslag-19951554_sfs-1995-1554/"
+      },
+      "review": {
+        "state": "awaiting_professional_review",
+        "note": "Differensen kan lika gärna bero på extraktionsfel som på ett redovisningsfel; formuleringen håller båda möjligheterna öppna."
+      },
+      "effort": "low",
+      "risk": "high",
+      "urgency": "routine",
+      "relevance": 1.0
+    },
+    {
+      "rule_id": "se.risk.obeskattade_reserver_utan_specifikation",
+      "version": "2025.1",
+      "jurisdiction": "SE",
+      "tax_year_from": 2023,
+      "title": "Obeskattade reserver utan specifikation",
+      "description": "Bolaget redovisar obeskattade reserver men underlaget innehåller ingen uppdelning på periodiseringsfonder och överavskrivningar. Utan uppdelningen går det inte att bedöma vare sig återföringsskyldighet eller kvarvarande utrymme.",
+      "category": "risk",
+      "conditions": {
+        "type": "all",
+        "of": [
+          { "type": "compare", "left": { "op": "fact", "fact": "untaxed_reserves" }, "op": "gt", "right": { "op": "amount", "sek": 0 } },
+          { "type": "fact_absent", "fact": "tax_allocation_reserve" }
+        ]
+      },
+      "exceptions": [],
+      "impact": { "kind": "none" },
+      "required_evidence": ["untaxed_reserves"],
+      "missing_information_hints": [
+        "Not till obeskattade reserver",
+        "Specifikation av periodiseringsfonder per avsättningsår",
+        "Ackumulerade överavskrivningar"
+      ],
+      "recommended_action": "Be om noten till obeskattade reserver så att periodiseringsfonder och överavskrivningar kan bedömas var för sig.",
+      "source": {
+        "citation": "Årsredovisningslagen (1995:1554) 5 kap. samt BFNAR 2016:10 (K2) om noter till obeskattade reserver",
+        "source_version": "2025",
+        "url": "https://www.riksdagen.se/sv/dokument-och-lagar/dokument/svensk-forfattningssamling/arsredovisningslag-19951554_sfs-1995-1554/"
+      },
+      "review": {
+        "state": "awaiting_professional_review",
+        "note": "Regeln beskriver ett underlagsproblem snarare än en skatteregel och kräver ingen materiell prövning."
+      },
+      "effort": "low",
+      "risk": "medium",
+      "urgency": "before_filing",
+      "relevance": 0.9
+    }
+  ]
+}
