@@ -16,7 +16,7 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::provider::{
-    Effort, ModelProvider, ModelRequest, ModelResponse, ProviderError, ProviderResult, TokenUsage,
+    ModelProvider, ModelRequest, ModelResponse, ProviderError, ProviderResult, TokenUsage,
 };
 use crate::schema;
 
@@ -329,6 +329,7 @@ impl ApiResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::provider::Effort;
 
     fn parse(body: serde_json::Value) -> ApiResponse {
         serde_json::from_value(body).unwrap()

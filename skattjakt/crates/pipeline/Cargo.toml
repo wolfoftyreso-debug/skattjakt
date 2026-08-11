@@ -5,5 +5,17 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+description = "Analysis orchestration: extraction, discovery, rule evaluation, falsification, confidence and priority."
 
 [dependencies]
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+skattjakt-core.workspace = true
+skattjakt-extract.workspace = true
+skattjakt-model.workspace = true
+skattjakt-rules.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true

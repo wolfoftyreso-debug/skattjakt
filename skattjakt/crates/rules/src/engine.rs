@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use skattjakt_core::{FactKind, Money, MoneyRange};
 use thiserror::Error;
 
-use crate::condition::{Condition, EvalContext, Truth};
+use crate::condition::{EvalContext, Truth};
 use crate::expr::{EvalError, Expr, TaxYearConstants};
 use crate::rule::{
     CalculationInputRecord, CalculationRecord, ImpactSpec, Rule, RuleEvaluation, RuleOutcome,
@@ -375,13 +375,10 @@ pub fn context<'a>(
     EvalContext { facts, profile, constants, tax_year, accounts_state }
 }
 
-#[allow(unused_imports)]
-use crate::condition::CmpOp as _CmpOpReexport;
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::condition::CmpOp;
+    use crate::condition::{CmpOp, Condition};
     use crate::rule::{Exception, ReviewState, RuleSource};
     use skattjakt_core::document::AccountsState;
     use skattjakt_core::{
