@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: skattjakt-config
+  namespace: skattjakt
+data:
+  RUST_LOG: "skattjakt=debug,sqlx=warn"
+  # A small ceiling, because a mistake in dev should be cheap.
+  SKATTJAKT_ANALYSIS_BUDGET_SEK: "5"

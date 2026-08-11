@@ -1,0 +1,49 @@
+# The single entry point (section 7).
+#
+# Everything public arrives here and nowhere else: no LoadBalancer per service,
+# no NodePort, no direct route to a datastore. The ResourceQuota caps
+# LoadBalancer services at one for the same reason.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: skattjakt
+  namespace: skattjakt
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    # A ceiling in front of the application's own limiter. This one is per
+    # client address and stops a flood before it reaches a pod; the
+    # application's is per tenant and stops a customer from spending their way
+    # through the model budget. They protect different things and both are
+    # needed.
+    nginx.ingress.kubernetes.io/limit-rps: "20"
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "5"
+    # Uploads are bounded here as well as in the application, so an oversized
+    # body is rejected before it is buffered into a pod's memory.
+    nginx.ingress.kubernetes.io/proxy-body-size: 32m
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "X-Content-Type-Options: nosniff";
+      more_set_headers "X-Frame-Options: DENY";
+      more_set_headers "Referrer-Policy: no-referrer";
+      more_set_headers "Strict-Transport-Security: max-age=31536000; includeSubDomains";
+      # The interface is a single self-contained file with no external hosts,
+      # so the policy can be this strict without breaking it.
+      more_set_headers "Content-Security-Policy: default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'self'; form-action 'none'; frame-ancestors 'none'; base-uri 'none'";
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [skattjakt.example]  # replaced per environment
+      secretName: skattjakt-tls
+  rules:
+    - host: skattjakt.example
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: skattjakt-api
+                port:
+                  name: http

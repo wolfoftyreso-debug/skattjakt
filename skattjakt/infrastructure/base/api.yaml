@@ -1,0 +1,188 @@
+# The API Deployment, its Service, its budget and its autoscaler.
+#
+# Stateless, so it scales horizontally and rolls without ceremony. Everything
+# that used to make it stateful — the background analysis task — now lives in
+# the worker.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: skattjakt-api
+  namespace: skattjakt
+# No RoleBinding anywhere in this directory. The API has no business talking to
+# the Kubernetes API, and the token would be a credential worth stealing.
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: skattjakt-api
+  namespace: skattjakt
+  labels:
+    app.kubernetes.io/name: skattjakt-api
+    app.kubernetes.io/component: api
+    app.kubernetes.io/part-of: skattjakt
+spec:
+  replicas: 2
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: skattjakt-api
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Never fewer than the declared replicas during a roll. Surge one, drain
+      # one: a deploy should not be a capacity event.
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: skattjakt-api
+        app.kubernetes.io/component: api
+        app.kubernetes.io/part-of: skattjakt
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: /metrics
+    spec:
+      serviceAccountName: skattjakt-api
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      # Spread across nodes, so losing one node does not lose the service.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: skattjakt-api
+      containers:
+        - name: api
+          image: skattjakt-api  # digest pinned by each overlay
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            privileged: false
+            capabilities:
+              drop: [ALL]
+          env:
+            - name: PORT
+              value: "8080"
+            - name: HOSTNAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          envFrom:
+            - configMapRef:
+                name: skattjakt-config
+            - secretRef:
+                name: skattjakt-secrets
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              # No CPU limit on purpose. A CPU limit throttles rather than
+              # kills, and a throttled API adds latency that looks like a
+              # database problem for hours before anyone finds the cgroup. The
+              # ResourceQuota bounds the namespace; the request bounds
+              # scheduling. Memory is limited because an OOM kill is a clean,
+              # visible failure and a memory leak that is merely throttled is
+              # not a thing that exists.
+              memory: 512Mi
+          # Liveness answers "is the process wedged"; readiness answers "should
+          # traffic come here". Conflating them is how a database blip becomes
+          # a restart loop: /health must not touch the database, and /ready
+          # must.
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          readinessProbe:
+            httpGet: { path: /ready, port: http }
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          startupProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 2
+            failureThreshold: 30
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        # The root filesystem is read-only, so anything that needs to write
+        # gets an explicit, size-bounded emptyDir.
+        - name: tmp
+          emptyDir:
+            sizeLimit: 256Mi
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: skattjakt-api
+  namespace: skattjakt
+  labels:
+    app.kubernetes.io/name: skattjakt-api
+spec:
+  selector:
+    app.kubernetes.io/name: skattjakt-api
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+# Section 42. Without this, a node drain can take both replicas at once and the
+# service is down for the length of a reschedule.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: skattjakt-api
+  namespace: skattjakt
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: skattjakt-api
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: skattjakt-api
+  namespace: skattjakt
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: skattjakt-api
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+    scaleDown:
+      # Slow down, fast up. Scaling down eagerly after a burst means scaling up
+      # again into the next one, and each cycle costs a cold start.
+      stabilizationWindowSeconds: 300

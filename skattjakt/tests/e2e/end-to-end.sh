@@ -7,7 +7,7 @@
 # of accounts, run an analysis, and check the result, the evidence, the report,
 # the audit trail, reproducibility, and that another tenant can reach none of it.
 #
-# Usage: scripts/test-end-to-end.sh
+# Usage: tests/e2e/end-to-end.sh
 
 set -euo pipefail
 
@@ -19,7 +19,7 @@ fi
 
 PGBIN="${PGBIN:-/usr/lib/postgresql/16/bin}"
 [[ -x "$PGBIN/initdb" ]] || PGBIN="$(dirname "$(command -v initdb)")"
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 WORKDIR="$(mktemp -d)"
 PGDATA="$WORKDIR/data"
 SOCKET="$WORKDIR/sock"

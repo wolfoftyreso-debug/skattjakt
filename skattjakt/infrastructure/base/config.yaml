@@ -1,0 +1,41 @@
+# Configuration that is not secret.
+#
+# Secrets are not here and are not anywhere in this repository (section 30).
+# The Secret objects the workloads reference — skattjakt-secrets,
+# skattjakt-postgres-secrets, skattjakt-minio-secrets, skattjakt-backup-secrets
+# — are created out of band by External Secrets or sealed-secrets. See
+# SKATTJAKT_DEPLOYMENT.md. A committed placeholder Secret is worse than none:
+# it is the thing that gets applied by accident and then never rotated.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: skattjakt-config
+  namespace: skattjakt
+data:
+  PORT: "8080"
+  RUST_LOG: "skattjakt=info,sqlx=warn,tower_http=warn"
+
+  # No default model id, on purpose (engineering decision D7). Each overlay
+  # names the model that deployment should run on, so an upgrade is a reviewed
+  # change to a file rather than a surprise from a dependency.
+  SKATTJAKT_MODEL_ID: ""
+
+  # Prices, in micro-ore per million tokens. Configuration rather than
+  # constants: a price compiled into the binary is wrong the day after the
+  # provider changes it, and wrong silently. A model with no entry here cannot
+  # be called at all, which is deliberate — an unpriced call is an unbounded
+  # call and the budget check would pass for it.
+  SKATTJAKT_MODEL_PRICES: "{}"
+
+  # The per-analysis cost ceiling, in SEK (section 69).
+  SKATTJAKT_ANALYSIS_BUDGET_SEK: "25"
+
+  # Off by default. A provider that quietly serves a request with a different
+  # model changes the analysis, and section 8 says the product must not be
+  # built around a model identity it did not choose.
+  SKATTJAKT_MODEL_FALLBACK: "0"
+
+  SKATTJAKT_MODEL_TIMEOUT_SECS: "600"
+  SKATTJAKT_MODEL_MAX_RETRIES: "3"
+  SKATTJAKT_DB_MAX_CONNECTIONS: "10"
+  SKATTJAKT_BLOB_ROOT: "/var/lib/skattjakt/blobs"

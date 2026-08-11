@@ -9,6 +9,20 @@ env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: "-D warnings"
 
+# The gates, in the order in which they catch things:
+#
+#   test            — the code does what it says
+#   golden          — the pipeline still finds what it used to, and nothing else
+#   tenant-isolation— the database enforces the boundary
+#   security        — the API resists the attacks in section 50
+#   end-to-end      — the product works from upload to report
+#   manifests       — what would be deployed is valid and shaped as intended
+#   supply-chain    — what is in the binary is known, checksummed and unaudited
+#   container       — the image builds, runs as non-root, and contains no shell
+#
+# Nothing here is advisory. A job that reports and does not fail is a job that
+# is ignored by the third week.
+
 jobs:
   test:
     name: Build and test
@@ -60,7 +74,33 @@ jobs:
       - name: Isolation checks
         run: |
           export PGBIN=$(ls -d /usr/lib/postgresql/*/bin | tail -1)
-          ./scripts/test-tenant-isolation.sh
+          ./tests/security/tenant-isolation.sh
+
+  security:
+    name: Security suite
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: skattjakt
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: skattjakt
+
+      - name: Install PostgreSQL
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql
+
+      # Section 50: tenant escape, IDOR, path traversal, SQL injection, SSRF,
+      # prompt injection, rate limiting, and what reaches the logs and metrics.
+      - name: Attack the running API
+        run: |
+          export PGBIN=$(ls -d /usr/lib/postgresql/*/bin | tail -1)
+          chmod -R a+rX .
+          ./tests/security/security-suite.sh
 
   end-to-end:
     name: End-to-end product test
@@ -91,7 +131,7 @@ jobs:
         run: |
           export PGBIN=$(ls -d /usr/lib/postgresql/*/bin | tail -1)
           chmod -R a+rX .
-          ./scripts/test-end-to-end.sh
+          ./tests/e2e/end-to-end.sh
 
   contract:
     name: OpenAPI contract
@@ -102,19 +142,114 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Validate the contract parses
-        run: python3 -c "import yaml,sys; d=yaml.safe_load(open('api/openapi.yaml')); assert d['openapi'].startswith('3.1'); print('paths:', len(d['paths']), 'schemas:', len(d['components']['schemas']))"
+        run: |
+          python3 -c "
+          import yaml
+          d = yaml.safe_load(open('apps/api/openapi.yaml'))
+          assert d['openapi'].startswith('3.1'), d['openapi']
+          print('paths:', len(d['paths']), 'schemas:', len(d['components']['schemas']))
+          "
+
+  manifests:
+    name: Kubernetes manifests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: skattjakt
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install kustomize and kubeconform
+        run: |
+          curl -sSLo kustomize.tar.gz \
+            https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.4.3/kustomize_v5.4.3_linux_amd64.tar.gz
+          tar xzf kustomize.tar.gz && sudo mv kustomize /usr/local/bin/
+          curl -sSLo kubeconform.tar.gz \
+            https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz
+          tar xzf kubeconform.tar.gz && sudo mv kubeconform /usr/local/bin/
+
+      # Every overlay renders, every rendered object validates against the
+      # Kubernetes schemas, and the security properties this deployment depends
+      # on are asserted rather than assumed.
+      - name: Validate every environment
+        run: ./tests/infrastructure/validate-manifests.sh
+
+  supply-chain:
+    name: Supply chain
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: skattjakt
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      # What is actually in the binary, with the checksum cargo verified.
+      - name: Generate and check the SBOM
+        run: |
+          ./tests/supply-chain/generate-sbom.py --check Cargo.lock
+          ./tests/supply-chain/generate-sbom.py Cargo.lock > sbom.cdx.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: skattjakt/sbom.cdx.json
+
+      - name: Known vulnerabilities
+        run: |
+          cargo install --locked cargo-audit
+          cargo audit --deny warnings
+
+      - name: Licences and sources
+        run: |
+          cargo install --locked cargo-deny
+          cargo deny check licenses sources bans
 
   container:
     name: Container image
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: skattjakt
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
-      # Build only — publishing is a separate, gated workflow.
-      - uses: docker/build-push-action@v6
+
+      # Build only. Publishing is a separate, gated workflow — a merge to a
+      # branch must not be able to put an image where a cluster can pull it.
+      - name: Build the API image
+        uses: docker/build-push-action@v6
         with:
           context: skattjakt
-          file: skattjakt/deploy/Dockerfile
+          file: skattjakt/Dockerfile
+          build-args: BINARY=skattjakt-api
+          tags: skattjakt/api:ci
+          load: true
           push: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Build the worker image
+        uses: docker/build-push-action@v6
+        with:
+          context: skattjakt
+          file: skattjakt/Dockerfile
+          build-args: BINARY=skattjakt-analysis-worker
+          tags: skattjakt/analysis-worker:ci
+          load: true
+          push: false
+          cache-from: type=gha
+
+      # Section 36: what the image must and must not contain. Asserted rather
+      # than trusted to the base image staying what it is.
+      - name: Inspect the image
+        run: ./tests/supply-chain/inspect-image.sh skattjakt/api:ci
+
+      - name: Scan for vulnerabilities
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: skattjakt/api:ci
+          format: table
+          exit-code: "1"
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true

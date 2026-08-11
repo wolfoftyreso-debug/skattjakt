@@ -1,0 +1,31 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: skattjakt-prod
+
+resources:
+  - ../../base
+
+replicas:
+  - name: skattjakt-api
+    count: 3
+  - name: skattjakt-analysis-worker
+    count: 2
+
+images:
+  # Digests, not tags. A tag can be moved; a digest cannot, so what is running
+  # is exactly what was reviewed, scanned and signed. The GitOps pipeline
+  # rewrites these values; a human editing them by hand is the exception and
+  # goes through the same pull request.
+  - name: skattjakt-api
+    newName: registry.internal/skattjakt/api
+    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+  - name: skattjakt-analysis-worker
+    newName: registry.internal/skattjakt/analysis-worker
+    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+  - name: postgres
+    newTag: 16-alpine
+
+patches:
+  - path: ingress.yaml
+  - path: quota.yaml

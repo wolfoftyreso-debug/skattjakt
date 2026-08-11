@@ -1,0 +1,158 @@
+# The backup scripts, mounted read-only into the CronJobs.
+#
+# In a ConfigMap rather than baked into an image so that the logic is reviewable
+# in the diff of a pull request, which is where an operator will actually read
+# it. Section 19: nothing operationally significant that is invisible from the
+# repository.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: skattjakt-backup-scripts
+  namespace: skattjakt
+data:
+  upload.sh: |
+    #!/bin/sh
+    # Uploads a dump to the off-cluster target.
+    #
+    # BACKUP_TARGET is an S3 URL. The credentials come from the environment;
+    # neither is ever echoed, because a job log is not a secret store.
+    set -eu
+
+    file="$1"
+    target="$2"
+
+    if [ -z "$target" ]; then
+      echo "BACKUP_TARGET is empty; refusing to discard a backup silently" >&2
+      exit 1
+    fi
+
+    # Encrypt before it leaves the cluster. The dump contains every customer's
+    # financial data, and an off-cluster copy is by definition outside the
+    # controls that protect the cluster copy.
+    if [ -n "${BACKUP_AGE_RECIPIENT:-}" ]; then
+      age -r "$BACKUP_AGE_RECIPIENT" -o "${file}.age" "$file"
+      rm -f "$file"
+      file="${file}.age"
+    else
+      echo "BACKUP_AGE_RECIPIENT is unset; refusing to send an unencrypted dump off-cluster" >&2
+      exit 1
+    fi
+
+    mc alias set backup "$BACKUP_S3_ENDPOINT" "$BACKUP_S3_ACCESS_KEY" "$BACKUP_S3_SECRET_KEY" >/dev/null 2>&1
+    mc cp "$file" "backup/${target}/$(basename "$file")"
+
+    # Read it back. An upload that reports success and stored nothing is the
+    # failure this whole file exists to prevent.
+    remote_size="$(mc stat --json "backup/${target}/$(basename "$file")" | sed -n 's/.*"size":\([0-9]*\).*/\1/p')"
+    local_size="$(wc -c < "$file")"
+    if [ "$remote_size" != "$local_size" ]; then
+      echo "uploaded size ${remote_size} does not match local size ${local_size}" >&2
+      exit 1
+    fi
+    echo "{\"msg\":\"backup uploaded\",\"bytes\":${remote_size}}"
+
+  download.sh: |
+    #!/bin/sh
+    # Fetches the most recent dump from the off-cluster target.
+    set -eu
+
+    target="$1"
+    dest="$2"
+
+    mc alias set backup "$BACKUP_S3_ENDPOINT" "$BACKUP_S3_ACCESS_KEY" "$BACKUP_S3_SECRET_KEY" >/dev/null 2>&1
+    latest="$(mc ls "backup/${target}/" | sort | tail -1 | awk '{print $NF}')"
+    if [ -z "$latest" ]; then
+      echo "no backup found at ${target}" >&2
+      exit 1
+    fi
+    mc cp "backup/${target}/${latest}" "$dest"
+    echo "$latest"
+
+  restore-test.sh: |
+    #!/bin/sh
+    # Restores the latest backup into a throwaway database and checks that what
+    # came back is what went in (section 34).
+    #
+    # Three assertions, in the order in which they fail in practice:
+    #   1. the dump restores at all;
+    #   2. every table that should exist does;
+    #   3. the row counts are within a plausible range of production's.
+    #
+    # A restore that produces an empty but structurally correct database passes
+    # (1) and (2) and fails (3), which is exactly the case a naive check misses.
+    set -eu
+
+    scratch="restore_test_$(date -u +%Y%m%d%H%M%S)"
+    dump="/tmp/restore-test.dump"
+
+    cleanup() {
+      psql -d postgres -c "DROP DATABASE IF EXISTS ${scratch}" >/dev/null 2>&1 || true
+      rm -f "$dump" "${dump}.age"
+    }
+    trap cleanup EXIT
+
+    echo "{\"msg\":\"restore test started\",\"scratch_db\":\"${scratch}\"}"
+
+    name="$(/usr/local/bin/download.sh "$BACKUP_TARGET" "${dump}.age")"
+    age -d -i /etc/skattjakt/backup-key.age -o "$dump" "${dump}.age"
+
+    psql -d postgres -c "CREATE DATABASE ${scratch}"
+
+    # --exit-on-error: a restore that logs forty errors and exits zero is how a
+    # broken backup passes its own test.
+    pg_restore --dbname="$scratch" --no-owner --no-privileges --exit-on-error "$dump"
+
+    # (2) Every table the application needs.
+    missing=""
+    for table in companies documents document_versions financial_facts \
+                 analysis_jobs model_runs opportunities opportunity_evidence \
+                 calculations audit_events api_tokens jobs job_transitions \
+                 dead_letters analysis_budgets rate_limit_counters \
+                 retention_policies deletion_requests rule_set_approvals; do
+      exists="$(psql -d "$scratch" -tAc \
+        "SELECT to_regclass('public.${table}') IS NOT NULL")"
+      if [ "$exists" != "t" ]; then
+        missing="${missing} ${table}"
+      fi
+    done
+    if [ -n "$missing" ]; then
+      echo "restored database is missing tables:${missing}" >&2
+      exit 1
+    fi
+
+    # (2b) Row-level security survived the round trip. A restore that drops the
+    # policies produces a database that works perfectly and isolates nothing.
+    unprotected="$(psql -d "$scratch" -tAc "
+      SELECT count(*) FROM pg_tables t
+      WHERE t.schemaname = 'public'
+        AND t.tablename IN ('documents','document_versions','financial_facts',
+                            'analysis_jobs','model_runs','opportunities')
+        AND NOT EXISTS (
+          SELECT 1 FROM pg_class c
+          WHERE c.relname = t.tablename AND c.relrowsecurity AND c.relforcerowsecurity
+        )")"
+    if [ "$unprotected" != "0" ]; then
+      echo "restored database has ${unprotected} tenant tables without forced row-level security" >&2
+      exit 1
+    fi
+
+    # (3) Plausible contents. Compared against production rather than against a
+    # constant, so the check keeps meaning something as the service grows.
+    for table in companies analysis_jobs; do
+      restored="$(psql -d "$scratch" -tAc "SELECT count(*) FROM ${table}")"
+      live="$(psql -d skattjakt -tAc "SELECT count(*) FROM ${table}")"
+      # The backup is up to a day old, so it may hold fewer rows than
+      # production; it must never hold more, and it must not be empty when
+      # production is not.
+      if [ "$restored" -gt "$live" ]; then
+        echo "restored ${table} has ${restored} rows, more than production's ${live}" >&2
+        exit 1
+      fi
+      if [ "$live" -gt 0 ] && [ "$restored" -eq 0 ]; then
+        echo "restored ${table} is empty while production has ${live} rows" >&2
+        exit 1
+      fi
+      echo "{\"msg\":\"table verified\",\"table\":\"${table}\",\"restored\":${restored},\"live\":${live}}"
+    done
+
+    echo "{\"msg\":\"restore test passed\",\"backup\":\"${name}\"}"

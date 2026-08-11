@@ -1,0 +1,164 @@
+# Postgres, self-hosted (section 5).
+#
+# A StatefulSet with one replica, not a Deployment. A Deployment with a PVC will
+# happily start a second pod against the same volume during a rolling update,
+# and two postmasters on one data directory is data loss, not a race that
+# resolves itself.
+#
+# One replica is a deliberate, stated limitation: this is a single point of
+# failure whose recovery path is restore-from-backup, with the RPO and RTO
+# written down in SKATTJAKT_RUNBOOK.md. Streaming replication is the next step
+# and is not pretended to exist here.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: skattjakt-postgres
+  namespace: skattjakt
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: skattjakt-postgres
+  namespace: skattjakt
+  labels:
+    app.kubernetes.io/name: skattjakt-postgres
+spec:
+  # Headless: clients resolve the pod directly, and there is no load balancer
+  # in front of a database that has exactly one endpoint.
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: skattjakt-postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: skattjakt-postgres
+  namespace: skattjakt
+  labels:
+    app.kubernetes.io/name: skattjakt-postgres
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: skattjakt
+spec:
+  serviceName: skattjakt-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: skattjakt-postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: skattjakt-postgres
+        app.kubernetes.io/component: database
+        app.kubernetes.io/part-of: skattjakt
+    spec:
+      serviceAccountName: skattjakt-postgres
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: postgres
+          image: postgres:16-alpine  # digest pinned by each overlay
+          ports:
+            - name: postgres
+              containerPort: 5432
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          env:
+            - name: POSTGRES_DB
+              value: skattjakt
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: skattjakt-postgres-secrets
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: skattjakt-postgres-secrets
+                  key: POSTGRES_PASSWORD
+            # Under a subdirectory: initdb refuses to run in a directory that
+            # already contains lost+found, which most PVCs do.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+            # Checksums make silent corruption loud. Enabled at initdb time
+            # only — turning them on later means a dump and restore.
+            - name: POSTGRES_INITDB_ARGS
+              value: "--data-checksums"
+          resources:
+            requests:
+              cpu: 250m
+              memory: 1Gi
+            limits:
+              memory: 4Gi
+          livenessProbe:
+            exec:
+              command: [pg_isready, -U, postgres, -d, skattjakt]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command: [pg_isready, -U, postgres, -d, skattjakt]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: run
+              mountPath: /var/run/postgresql
+            - name: tmp
+              mountPath: /tmp
+        # Scraped by Prometheus for connection counts, replication lag and the
+        # transaction-id age that precedes a wraparound outage.
+        - name: exporter
+          image: quay.io/prometheuscommunity/postgres-exporter:v0.15.0
+          ports:
+            - name: metrics
+              containerPort: 9187
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            capabilities:
+              drop: [ALL]
+          env:
+            - name: DATA_SOURCE_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: skattjakt-postgres-secrets
+                  key: EXPORTER_DSN
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+      volumes:
+        - name: run
+          emptyDir: {}
+        - name: tmp
+          emptyDir:
+            sizeLimit: 1Gi
+      terminationGracePeriodSeconds: 120
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 20Gi

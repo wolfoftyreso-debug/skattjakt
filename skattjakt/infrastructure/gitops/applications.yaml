@@ -1,0 +1,136 @@
+# GitOps (section 38).
+#
+# "Ingen manuell kubectl apply som normal deploymentmetod."
+#
+# Argo CD reconciles each namespace against a path in this repository. The
+# cluster's state is a function of the repository, so "what is running" is
+# answerable by reading a commit rather than by asking a person.
+#
+# Two properties matter more than the tooling choice:
+#
+#   - selfHeal, so a manual kubectl edit is reverted rather than preserved.
+#     Without it GitOps is a suggestion, and the one time someone patches
+#     production by hand during an incident, that patch survives silently until
+#     it causes the next incident.
+#   - prune, so a resource deleted from the repository is deleted from the
+#     cluster. Without it, removing a NetworkPolicy from git leaves it running,
+#     and the repository stops describing reality in the direction that matters
+#     least visibly.
+#
+# Production has both switched off. It syncs automatically but does not
+# self-heal or prune without a human, because an automated prune against a
+# StatefulSet is one bad merge away from deleting a PersistentVolumeClaim.
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: skattjakt
+  namespace: argocd
+spec:
+  description: Skattjakt — tax recovery and opportunity engine
+  sourceRepos:
+    - https://github.com/wolfoftyreso-debug/konditori-joy.git
+  destinations:
+    - namespace: skattjakt-dev
+      server: https://kubernetes.default.svc
+    - namespace: skattjakt-staging
+      server: https://kubernetes.default.svc
+    - namespace: skattjakt-prod
+      server: https://kubernetes.default.svc
+  # Namespaced resources only, plus the Namespace itself. Skattjakt has no
+  # business creating ClusterRoles or CustomResourceDefinitions, and a project
+  # that cannot is a project whose compromise is contained.
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: skattjakt-dev
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: skattjakt
+  source:
+    repoURL: https://github.com/wolfoftyreso-debug/konditori-joy.git
+    targetRevision: main
+    path: skattjakt/infrastructure/overlays/dev
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: skattjakt-dev
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+  # A rolled-back deploy should be one click, so the history is kept.
+  revisionHistoryLimit: 10
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: skattjakt-staging
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: skattjakt
+  source:
+    repoURL: https://github.com/wolfoftyreso-debug/konditori-joy.git
+    targetRevision: main
+    path: skattjakt/infrastructure/overlays/staging
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: skattjakt-staging
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+  revisionHistoryLimit: 10
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: skattjakt-prod
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: skattjakt
+  source:
+    repoURL: https://github.com/wolfoftyreso-debug/konditori-joy.git
+    # A tag, not a branch. Production tracks something a human chose to cut,
+    # so a merge to main is not a production deploy.
+    targetRevision: production
+    path: skattjakt/infrastructure/overlays/prod
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: skattjakt-prod
+  syncPolicy:
+    automated:
+      # Both off. See the note at the top of this file: an automated prune here
+      # is one bad merge away from deleting a PersistentVolumeClaim that holds
+      # every customer's documents.
+      prune: false
+      selfHeal: false
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      # A failed sync should leave the cluster as it was rather than
+      # half-applied.
+      - ApplyOutOfSyncOnly=true
+  revisionHistoryLimit: 20
+  # Drift is reported even though it is not corrected automatically, so a
+  # manual change to production is visible within a minute rather than at the
+  # next deploy.
+  ignoreDifferences: []

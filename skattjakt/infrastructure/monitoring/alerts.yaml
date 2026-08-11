@@ -1,0 +1,221 @@
+# Alerts (sections 43, 44, 47).
+#
+# Every rule here answers a question an operator would otherwise have to guess
+# at during an incident, and every one of them is written against a metric that
+# the code actually emits — see `crates/telemetry/src/metrics.rs`. An alert on
+# a metric nobody publishes is worse than no alert: it looks like coverage.
+#
+# The distinction throughout is between *technical* symptoms (the service is
+# erroring) and *business* symptoms (the service is up and producing nothing
+# useful). The second kind is the one that goes unnoticed for weeks.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: skattjakt
+  namespace: skattjakt
+  labels:
+    app.kubernetes.io/part-of: skattjakt
+spec:
+  groups:
+    - name: skattjakt.availability
+      interval: 30s
+      rules:
+        - alert: SkattjaktApiDown
+          expr: |
+            absent(up{job="skattjakt-api"} == 1)
+          for: 2m
+          labels: { severity: critical }
+          annotations:
+            summary: No API replica is being scraped
+            runbook: SKATTJAKT_RUNBOOK.md#the-api-is-down
+
+        - alert: SkattjaktApiErrorRate
+          expr: |
+            sum(rate(skattjakt_http_requests_total{status="5xx"}[5m]))
+              /
+            sum(rate(skattjakt_http_requests_total[5m])) > 0.02
+          for: 5m
+          labels: { severity: critical }
+          annotations:
+            summary: More than 2% of requests are failing
+            runbook: SKATTJAKT_RUNBOOK.md#the-api-is-returning-errors
+
+        - alert: SkattjaktApiLatency
+          expr: |
+            histogram_quantile(0.95,
+              sum(rate(skattjakt_http_request_duration_ms_bucket[5m])) by (le, route)
+            ) > 2000
+          for: 10m
+          labels: { severity: warning }
+          annotations:
+            summary: p95 request latency above two seconds on {{ $labels.route }}
+
+    - name: skattjakt.jobs
+      interval: 30s
+      rules:
+        # The alert that matters most operationally. A queue that is merely
+        # long is fine; a queue whose *oldest* item is old means nothing is
+        # draining, which is a different problem with a different fix.
+        - alert: SkattjaktQueueNotDraining
+          expr: skattjakt_job_oldest_queued_age_ms{kind="analysis"} > 1800000
+          for: 5m
+          labels: { severity: critical }
+          annotations:
+            summary: An analysis has been queued for over 30 minutes
+            runbook: SKATTJAKT_RUNBOOK.md#analyses-are-queued-and-not-running
+
+        - alert: SkattjaktQueueDepth
+          expr: skattjakt_jobs_queued{kind="analysis"} > 20
+          for: 15m
+          labels: { severity: warning }
+          annotations:
+            summary: More than twenty analyses waiting; the autoscaler may be capped
+
+        - alert: SkattjaktDeadLetters
+          expr: increase(skattjakt_jobs_dead_lettered_total[1h]) > 0
+          labels: { severity: warning }
+          annotations:
+            summary: An analysis exhausted its attempts and is waiting for a human
+            runbook: SKATTJAKT_RUNBOOK.md#a-job-is-in-the-dead-letter-queue
+
+        - alert: SkattjaktNoWorkers
+          expr: absent(up{job="skattjakt-analysis-worker"} == 1)
+          for: 5m
+          labels: { severity: critical }
+          annotations:
+            summary: No analysis worker is running; nothing is draining the queue
+
+    - name: skattjakt.model
+      interval: 60s
+      rules:
+        - alert: SkattjaktModelRefusals
+          expr: |
+            sum(rate(skattjakt_model_refusals_total[15m]))
+              /
+            clamp_min(sum(rate(skattjakt_model_calls_total[15m])), 0.001) > 0.05
+          for: 15m
+          labels: { severity: warning }
+          annotations:
+            summary: Over 5% of model calls are ending in a refusal
+
+        # A fallback is never routine. When fallback is disabled — the default —
+        # any occurrence is a configuration problem; when it is enabled, a
+        # sustained rate means analyses are being produced by a model nobody
+        # chose, which is a reproducibility problem.
+        - alert: SkattjaktModelFallbacks
+          expr: increase(skattjakt_model_fallbacks_total[1h]) > 0
+          labels: { severity: warning }
+          annotations:
+            summary: A model call was served by a fallback rather than the configured model
+            runbook: SKATTJAKT_RUNBOOK.md#a-model-call-was-served-by-a-fallback
+
+        - alert: SkattjaktSchemaFailures
+          expr: increase(skattjakt_model_schema_failures_total[1h]) > 5
+          labels: { severity: warning }
+          annotations:
+            summary: Model responses are failing schema validation
+
+        - alert: SkattjaktBudgetsExceeded
+          expr: increase(skattjakt_analysis_budget_exceeded_total[6h]) > 3
+          labels: { severity: warning }
+          annotations:
+            summary: Several analyses stopped at their cost ceiling
+            runbook: SKATTJAKT_RUNBOOK.md#analyses-are-hitting-the-cost-ceiling
+
+        # Cost, watched as a rate rather than a total, so a runaway is visible
+        # in an hour rather than on an invoice. 100 SEK/hour = 1e10 micro-ore.
+        - alert: SkattjaktModelSpendRate
+          expr: sum(rate(skattjakt_model_cost_micro_ore_total[1h])) * 3600 > 1e10
+          for: 30m
+          labels: { severity: warning }
+          annotations:
+            summary: Model spend is running above 100 SEK per hour
+
+    - name: skattjakt.security
+      interval: 60s
+      rules:
+        - alert: SkattjaktPromptInjectionSpike
+          expr: increase(skattjakt_prompt_injection_suspected_total[1h]) > 10
+          labels: { severity: warning }
+          annotations:
+            summary: An unusual number of uploads contain instruction-like text
+            runbook: SKATTJAKT_RUNBOOK.md#uploads-contain-instruction-like-text
+
+        - alert: SkattjaktRateLimiting
+          expr: increase(skattjakt_rate_limited_total[15m]) > 50
+          labels: { severity: warning }
+          annotations:
+            summary: A client is being rate limited persistently
+
+    - name: skattjakt.business
+      interval: 5m
+      rules:
+        # The service is up, requests succeed, and it is producing nothing. No
+        # technical alert fires for this, which is precisely why it is here.
+        - alert: SkattjaktFindsNothing
+          expr: |
+            sum(increase(skattjakt_analyses_found_nothing_total[24h]))
+              /
+            clamp_min(sum(increase(skattjakt_analyses_finished_total{outcome="succeeded"}[24h])), 1) > 0.9
+          for: 1h
+          labels: { severity: warning }
+          annotations:
+            summary: Over 90% of analyses found nothing; extraction or the rule set may be broken
+            runbook: SKATTJAKT_RUNBOOK.md#analyses-succeed-but-find-nothing
+
+        - alert: SkattjaktExtractionYieldDropped
+          expr: |
+            sum(rate(skattjakt_extracted_facts_total[6h]))
+              /
+            clamp_min(sum(rate(skattjakt_documents_uploaded_total[6h])), 0.001) < 5
+          for: 2h
+          labels: { severity: warning }
+          annotations:
+            summary: Fewer than five facts per document; extraction may have regressed
+
+    - name: skattjakt.data
+      interval: 5m
+      rules:
+        # The most consequential alert in the file. A backup that stops running
+        # is discovered during a restore, which is the worst possible moment.
+        - alert: SkattjaktBackupMissing
+          expr: |
+            time() - max(kube_job_status_start_time{job_name=~"skattjakt-backup.*"}) > 172800
+          labels: { severity: critical }
+          annotations:
+            summary: No backup job has started in 48 hours
+            runbook: SKATTJAKT_RUNBOOK.md#backups-have-stopped
+
+        - alert: SkattjaktBackupFailed
+          expr: |
+            max(kube_job_status_failed{job_name=~"skattjakt-backup-.*"}) > 0
+          labels: { severity: critical }
+          annotations:
+            summary: The backup job failed
+            runbook: SKATTJAKT_RUNBOOK.md#backups-have-stopped
+
+        # A backup nobody has restored is not a verified backup (section 34).
+        - alert: SkattjaktRestoreTestFailed
+          expr: |
+            max(kube_job_status_failed{job_name=~"skattjakt-restore-test-.*"}) > 0
+          labels: { severity: critical }
+          annotations:
+            summary: The weekly restore test failed; the backups are unverified
+            runbook: SKATTJAKT_RUNBOOK.md#the-restore-test-failed
+
+        - alert: SkattjaktRestoreTestStale
+          expr: |
+            time() - max(kube_job_status_start_time{job_name=~"skattjakt-restore-test.*"}) > 1209600
+          labels: { severity: warning }
+          annotations:
+            summary: No restore test has run in two weeks
+
+        - alert: SkattjaktDiskFilling
+          expr: |
+            kubelet_volume_stats_available_bytes{namespace=~"skattjakt.*"}
+              /
+            kubelet_volume_stats_capacity_bytes{namespace=~"skattjakt.*"} < 0.15
+          for: 15m
+          labels: { severity: warning }
+          annotations:
+            summary: "{{ $labels.persistentvolumeclaim }} is over 85% full"

@@ -1,0 +1,218 @@
+# Backup, and the restore test that makes it a backup (section 34).
+#
+# "En backup som aldrig har restore-testats räknas inte som verifierad backup."
+# So there are two CronJobs here, and the second is the one that matters. The
+# first produces a dump; the second restores it into a throwaway database,
+# checks that the schema and the row counts came back, and fails loudly if they
+# did not. A backup pipeline with only the first job is a pipeline whose first
+# real test is the disaster.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: skattjakt-backup
+  namespace: skattjakt
+automountServiceAccountToken: false
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: skattjakt-backup
+  namespace: skattjakt
+  labels:
+    app.kubernetes.io/name: skattjakt-backup
+    app.kubernetes.io/part-of: skattjakt
+spec:
+  # 01:15 UTC daily. RPO is therefore 24 hours, which is stated rather than
+  # implied — see SKATTJAKT_RUNBOOK.md.
+  schedule: "15 1 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 7
+  startingDeadlineSeconds: 3600
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: skattjakt-backup
+        spec:
+          restartPolicy: Never
+          serviceAccountName: skattjakt-backup
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999
+            runAsGroup: 999
+            fsGroup: 999
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: dump
+              image: postgres:16-alpine
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: [ALL]
+              env:
+                - name: PGHOST
+                  value: skattjakt-postgres
+                - name: PGDATABASE
+                  value: skattjakt
+                - name: PGUSER
+                  valueFrom:
+                    secretKeyRef:
+                      name: skattjakt-postgres-secrets
+                      key: POSTGRES_USER
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: skattjakt-postgres-secrets
+                      key: POSTGRES_PASSWORD
+                - name: BACKUP_TARGET
+                  valueFrom:
+                    secretKeyRef:
+                      name: skattjakt-backup-secrets
+                      key: BACKUP_TARGET
+              command: [/bin/sh, -c]
+              args:
+                - |
+                  set -eu
+                  # -e so a failed dump fails the job. Without it the pipeline
+                  # writes a truncated file and reports success, which is the
+                  # single most common way backups turn out not to exist.
+                  stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+                  file="/tmp/skattjakt-${stamp}.dump"
+
+                  # Custom format: parallel-restorable and selectively
+                  # restorable, which matters when the disaster is one dropped
+                  # table rather than a lost cluster.
+                  pg_dump --format=custom --compress=9 --file="$file"
+
+                  # A dump that cannot be listed is a dump that will not
+                  # restore. Checked here, while there is still time to fail
+                  # the job, rather than during an incident.
+                  pg_restore --list "$file" > /dev/null
+
+                  size="$(wc -c < "$file")"
+                  if [ "$size" -lt 4096 ]; then
+                    echo "dump is implausibly small (${size} bytes); refusing to upload" >&2
+                    exit 1
+                  fi
+
+                  echo "{\"msg\":\"backup created\",\"bytes\":${size},\"file\":\"$(basename "$file")\"}"
+                  # Off-cluster. A backup on the cluster it backs up survives a
+                  # dropped table and not a lost cluster.
+                  /usr/local/bin/upload.sh "$file" "$BACKUP_TARGET"
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 256Mi
+                limits:
+                  memory: 1Gi
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+                - name: scripts
+                  mountPath: /usr/local/bin/upload.sh
+                  subPath: upload.sh
+                  readOnly: true
+          volumes:
+            - name: tmp
+              emptyDir:
+                sizeLimit: 20Gi
+            - name: scripts
+              configMap:
+                name: skattjakt-backup-scripts
+                defaultMode: 0555
+---
+# The job that turns "we take backups" into "our backups restore".
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: skattjakt-restore-test
+  namespace: skattjakt
+  labels:
+    app.kubernetes.io/name: skattjakt-backup
+    app.kubernetes.io/part-of: skattjakt
+spec:
+  # Weekly, Sunday 03:00 UTC — after a backup has certainly run, and far enough
+  # from it that the two do not contend for the database.
+  schedule: "0 3 * * 0"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 4
+  failedJobsHistoryLimit: 8
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: skattjakt-backup
+        spec:
+          restartPolicy: Never
+          serviceAccountName: skattjakt-backup
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999
+            runAsGroup: 999
+            fsGroup: 999
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: restore-test
+              image: postgres:16-alpine
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: [ALL]
+              env:
+                - name: PGHOST
+                  value: skattjakt-postgres
+                - name: PGUSER
+                  valueFrom:
+                    secretKeyRef:
+                      name: skattjakt-postgres-secrets
+                      key: POSTGRES_USER
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: skattjakt-postgres-secrets
+                      key: POSTGRES_PASSWORD
+                - name: BACKUP_TARGET
+                  valueFrom:
+                    secretKeyRef:
+                      name: skattjakt-backup-secrets
+                      key: BACKUP_TARGET
+              command: [/bin/sh, -c]
+              args:
+                - /usr/local/bin/restore-test.sh
+              resources:
+                requests:
+                  cpu: 250m
+                  memory: 512Mi
+                limits:
+                  memory: 2Gi
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+                - name: scripts
+                  mountPath: /usr/local/bin/restore-test.sh
+                  subPath: restore-test.sh
+                  readOnly: true
+                - name: scripts
+                  mountPath: /usr/local/bin/download.sh
+                  subPath: download.sh
+                  readOnly: true
+          volumes:
+            - name: tmp
+              emptyDir:
+                sizeLimit: 20Gi
+            - name: scripts
+              configMap:
+                name: skattjakt-backup-scripts
+                defaultMode: 0555

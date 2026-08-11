@@ -1,0 +1,227 @@
+# The explicit openings on top of the default deny (sections 8, 32).
+#
+# The shape they enforce, which is section 8's rule that the frontend never
+# speaks to a datastore:
+#
+#   ingress  ->  api                      (the only way in)
+#   api      ->  postgres, minio, worker-free
+#   worker   ->  postgres, minio, the model provider
+#   postgres ->  nothing outbound at all
+#   minio    ->  nothing outbound at all
+#
+# Nothing else can reach Postgres. Not the ingress controller, not a debug pod
+# in another namespace, not the frontend. That is a property of these files
+# rather than of anyone's discipline.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-ingress
+  namespace: skattjakt
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: skattjakt-api }
+  policyTypes: [Ingress]
+  ingress:
+    # Public traffic, only via the ingress controller.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8080
+    # Scrapes, only from the monitoring namespace. This is what makes an
+    # unauthenticated /metrics safe: it is not reachable from outside.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-egress
+  namespace: skattjakt
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: skattjakt-api }
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: skattjakt-postgres }
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: skattjakt-minio }
+      ports:
+        - protocol: TCP
+          port: 9000
+    # Deliberately no egress to the internet. The API does not call the model;
+    # the worker does. Closing this here means an SSRF in an upload handler has
+    # nowhere to go — the request cannot leave the namespace at all.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: worker-ingress
+  namespace: skattjakt
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: skattjakt-analysis-worker }
+  policyTypes: [Ingress]
+  ingress:
+    # Scrapes only. Nothing calls a worker; it pulls its work from the queue.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 9090
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: worker-egress
+  namespace: skattjakt
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: skattjakt-analysis-worker }
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: skattjakt-postgres }
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: skattjakt-minio }
+      ports:
+        - protocol: TCP
+          port: 9000
+    # The model provider. HTTPS to anywhere outside the cluster and outside the
+    # private ranges.
+    #
+    # `except` is doing real work here: without it, "0.0.0.0/0" includes the
+    # link-local metadata address and every private range, which turns any
+    # SSRF in the worker into a path to the cluster's internal services. The
+    # exclusions are the private ranges (RFC 1918), the link-local block that
+    # carries 169.254.169.254, and loopback.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+              - 127.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 443
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres-ingress
+  namespace: skattjakt
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: skattjakt-postgres }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: skattjakt-api }
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: skattjakt-analysis-worker }
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: skattjakt-backup }
+      ports:
+        - protocol: TCP
+          port: 5432
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 9187
+  # No egress rules at all: the database that holds the customers' economy has
+  # no reason to originate a connection to anything, and the shortest path from
+  # "SQL injection" to "data leaves the building" runs through an outbound
+  # connection from this pod.
+  egress: []
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: minio-ingress
+  namespace: skattjakt
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: skattjakt-minio }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: skattjakt-api }
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: skattjakt-analysis-worker }
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: skattjakt-backup }
+      ports:
+        - protocol: TCP
+          port: 9000
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 9000
+  egress: []
+---
+# The backup job needs both stores and the off-cluster target.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backup-egress
+  namespace: skattjakt
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: skattjakt-backup }
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: skattjakt-postgres }
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: skattjakt-minio }
+      ports:
+        - protocol: TCP
+          port: 9000
+    # The off-cluster backup target. A backup that lives only on the cluster it
+    # is backing up is not a backup (section 34).
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 169.254.0.0/16
+              - 127.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 443

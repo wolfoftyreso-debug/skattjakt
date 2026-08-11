@@ -1,0 +1,32 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: skattjakt-dev
+namePrefix: ""
+
+resources:
+  - ../../base
+
+# The same shape as production, smaller. Deliberately the same NetworkPolicies,
+# the same Pod Security level and the same probes: an environment that differs
+# in its isolation cannot be used to test whether production's isolation works.
+replicas:
+  - name: skattjakt-api
+    count: 1
+  - name: skattjakt-analysis-worker
+    count: 1
+
+images:
+  # Tags in dev, digests in staging and production. Dev is where a rebuilt tag
+  # is a feature; anywhere else it is an unreviewed deploy.
+  - name: skattjakt-api
+    newName: registry.internal/skattjakt/api
+    newTag: dev
+  - name: skattjakt-analysis-worker
+    newName: registry.internal/skattjakt/analysis-worker
+    newTag: dev
+
+patches:
+  - path: config.yaml
+  - path: ingress.yaml
+  - path: quota.yaml

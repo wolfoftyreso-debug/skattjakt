@@ -6,7 +6,7 @@
 # migrations, writes two companies' data, and then tries — as the application
 # role — to read across the boundary in every way the schema allows.
 #
-# Usage: scripts/test-tenant-isolation.sh
+# Usage: tests/security/tenant-isolation.sh
 # Requires: a local PostgreSQL installation (initdb, pg_ctl, psql).
 
 set -euo pipefail
@@ -26,7 +26,7 @@ WORKDIR="$(mktemp -d)"
 PGDATA="$WORKDIR/data"
 SOCKET="$WORKDIR/sock"
 DB=skattjakt_test
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 cleanup() {
     "$PGBIN/pg_ctl" -D "$PGDATA" -m immediate stop >/dev/null 2>&1 || true

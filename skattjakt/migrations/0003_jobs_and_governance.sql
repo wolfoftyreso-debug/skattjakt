@@ -122,7 +122,7 @@ ALTER TABLE model_runs
     ADD COLUMN cost_micro_ore   BIGINT  NOT NULL DEFAULT 0 CHECK (cost_micro_ore >= 0),
     ADD COLUMN correlation_id   UUID;
 
-CREATE INDEX model_runs_fallbacks ON model_runs (created_at) WHERE was_fallback;
+CREATE INDEX model_runs_fallbacks ON model_runs (finished_at) WHERE was_fallback;
 
 -- Per-analysis spend, so the budget check is a single row read rather than an
 -- aggregate over model_runs on every call.

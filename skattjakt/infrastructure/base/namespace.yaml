@@ -1,0 +1,112 @@
+# The namespace, its guardrails and its default-deny posture.
+#
+# The namespace name is set by each overlay (skattjakt-dev, -staging, -prod).
+# Everything below is identical in all three: the difference between
+# environments is capacity and configuration, never the shape of the isolation.
+# An environment whose NetworkPolicies differ from production is an environment
+# that cannot be used to test whether production's NetworkPolicies are right.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: skattjakt
+  labels:
+    app.kubernetes.io/part-of: skattjakt
+    # Pod Security Admission, enforced rather than audited. `restricted` is
+    # what makes runAsNonRoot, dropped capabilities and a read-only root
+    # filesystem the rule rather than a per-manifest habit that one Deployment
+    # eventually forgets.
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+# Section 40. Without a quota, one runaway Deployment starves every other
+# workload on the cluster, and the first anyone hears of it is a page.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: skattjakt-quota
+  namespace: skattjakt
+spec:
+  hard:
+    requests.cpu: "8"
+    requests.memory: 16Gi
+    limits.cpu: "16"
+    limits.memory: 32Gi
+    requests.storage: 200Gi
+    persistentvolumeclaims: "8"
+    count/deployments.apps: "10"
+    count/statefulsets.apps: "4"
+    count/jobs.batch: "20"
+    # A LoadBalancer per service is how a self-hosted cluster runs out of
+    # addresses. Ingress is the one entry point.
+    services.loadbalancers: "1"
+---
+# Defaults for anything that forgets to state its own, and ceilings for
+# anything that states an absurd one.
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: skattjakt-limits
+  namespace: skattjakt
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: 500m
+        memory: 512Mi
+      defaultRequest:
+        cpu: 100m
+        memory: 128Mi
+      max:
+        cpu: "4"
+        memory: 8Gi
+      min:
+        cpu: 10m
+        memory: 32Mi
+    - type: PersistentVolumeClaim
+      max:
+        storage: 100Gi
+      min:
+        storage: 1Gi
+---
+# Section 32: default-deny, both directions.
+#
+# Ingress-deny alone is the common half-measure. It stops an attacker reaching a
+# pod and does nothing about a compromised pod reaching out — which is the half
+# that matters for data exfiltration and for SSRF, both of which are on the
+# threat model. Everything either direction is opened explicitly below.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: skattjakt
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+# DNS, for every pod. Without this the default-deny above breaks name
+# resolution, and every other policy below is untestable because nothing can
+# resolve anything.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: skattjakt
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

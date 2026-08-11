@@ -1,0 +1,146 @@
+# The analysis worker.
+#
+# Scaled on queue depth rather than on CPU. A worker waiting on model latency
+# uses almost no CPU, so a CPU-based autoscaler would sit at one replica while
+# a hundred analyses queued behind it — the metric would look healthy and the
+# customers would be waiting.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: skattjakt-analysis-worker
+  namespace: skattjakt
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: skattjakt-analysis-worker
+  namespace: skattjakt
+  labels:
+    app.kubernetes.io/name: skattjakt-analysis-worker
+    app.kubernetes.io/component: worker
+    app.kubernetes.io/part-of: skattjakt
+spec:
+  replicas: 2
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: skattjakt-analysis-worker
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: skattjakt-analysis-worker
+        app.kubernetes.io/component: worker
+        app.kubernetes.io/part-of: skattjakt
+    spec:
+      serviceAccountName: skattjakt-analysis-worker
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: worker
+          image: skattjakt-analysis-worker  # digest pinned by each overlay
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            privileged: false
+            capabilities:
+              drop: [ALL]
+          env:
+            # The lease is recorded under the pod name, so a stuck job names
+            # the pod holding it.
+            - name: HOSTNAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          envFrom:
+            - configMapRef:
+                name: skattjakt-config
+            - secretRef:
+                name: skattjakt-secrets
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              memory: 2Gi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 1Gi
+      # Long enough for an analysis in flight to finish rather than be retried.
+      # An analysis leases for twenty minutes; ten is the compromise between
+      # not losing work and not blocking a deploy for a third of an hour. Work
+      # that does not finish inside it is not lost — the lease expires and
+      # another worker claims it.
+      terminationGracePeriodSeconds: 600
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: skattjakt-analysis-worker
+  namespace: skattjakt
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: skattjakt-analysis-worker
+---
+# Queue depth, via the Prometheus adapter. `skattjakt_jobs_queued` is published
+# by the worker's maintenance loop.
+#
+# This requires prometheus-adapter to be installed and configured to expose the
+# series as an external metric. Where it is not, the HPA reports
+# `FailedGetExternalMetric` and holds at minReplicas — degraded, not broken,
+# which is the right failure mode for an autoscaler.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: skattjakt-analysis-worker
+  namespace: skattjakt
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: skattjakt-analysis-worker
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+    - type: External
+      external:
+        metric:
+          name: skattjakt_jobs_queued
+          selector:
+            matchLabels:
+              kind: analysis
+        target:
+          # One waiting analysis per worker. Above that, add workers.
+          type: AverageValue
+          averageValue: "1"
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+    scaleDown:
+      # Fifteen minutes, because scaling down mid-analysis costs an attempt and
+      # a customer's wait. The lease outlives the pod, so nothing is lost — but
+      # nothing being lost is not the same as nothing being wasted.
+      stabilizationWindowSeconds: 900
