@@ -108,7 +108,7 @@ if any `Secret` is rendered from the repository.
 | Variable | Default | Notes |
 |---|---|---|
 | `SKATTJAKT_ANALYSIS_BUDGET_SEK` | 25 | Per-analysis ceiling |
-| `SKATTJAKT_MODEL_FALLBACK` | `0` | Off. A silent substitution changes the analysis |
+| `SKATTJAKT_MODEL_FALLBACK` | `1` | On. A fallback is always recorded and alerted on; the choice is refuse-or-accept-visibly |
 | `SKATTJAKT_MODEL_TIMEOUT_SECS` | 600 | |
 | `SKATTJAKT_DB_MAX_CONNECTIONS` | 10 | |
 | `RUST_LOG` | `skattjakt=info,sqlx=warn` | `sqlx` at `warn` so it does not log statements |

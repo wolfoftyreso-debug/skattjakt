@@ -100,9 +100,13 @@ pub struct GatewayOutcome {
 pub struct GatewayConfig {
     pub prices: PriceList,
     pub default_budget: Budget,
-    /// Whether a provider may serve a call with a different model. Off by
-    /// default: a silent substitution changes the analysis, and section 8 says
-    /// the product must not be built around a model identity it did not choose.
+    /// Whether a provider may serve a call with a different model.
+    ///
+    /// Set from `skattjakt_model::anthropic::fallback_enabled`, so this and the
+    /// flag the client sends to the provider cannot disagree. Whatever the
+    /// setting, a fallback is always *recorded* with both model names and
+    /// alerted on — the choice here is between refusing it and accepting it
+    /// visibly, never between seeing it and not.
     pub allow_fallback: bool,
 }
 
@@ -119,9 +123,9 @@ impl GatewayConfig {
             .and_then(|v| v.parse::<i64>().ok())
             .filter(|v| *v > 0)
             .unwrap_or(Budget::DEFAULT_LIMIT_SEK);
-        let allow_fallback = std::env::var("SKATTJAKT_MODEL_FALLBACK")
-            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-            .unwrap_or(false);
+        // The same function the provider reads, so the two cannot disagree
+        // about whether a fallback response is expected or refused.
+        let allow_fallback = skattjakt_model::anthropic::fallback_enabled();
         Ok(Self {
             prices,
             default_budget: Budget::from_sek(limit_sek),
@@ -499,6 +503,18 @@ mod tests {
 
     fn span() -> SpanContext {
         TraceContext::root().start_span("test")
+    }
+
+    #[test]
+    fn the_client_and_the_gateway_agree_about_fallback() {
+        // They previously did not, and the disagreement was invisible: the
+        // client asked for server-side fallback while the gateway refused the
+        // response, so the one case the setting exists for failed the call.
+        let config = GatewayConfig::from_env().unwrap();
+        assert_eq!(
+            config.allow_fallback,
+            skattjakt_model::anthropic::fallback_enabled()
+        );
     }
 
     #[tokio::test]

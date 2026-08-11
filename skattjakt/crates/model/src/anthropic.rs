@@ -84,11 +84,29 @@ impl AnthropicConfig {
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(3),
-            enable_fallback: std::env::var("SKATTJAKT_MODEL_FALLBACK")
-                .map(|v| v != "0" && !v.eq_ignore_ascii_case("false"))
-                .unwrap_or(true),
+            enable_fallback: fallback_enabled(),
         })
     }
+}
+
+/// Whether the deployment permits a request to be served by a model other than
+/// the one asked for.
+///
+/// Read here and by `skattjakt-gateway`, from this one function, because the
+/// two must agree. They previously did not: with the variable unset, the client
+/// asked the provider for server-side fallback while the gateway refused any
+/// response that came back from a different model — so the one case the setting
+/// exists for failed the call outright.
+///
+/// Default on. Financial documents occasionally trip a provider's safety
+/// classifiers on entirely benign content, and a refused analysis is a worse
+/// outcome for the customer than one served by a sibling model. The trade is
+/// made safe by the gateway recording every fallback with both model names and
+/// alerting on any occurrence — visible rather than forbidden.
+pub fn fallback_enabled() -> bool {
+    std::env::var("SKATTJAKT_MODEL_FALLBACK")
+        .map(|v| v != "0" && !v.eq_ignore_ascii_case("false"))
+        .unwrap_or(true)
 }
 
 #[derive(Debug)]

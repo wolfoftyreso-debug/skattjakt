@@ -265,7 +265,7 @@ once rather than in most places:
 - every call is priced and the budget is checked **before** the spend, because
   checking afterwards means the money is already gone;
 - a call served by a different model than the one requested is recorded as a
-  fallback with both names, rather than silently substituted;
+  fallback with both names and alerted on, rather than silently substituted;
 - a refusal, a truncation and a schema violation are distinguishable in the
   metrics, because they mean different operational things;
 - document content is wrapped as data and the fence is verified at the boundary;
