@@ -34,28 +34,42 @@ job is to help you ask better questions of the person qualified to answer them.
 
 | Area | State |
 |---|---|
-| Domain model, rule engine, extraction, pipeline | Implemented, 233 tests |
+| Domain model, rule engine, extraction, pipeline | Implemented, 370 tests |
 | Golden dataset, 10 cases | Precision 1.000, recall 1.000, zero false positives |
-| Tenant isolation (Postgres RLS) | Implemented, 10 checks verified against a real cluster |
-| HTTP API + OpenAPI contract | Implemented, 13 endpoints, running |
-| Persistence, document storage, async analyses, report | Implemented, verified end to end against a real cluster |
-| Beta interface | Implemented, driven through a real browser |
+| Tenant isolation (Postgres RLS) | 10 checks verified against a real cluster |
+| Security suite (§50) | 39 checks verified against a live API |
+| Failure injection (§77) | 24 checks verified against a real cluster |
+| End-to-end product test | 20 steps, API and worker as separate processes |
+| Durable job system, analysis state machine | Implemented and verified |
+| Model gateway: cost, budgets, fallback, injection defence | Implemented and verified |
+| Observability: `/metrics`, correlation ids, trace context | Implemented and verified |
+| Container images | Built and inspected — 13 MB distroless, 9 checks |
+| SBOM | Generated — 305 components, all checksummed |
+| Kubernetes manifests | 33 resources × 3 environments, schema-valid, properties asserted |
+| Kubernetes cluster | **Never applied** — no cluster is reachable from this environment |
+| OTLP trace export | **Not implemented** — context is propagated, spans reach the logs |
+| S3 blob store | **Not implemented** — filesystem behind the trait; MinIO manifests exist |
 | OCR for scanned PDFs | **Not implemented** — unreadable pages are reported, not read |
-| Docker image | **Authored, unbuilt** — the registry is unreachable from the build environment |
-| Kubernetes | **Authored, never applied** — no cluster was available |
 
-Known gaps are listed in full at the end of
-[`docs/SKATTJAKT_ENGINEERING_DECISIONS.md`](docs/SKATTJAKT_ENGINEERING_DECISIONS.md).
+A full account of what has and has not been verified is in
+[`docs/SKATTJAKT_DEPLOYMENT.md`](docs/SKATTJAKT_DEPLOYMENT.md) §9.
 
 ---
 
 ## Quick start
 
 ```sh
-cargo test --workspace                                  # 233 tests
+cargo test --workspace                                  # 370 tests
 cargo test -p skattjakt-pipeline --test golden -- --nocapture   # the golden dataset
-./scripts/test-tenant-isolation.sh                      # RLS against a real cluster
-./scripts/test-end-to-end.sh                            # the whole product, section 40
+
+export PGBIN=$(ls -d /usr/lib/postgresql/*/bin | tail -1)
+./tests/security/tenant-isolation.sh                    # RLS against a real cluster
+./tests/security/security-suite.sh                      # the attacks of section 50
+./tests/failure/job-failures.sh                         # what a dead pod does
+./tests/e2e/end-to-end.sh                               # the whole product
+
+./tests/infrastructure/validate-manifests.sh            # 3 environments
+./tests/infrastructure/validate-docs.sh                 # the docs still describe it
 
 SKATTJAKT_API_TOKEN=dev cargo run -p skattjakt-api
 ```
@@ -149,27 +163,45 @@ Design properties, each enforced by a test rather than a convention:
 ## Layout
 
 ```
-api/openapi.yaml         the contract — source of truth, served by the build
-crates/core              money, facts, evidence, opportunities, confidence
-crates/rules             versioned rule data, three-valued conditions, calculations
-crates/extract           text extraction, Swedish statement parser
+apps/api/                the HTTP surface, its OpenAPI contract, its beta interface
+workers/analysis-worker/ the process that claims jobs and runs analyses
+crates/core              money, facts, evidence, confidence, classification,
+                         the analysis state machine, the evidence graph
+crates/telemetry         metrics, correlation ids, W3C trace context, redacted logs
+crates/rules             versioned rule evaluation, three-valued conditions
 crates/model             provider abstraction, prompts, output validation
-crates/pipeline          orchestration and the report
-crates/store             tenant-scoped Postgres access, immutable blob storage
-crates/api               HTTP surface and the beta interface (crates/api/ui)
-migrations/              schema with row-level security
-testdata/golden/         ten synthetic companies with expected findings
-scripts/                 tenant isolation and end-to-end product tests
-deploy/                  Dockerfile, compose, Kubernetes manifests
-docs/                    architecture, product spec, engineering decisions
+crates/gateway           pricing, budgets, fallback policy, injection defence
+crates/extract           text extraction, Swedish statement parser
+crates/pipeline          orchestration of the two passes, the report
+crates/store             tenant-scoped Postgres, blobs, retention, rate limits
+crates/jobs              durable queue: leases, retries, backoff, dead letters
+rules/se-ruleset.json    the versioned rule set
+migrations/              forward-only schema with row-level security
+infrastructure/          kustomize base, three overlays, GitOps, alerts
+tests/golden/            ten synthetic companies with expected findings
+tests/security/          tenant isolation and the attack suite
+tests/failure/           job-system failure injection
+tests/infrastructure/    manifest and documentation validation
+tests/supply-chain/      SBOM generation, image inspection
+tests/e2e/               the 20-step product test
+docs/                    the eight documents below
+Dockerfile               one file, two images
 ```
 
 ## Documentation
 
-- [Architecture](docs/SKATTJAKT_ARCHITECTURE.md)
-- [Product specification](docs/SKATTJAKT_PRODUCT_SPEC.md)
-- [Engineering decisions](docs/SKATTJAKT_ENGINEERING_DECISIONS.md) — including
-  the known gaps
+| Document | Answers |
+|---|---|
+| [Architecture](docs/SKATTJAKT_ARCHITECTURE.md) | What the shape is, and why the worker is a separate process |
+| [Security](docs/SKATTJAKT_SECURITY.md) | What protects the system, where it is enforced, how it is tested |
+| [Threat model](docs/SKATTJAKT_THREAT_MODEL.md) | 15 threats with likelihood, impact, mitigation, detection, response |
+| [Data model](docs/SKATTJAKT_DATA_MODEL.md) | 22 tables, and why each is shaped that way |
+| [Analysis pipeline](docs/SKATTJAKT_ANALYSIS_PIPELINE.md) | What happens between an upload and a report |
+| [Rule engine](docs/SKATTJAKT_RULE_ENGINE.md) | How a rule works, and how one is changed |
+| [Deployment](docs/SKATTJAKT_DEPLOYMENT.md) | How it is built and promoted — and §9, what is not verified |
+| [Runbook](docs/SKATTJAKT_RUNBOOK.md) | It is 03:00 and something is wrong |
+| [Engineering decisions](docs/SKATTJAKT_ENGINEERING_DECISIONS.md) | Why X was decided that way |
+| [Product specification](docs/SKATTJAKT_PRODUCT_SPEC.md) | What the product promises a customer |
 
 ## Disclaimer
 

@@ -8,7 +8,7 @@ not here.
 
 ## D1. The rule set is unreviewed, and the engine enforces that
 
-**Context.** The Swedish tax rules in `crates/rules/data/se-ruleset.json` were
+**Context.** The Swedish tax rules in `rules/se-ruleset.json` were
 drafted by a language model. They carry statutory citations, and they are
 plausible. They have not been checked by anyone qualified.
 

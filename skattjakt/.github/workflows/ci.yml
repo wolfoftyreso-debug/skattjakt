@@ -151,7 +151,7 @@ jobs:
           "
 
   manifests:
-    name: Kubernetes manifests
+    name: Manifests and documentation
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -173,6 +173,13 @@ jobs:
       # on are asserted rather than assumed.
       - name: Validate every environment
         run: ./tests/infrastructure/validate-manifests.sh
+
+      # Documentation rots silently. These are the couplings where a stale
+      # document actively misleads someone at 03:00: an alert with no runbook
+      # section, an alert querying a metric nobody emits, a document pointing
+      # at a file that moved.
+      - name: Validate the documentation
+        run: ./tests/infrastructure/validate-docs.sh
 
   supply-chain:
     name: Supply chain
