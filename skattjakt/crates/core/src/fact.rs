@@ -78,6 +78,23 @@ pub enum FactKind {
 }
 
 impl FactKind {
+    /// A stable string key.
+    ///
+    /// Derived from the serde representation rather than a second hand-written
+    /// table, so a renamed variant cannot silently split one node in the
+    /// evidence graph into two.
+    pub fn as_key(&self) -> String {
+        match self {
+            FactKind::Other(label) => format!("other:{label}"),
+            other => serde_json::to_value(other)
+                .ok()
+                .and_then(|v| v.as_str().map(str::to_string))
+                // Unreachable for the unit variants; a debug rendering is a
+                // better failure than a panic in an audit path.
+                .unwrap_or_else(|| format!("{other:?}")),
+        }
+    }
+
     /// Whether the quantity belongs to the balance sheet, which determines
     /// whether a period-end or a period-flow reading is correct.
     pub fn is_balance_sheet(&self) -> bool {

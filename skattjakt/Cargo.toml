@@ -2,12 +2,16 @@
 resolver = "2"
 members = [
     "crates/core",
+    "crates/telemetry",
     "crates/rules",
     "crates/model",
+    "crates/gateway",
     "crates/extract",
     "crates/pipeline",
     "crates/store",
-    "crates/api",
+    "crates/jobs",
+    "apps/api",
+    "workers/analysis-worker",
 ]
 
 [workspace.package]
@@ -19,11 +23,15 @@ repository = "https://github.com/wolfoftyreso-debug/skattjakt"
 
 [workspace.dependencies]
 skattjakt-core = { path = "crates/core" }
+skattjakt-telemetry = { path = "crates/telemetry" }
 skattjakt-rules = { path = "crates/rules" }
 skattjakt-model = { path = "crates/model" }
+skattjakt-gateway = { path = "crates/gateway" }
 skattjakt-extract = { path = "crates/extract" }
 skattjakt-pipeline = { path = "crates/pipeline" }
 skattjakt-store = { path = "crates/store" }
+skattjakt-jobs = { path = "crates/jobs" }
+skattjakt-api = { path = "apps/api" }
 
 anyhow = "1"
 async-trait = "0.1"

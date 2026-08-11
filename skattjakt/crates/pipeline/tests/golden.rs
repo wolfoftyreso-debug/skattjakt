@@ -64,7 +64,7 @@ struct Expected {
 
 fn golden_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../testdata/golden")
+        .join("../../tests/golden")
         .canonicalize()
         .expect("the golden dataset directory must exist")
 }

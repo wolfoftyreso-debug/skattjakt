@@ -53,6 +53,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "anyhow"
+version = "1.0.104"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
+
+[[package]]
 name = "async-trait"
 version = "0.1.92"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1810,6 +1816,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a219298ac11a56ea9a6d2120044824d6f01aeb034955e7af7bc16858527deea"
 
 [[package]]
+name = "skattjakt-analysis-worker"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "serde",
+ "serde_json",
+ "skattjakt-core",
+ "skattjakt-gateway",
+ "skattjakt-jobs",
+ "skattjakt-model",
+ "skattjakt-pipeline",
+ "skattjakt-rules",
+ "skattjakt-store",
+ "skattjakt-telemetry",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "skattjakt-api"
 version = "0.1.0"
 dependencies = [
@@ -1851,6 +1879,38 @@ dependencies = [
  "serde",
  "skattjakt-core",
  "thiserror",
+]
+
+[[package]]
+name = "skattjakt-gateway"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "serde",
+ "serde_json",
+ "skattjakt-core",
+ "skattjakt-model",
+ "skattjakt-telemetry",
+ "thiserror",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "skattjakt-jobs"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "serde",
+ "serde_json",
+ "skattjakt-core",
+ "skattjakt-telemetry",
+ "sqlx",
+ "thiserror",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]
@@ -1908,6 +1968,20 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "skattjakt-telemetry"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "skattjakt-core",
+ "thiserror",
+ "tracing",
+ "tracing-subscriber",
  "uuid",
 ]
 

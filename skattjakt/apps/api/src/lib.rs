@@ -33,7 +33,7 @@ use skattjakt_store::{BlobStore, FilesystemBlobStore, Store};
 
 /// The contract, compiled in so a deployed build can always serve the exact
 /// contract it was built against.
-const OPENAPI: &str = include_str!("../../../api/openapi.yaml");
+const OPENAPI: &str = include_str!("../openapi.yaml");
 
 /// The beta interface. One file, no build step, no dependencies — section 25
 /// asks for a minimal beta, and a bundler would be the largest thing in it.

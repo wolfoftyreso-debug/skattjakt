@@ -12,17 +12,23 @@
 #![warn(missing_debug_implementations)]
 
 pub mod analysis;
+pub mod classification;
 pub mod company;
 pub mod confidence;
 pub mod document;
 pub mod error;
 pub mod evidence;
+pub mod evidence_graph;
 pub mod fact;
 pub mod ids;
 pub mod money;
 pub mod opportunity;
+pub mod state_machine;
 
+pub use classification::{Classification, Classified, REDACTED};
 pub use company::{CompanyProfile, FiscalYear, OrgNumber};
+pub use evidence_graph::{EdgeKind, EvidenceGraph, NodeId};
+pub use state_machine::{AnalysisEvent, AnalysisState, InvalidTransition, StateTransition};
 pub use confidence::{
     Confidence, ConfidenceBand, ConfidenceFactors, ConfidenceThresholds, ConfidenceWeights,
     UnitInterval,

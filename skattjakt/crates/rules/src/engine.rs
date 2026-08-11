@@ -46,7 +46,7 @@ pub struct RuleEngine {
 /// The rule set shipped with the binary. Held in the repository, versioned with
 /// the code, and loaded without touching the filesystem so a deployment cannot
 /// end up running rules nobody committed.
-const EMBEDDED_RULES: &str = include_str!("../data/se-ruleset.json");
+const EMBEDDED_RULES: &str = include_str!("../../../rules/se-ruleset.json");
 
 impl RuleEngine {
     pub fn load_embedded() -> Result<Self, RuleSetError> {

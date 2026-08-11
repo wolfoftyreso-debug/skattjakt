@@ -1,0 +1,31 @@
+[package]
+name = "skattjakt-analysis-worker"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Worker that claims queued analyses and runs the pipeline."
+
+[[bin]]
+name = "skattjakt-analysis-worker"
+path = "src/main.rs"
+
+[dependencies]
+skattjakt-core.workspace = true
+skattjakt-gateway.workspace = true
+skattjakt-jobs.workspace = true
+skattjakt-model.workspace = true
+skattjakt-pipeline.workspace = true
+skattjakt-rules.workspace = true
+skattjakt-store.workspace = true
+skattjakt-telemetry.workspace = true
+
+anyhow.workspace = true
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+uuid.workspace = true
