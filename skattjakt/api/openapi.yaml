@@ -1,0 +1,551 @@
+openapi: 3.1.0
+
+info:
+  title: Skattjakt API
+  version: 0.1.0
+  summary: Tax Recovery & Opportunity Engine for Swedish limited companies
+  description: |
+    Skattjakt analyses a Swedish limited company's year-end material and returns
+    a structured list of things worth investigating — potential tax positions,
+    deductions, accruals, misclassifications and control points.
+
+    This contract is the source of truth for the HTTP surface (section 17).
+
+    **What Skattjakt is not.** It is not a bookkeeping system, a filing system,
+    an audit, or legal advice. It issues no binding tax opinion and guarantees
+    no saving. Every response carries a `disclaimer` field saying so, and
+    clients must display it.
+
+    **How to read a finding.** An `opportunity` is a question worth asking, not
+    a conclusion. Its `status` says how far the system got:
+
+      - `identified`   — strong evidence and a reviewed rule.
+      - `investigate`  — a potential opportunity, information missing.
+      - `verify`       — the rule or calculation needs checking. Everything
+                         produced by the rule set shipped today lands here or
+                         lower, because that rule set has not been reviewed by
+                         a qualified adviser.
+      - `warning`      — something to look at, whether or not it saves money.
+      - `rejected`     — did not survive falsification; retained for audit.
+
+    **Money is always an interval.** `impact` has `low` and `high` bounds in
+    öre. There is no single-figure field, by design.
+
+  contact:
+    name: Skattjakt
+  license:
+    name: UNLICENSED
+
+servers:
+  - url: https://api.skattjakt.example/
+    description: Production
+  - url: http://localhost:8080/
+    description: Local
+
+tags:
+  - name: Health
+    description: Liveness and readiness, for orchestration.
+  - name: Analysis
+    description: Running an analysis and reading its result.
+  - name: Rules
+    description: Inspecting the rule set an analysis ran under.
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Liveness
+      description: Returns 200 whenever the process is running. Never touches a dependency.
+      security: []
+      responses:
+        "200":
+          description: The process is alive.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+
+  /ready:
+    get:
+      tags: [Health]
+      summary: Readiness
+      description: |
+        Returns 200 only when the service can actually serve an analysis: the
+        rule set loaded and validated, and a model provider is configured.
+        Returns 503 with the specific reasons otherwise, so a failing readiness
+        check is diagnosable without shell access.
+      security: []
+      responses:
+        "200":
+          description: Ready to serve.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Readiness" }
+        "503":
+          description: Not ready. `reasons` lists what is missing.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Readiness" }
+
+  /v1/openapi.yaml:
+    get:
+      tags: [Health]
+      summary: This contract
+      security: []
+      responses:
+        "200":
+          description: The OpenAPI document the running build was compiled with.
+          content:
+            application/yaml:
+              schema: { type: string }
+
+  /v1/rules:
+    get:
+      tags: [Rules]
+      summary: List the rule set
+      description: |
+        Every rule with its citation and review state. Exposed deliberately:
+        a user is entitled to know which rules were applied to their accounts
+        and which of those have been professionally reviewed.
+      responses:
+        "200":
+          description: The rule set in force.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RuleSetSummary" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/analyses:
+    post:
+      tags: [Analysis]
+      summary: Analyse a company's material
+      description: |
+        Runs the full pipeline — extraction, discovery, rule evaluation,
+        falsification, confidence and priority — and returns the result.
+
+        Documents are supplied inline as UTF-8 text or base64. Every document
+        must declare its `mime_type`; the bytes are checked against it, and a
+        mismatch is rejected rather than guessed at.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AnalysisRequest" }
+      responses:
+        "200":
+          description: The analysis completed. An empty finding list is a valid result.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AnalysisResult" }
+        "400":
+          description: |
+            The request could not be analysed — an invalid organisationsnummer,
+            an unreadable document, or a fiscal year the rule set does not
+            cover. The rule set gap is reported explicitly rather than
+            returning an empty analysis (section 31).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "413":
+          description: The request exceeded the size limit.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        A bearer token scoped to one company. The token determines the tenant;
+        a company identifier in the request body never widens that scope.
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid credentials.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Problem" }
+
+  schemas:
+    Health:
+      type: object
+      required: [status, version]
+      properties:
+        status: { type: string, enum: [ok] }
+        version: { type: string, example: "0.1.0" }
+
+    Readiness:
+      type: object
+      required: [ready, rule_set_version, reasons]
+      properties:
+        ready: { type: boolean }
+        rule_set_version:
+          type: [string, "null"]
+          description: Version of the rule set in force, or null if it failed to load.
+          example: se-2025.1
+        model_provider:
+          type: [string, "null"]
+          description: Configured provider, or null if none is configured.
+        reasons:
+          type: array
+          description: Why the service is not ready. Empty when it is.
+          items: { type: string }
+
+    Problem:
+      type: object
+      required: [title, detail]
+      properties:
+        title: { type: string, example: "invalid organisationsnummer" }
+        detail: { type: string }
+
+    RuleSetSummary:
+      type: object
+      required: [version, jurisdiction, rules]
+      properties:
+        version: { type: string, example: se-2025.1 }
+        jurisdiction: { type: string, example: SE }
+        unreviewed_count:
+          type: integer
+          description: |
+            How many rules have not been professionally reviewed. While this is
+            above zero, no finding can be presented as established.
+        rules:
+          type: array
+          items: { $ref: "#/components/schemas/RuleSummary" }
+
+    RuleSummary:
+      type: object
+      required: [rule_id, version, title, category, source, reviewed]
+      properties:
+        rule_id: { type: string, example: se.tax.periodiseringsfond.outnyttjat_utrymme }
+        version: { type: string, example: "2025.1" }
+        title: { type: string, example: Periodiseringsfond }
+        category: { $ref: "#/components/schemas/Category" }
+        tax_year_from: { type: integer }
+        tax_year_to: { type: [integer, "null"] }
+        source:
+          type: string
+          description: Primary legal source.
+          example: "Inkomstskattelagen (1999:1229) 30 kap. 5–6 §§"
+        reviewed:
+          type: boolean
+          description: Whether a qualified adviser has verified this rule.
+        review_note:
+          type: [string, "null"]
+          description: What remains unverified, when it has not been reviewed.
+
+    AnalysisRequest:
+      type: object
+      required: [company, documents]
+      properties:
+        company: { $ref: "#/components/schemas/CompanyProfile" }
+        documents:
+          type: array
+          minItems: 1
+          items: { $ref: "#/components/schemas/DocumentUpload" }
+        accounts_state:
+          $ref: "#/components/schemas/AccountsState"
+
+    CompanyProfile:
+      type: object
+      required: [name, org_number, fiscal_year]
+      description: |
+        Only `name`, `org_number` and `fiscal_year` are required. Every other
+        field is a question onboarding may not have asked yet; omitting one
+        means "unknown", which is treated differently from "no" — a rule that
+        depends on it becomes undecidable rather than silently not applying.
+      properties:
+        name: { type: string, example: Konsultbyrån Nord AB }
+        org_number:
+          type: string
+          description: Swedish organisationsnummer. Any separator; the checksum is validated.
+          example: "556016-0680"
+        fiscal_year:
+          type: object
+          required: [start, end]
+          properties:
+            start: { type: string, format: date }
+            end: { type: string, format: date }
+        industry: { type: [string, "null"] }
+        sni_code: { type: [string, "null"] }
+        employee_count: { type: [integer, "null"] }
+        owner_count: { type: [integer, "null"] }
+        in_group: { type: [boolean, "null"] }
+        operations_outside_sweden: { type: [boolean, "null"] }
+        does_development_work: { type: [boolean, "null"] }
+        owns_premises: { type: [boolean, "null"] }
+        has_vehicles: { type: [boolean, "null"] }
+        owners_active_in_company: { type: [boolean, "null"] }
+
+    DocumentUpload:
+      type: object
+      required: [filename, mime_type]
+      description: Exactly one of `text` or `content_base64` must be supplied.
+      properties:
+        filename: { type: string, example: bokslut-2025.pdf }
+        mime_type:
+          type: string
+          enum: [application/pdf, text/csv, text/plain, application/sie]
+        text:
+          type: [string, "null"]
+          description: UTF-8 content, for text formats.
+        content_base64:
+          type: [string, "null"]
+          description: Base64-encoded bytes, for binary formats such as PDF.
+
+    AccountsState:
+      type: string
+      enum: [preliminary, final, unknown]
+      default: preliminary
+      description: |
+        Whether the accounts are settled. A preliminary year-end is the primary
+        case Skattjakt is built for, and it changes what may be concluded.
+
+    Category:
+      type: string
+      enum: [tax, costs, vat, personnel, investments, research_and_development, risk]
+
+    Status:
+      type: string
+      enum: [identified, investigate, verify, warning, rejected]
+
+    Money:
+      type: integer
+      format: int64
+      description: An exact amount in öre (1/100 SEK). Never a float.
+      example: 5150000
+
+    MoneyRange:
+      type: object
+      required: [low, high]
+      description: An estimate interval. Skattjakt never states a single figure.
+      properties:
+        low: { $ref: "#/components/schemas/Money" }
+        high: { $ref: "#/components/schemas/Money" }
+
+    AnalysisResult:
+      type: object
+      required: [analysis_id, summary, opportunities, warnings, missing_information,
+                 covered_areas, recommended_actions, limitations, disclaimer, generated_at]
+      properties:
+        analysis_id: { type: string, format: uuid }
+        company_id: { type: string, format: uuid }
+        summary: { $ref: "#/components/schemas/AnalysisSummary" }
+        opportunities:
+          type: array
+          items: { $ref: "#/components/schemas/Opportunity" }
+        warnings:
+          type: array
+          items: { $ref: "#/components/schemas/Warning" }
+        missing_information:
+          type: array
+          description: What would make the analysis better, and what each gap would unlock.
+          items: { $ref: "#/components/schemas/MissingInformation" }
+        covered_areas:
+          type: array
+          description: |
+            Which areas were checked and how many rules ran in each. Present
+            even when nothing was found — "we looked here" is part of the
+            result (section 32).
+          items: { $ref: "#/components/schemas/CoveredArea" }
+        recommended_actions:
+          type: array
+          maxItems: 3
+          description: The questions to take to the accountant, highest priority first.
+          items: { type: string }
+        limitations:
+          type: array
+          description: What the system cannot determine.
+          items:
+            type: object
+            required: [statement]
+            properties:
+              statement: { type: string }
+        rejected:
+          type: array
+          description: Findings falsification removed. Retained for the audit trail.
+          items: { $ref: "#/components/schemas/Opportunity" }
+        disclaimer:
+          type: string
+          description: Must be displayed to the user.
+        generated_at: { type: string, format: date-time }
+
+    AnalysisSummary:
+      type: object
+      required: [identified_opportunities, high_priority_count, needs_investigation_count,
+                 missing_information_count, warnings_count, estimated_total, found_nothing]
+      properties:
+        identified_opportunities: { type: integer }
+        high_priority_count: { type: integer }
+        needs_investigation_count: { type: integer }
+        missing_information_count: { type: integer }
+        warnings_count: { type: integer }
+        estimated_total:
+          allOf: [{ $ref: "#/components/schemas/MoneyRange" }]
+          description: |
+            Sum of the findings the system stands behind. Rejected and
+            non-actionable findings contribute nothing.
+        found_nothing:
+          type: boolean
+          description: |
+            True when nothing cleared the bar. Render the designed empty state,
+            not a blank page: it means the evidence was not strong enough to
+            flag anything, not that there is nothing to find.
+
+    Opportunity:
+      type: object
+      required: [id, category, status, title, rationale, impact, evidence,
+                 recommended_action, confidence, risk, effort, urgency, priority]
+      properties:
+        id: { type: string, format: uuid }
+        category: { $ref: "#/components/schemas/Category" }
+        status: { $ref: "#/components/schemas/Status" }
+        title: { type: string, example: Periodiseringsfond }
+        rationale:
+          type: string
+          description: Why this was flagged, in plain language.
+        impact: { $ref: "#/components/schemas/MoneyRange" }
+        evidence:
+          type: array
+          description: |
+            The chain from stored document to stated conclusion. An opportunity
+            presented as actionable always contains at least one
+            `document_value` and one `rule`.
+          items: { $ref: "#/components/schemas/EvidenceItem" }
+        missing_information:
+          type: array
+          items: { type: string }
+        recommended_action:
+          type: string
+          description: The next step, usually a question for the accountant.
+        confidence: { $ref: "#/components/schemas/Confidence" }
+        risk: { type: string, enum: [low, medium, high] }
+        effort: { type: string, enum: [low, medium, high] }
+        urgency: { type: string, enum: [routine, before_year_end, before_filing] }
+        priority: { $ref: "#/components/schemas/Priority" }
+        rule_ids:
+          type: array
+          items: { type: string }
+        rejection_reason: { type: [string, "null"] }
+        created_at: { type: string, format: date-time }
+
+    Confidence:
+      type: object
+      required: [score, band]
+      description: |
+        Computed from six measured factors, never taken from the model. Below
+        the `not_actionable` threshold a finding is never presented as
+        something to act on.
+      properties:
+        score: { type: integer, minimum: 0, maximum: 100 }
+        band: { type: string, enum: [strong, good, investigate, not_actionable] }
+
+    Priority:
+      type: object
+      required: [score, band]
+      properties:
+        score: { type: number, minimum: 0, maximum: 1 }
+        band: { type: string, enum: [high, should_investigate, needs_more_evidence] }
+
+    EvidenceItem:
+      oneOf:
+        - $ref: "#/components/schemas/EvidenceDocumentValue"
+        - $ref: "#/components/schemas/EvidenceRule"
+        - $ref: "#/components/schemas/EvidenceCalculation"
+        - $ref: "#/components/schemas/EvidenceModelJudgement"
+        - $ref: "#/components/schemas/EvidenceAssumption"
+      discriminator:
+        propertyName: type
+
+    EvidenceDocumentValue:
+      type: object
+      required: [type, document_version_id, kind, value]
+      properties:
+        type: { type: string, const: document_value }
+        document_id: { type: string, format: uuid }
+        document_version_id: { type: string, format: uuid }
+        fact_id: { type: string, format: uuid }
+        kind: { type: string, example: taxable_result }
+        value: { $ref: "#/components/schemas/Money" }
+        page: { type: [integer, "null"] }
+        excerpt:
+          type: [string, "null"]
+          description: The line the value was read from, verbatim.
+
+    EvidenceRule:
+      type: object
+      required: [type, rule_id, rule_version, title, source]
+      properties:
+        type: { type: string, const: rule }
+        rule_id: { type: string }
+        rule_version: { type: string }
+        title: { type: string }
+        source: { type: string }
+
+    EvidenceCalculation:
+      type: object
+      required: [type, method, inputs, result_low, result_high]
+      properties:
+        type: { type: string, const: calculation }
+        calculation_id: { type: string, format: uuid }
+        method: { type: string }
+        inputs:
+          type: array
+          items:
+            type: object
+            required: [name, value]
+            properties:
+              name: { type: string }
+              value: { $ref: "#/components/schemas/Money" }
+        result_low: { $ref: "#/components/schemas/Money" }
+        result_high: { $ref: "#/components/schemas/Money" }
+
+    EvidenceModelJudgement:
+      type: object
+      required: [type, task, rationale_summary]
+      description: |
+        A model pass that contributed a judgement. Never the sole support for
+        an actionable finding. Reasoning traces are not stored or returned.
+      properties:
+        type: { type: string, const: model_judgement }
+        model_run_id: { type: string, format: uuid }
+        task: { type: string, example: opportunity_discovery }
+        rationale_summary: { type: string }
+
+    EvidenceAssumption:
+      type: object
+      required: [type, statement]
+      properties:
+        type: { type: string, const: assumption }
+        statement: { type: string }
+
+    Warning:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string, example: unreadable_page }
+        message: { type: string }
+        detail: { type: [string, "null"] }
+
+    MissingInformation:
+      type: object
+      required: [code, description, unlocks]
+      properties:
+        code: { type: string, example: profile_question }
+        description: { type: string }
+        unlocks:
+          type: string
+          description: What answering this would make possible.
+
+    CoveredArea:
+      type: object
+      required: [category, rules_evaluated, findings]
+      properties:
+        category: { type: string, example: Skatt }
+        rules_evaluated: { type: integer }
+        findings: { type: integer }
+
+security:
+  - bearerAuth: []
