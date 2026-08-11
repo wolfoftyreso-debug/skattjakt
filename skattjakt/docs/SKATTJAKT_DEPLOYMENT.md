@@ -247,7 +247,7 @@ section is that accounting.
 
 | | Status |
 |---|---|
-| Applying the manifests to a live cluster | Not done |
+| Applying the manifests to a live cluster | **Attempted and blocked.** A `kind` cluster was started here; `kubeadm init` fails because `runc` cannot start a nested container inside the node (`can't get final child's PID from pipe: EOF`). A sandbox limitation, not a manifest problem, with no configuration workaround |
 | NetworkPolicy **enforcement** | Written and asserted structurally; never enforced by a running CNI |
 | HPA behaviour under load | Not exercised |
 | The Prometheus adapter serving `skattjakt_jobs_queued` as an external metric | Assumed; the worker HPA degrades to `minReplicas` without it |
