@@ -9,6 +9,7 @@ description = "Persistence for Skattjakt: tenant-scoped Postgres access and immu
 
 [dependencies]
 async-trait.workspace = true
+base64 = "0.22"
 chrono.workspace = true
 serde.workspace = true
 serde_json.workspace = true

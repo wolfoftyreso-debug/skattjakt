@@ -639,3 +639,125 @@ async fn background_analyses_are_refused_without_a_queue() {
     let response = router(state()).oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED);
 }
+
+// ---------------------------------------------------------------------------
+// The error contract (sections 19, 20)
+// ---------------------------------------------------------------------------
+
+/// Every error code the API can emit.
+///
+/// This list is the contract. Three clients branch on these, and one of them
+/// ships only when Apple approves it — so a code changing underneath them is a
+/// break they cannot hot-fix. Collected from the source rather than written by
+/// hand, so a new `Problem` cannot be added without appearing here.
+#[test]
+fn the_error_codes_are_the_set_the_contract_promises() {
+    let sources = [
+        include_str!("lib.rs"),
+        include_str!("routes.rs"),
+        include_str!("auth_routes.rs"),
+    ];
+
+    let mut found: Vec<String> = Vec::new();
+    for source in sources {
+        let mut rest = source;
+        while let Some(at) = rest.find("title: \"") {
+            rest = &rest[at + 8..];
+            if let Some(end) = rest.find('"') {
+                let title = &rest[..end];
+                let problem = Problem {
+                    status: StatusCode::BAD_REQUEST,
+                    title: title.to_string(),
+                    detail: String::new(),
+                };
+                found.push(problem.code());
+            }
+        }
+    }
+    found.sort();
+    found.dedup();
+
+    let expected = [
+        "account_temporarily_locked",
+        "admin_credential_required",
+        "already_exists",
+        "analysis_failed",
+        "analysis_is_not_finished",
+        "authentication_unavailable",
+        "insufficient_permission",
+        "internal_error",
+        "invalid_credentials",
+        "invalid_cursor",
+        "no_company",
+        "not_a_session",
+        "not_found",
+        "password_rejected",
+        "persistence_is_not_configured",
+        "provider_required",
+        "rate_limited",
+        "storage_failure",
+        "the_job_queue_is_not_configured",
+        "the_session_cannot_be_refreshed",
+        "unauthorized",
+        "unknown_push_provider",
+        "unknown_role",
+        "wrong_credential",
+    ];
+
+    assert_eq!(
+        found, expected,
+        "\nthe set of error codes changed. Every client branches on these, and \
+         one of them ships when Apple says so. If this is deliberate, update \
+         the list, the OpenAPI contract and SKATTJAKT_CLIENT_ARCHITECTURE.md \
+         together."
+    );
+}
+
+#[test]
+fn a_code_is_derived_deterministically_and_is_url_safe() {
+    let problem = Problem {
+        status: StatusCode::FORBIDDEN,
+        title: "insufficient permission".to_string(),
+        detail: "irrelevant".to_string(),
+    };
+    assert_eq!(problem.code(), "insufficient_permission");
+    assert!(problem
+        .code()
+        .chars()
+        .all(|c| c.is_ascii_lowercase() || c == '_'));
+}
+
+#[tokio::test]
+async fn an_error_response_carries_the_problem_media_type_and_a_code() {
+    let app = router(state());
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/v1/documents")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        response
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok()),
+        Some("application/problem+json")
+    );
+
+    let body: serde_json::Value = serde_json::from_slice(
+        &axum::body::to_bytes(response.into_body(), 64 * 1024)
+            .await
+            .unwrap(),
+    )
+    .unwrap();
+
+    assert_eq!(body["code"], "unauthorized");
+    assert_eq!(body["status"], 401);
+    // The body must stay uninformative about whether a token exists.
+    assert!(!body["detail"].as_str().unwrap().contains("expired"));
+}

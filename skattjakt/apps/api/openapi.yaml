@@ -488,6 +488,20 @@ paths:
 
   /v1/documents:
     get:
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+          description: Clamped rather than refused if it is out of range.
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string }
+          description: |
+            Opaque. Pass `next_cursor` from the previous page; do not construct
+            one. Keyset rather than offset, so a document uploaded while you are
+            paging does not shift or duplicate later rows.
       tags: [Documents]
       summary: List stored document versions
       responses:
@@ -703,6 +717,50 @@ components:
           schema: { $ref: "#/components/schemas/Problem" }
 
   schemas:
+    Problem:
+      type: object
+      description: |
+        Every error body, as `application/problem+json`.
+
+        **Branch on `code`.** It is a stable machine-readable string and the set
+        of possible values is pinned by a test, so it cannot change without a
+        deliberate contract update. `detail` is prose written for a person and
+        will be translated; branching on it breaks the day it is.
+      required: [code, title, detail, status]
+      properties:
+        code:
+          type: string
+          enum:
+            - account_temporarily_locked
+            - admin_credential_required
+            - already_exists
+            - analysis_failed
+            - analysis_is_not_finished
+            - authentication_unavailable
+            - insufficient_permission
+            - internal_error
+            - invalid_credentials
+            - invalid_cursor
+            - no_company
+            - not_a_session
+            - not_found
+            - password_rejected
+            - persistence_is_not_configured
+            - provider_required
+            - rate_limited
+            - storage_failure
+            - the_job_queue_is_not_configured
+            - the_session_cannot_be_refreshed
+            - unauthorized
+            - unknown_push_provider
+            - unknown_role
+            - wrong_credential
+        title: { type: string }
+        detail:
+          type: string
+          description: Safe to show a customer.
+        status: { type: integer }
+
     Session:
       type: object
       description: |

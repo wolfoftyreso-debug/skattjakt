@@ -15,6 +15,7 @@ pub mod blob;
 pub mod governance;
 pub mod identity;
 pub mod notifications;
+pub mod page;
 pub mod uploads;
 
 use std::collections::BTreeMap;
@@ -379,6 +380,59 @@ impl Tenant<'_> {
                 _ => AccountsState::Unknown,
             },
             uploaded_at: row.get("uploaded_at"),
+        })
+    }
+
+    /// One page of document versions, newest first.
+    ///
+    /// Bounded, with a keyset cursor. An unbounded list is fast for the first
+    /// customer and an outage for the one with four years of monthly accounts.
+    pub async fn list_document_versions_page(
+        &mut self,
+        cursor: Option<crate::page::Cursor>,
+        limit: i64,
+    ) -> StoreResult<crate::page::Page<(DocumentVersionId, String, String)>> {
+        let limit = crate::page::clamp_limit(Some(limit));
+
+        // One row more than asked for, then dropped. Answers "is there another
+        // page" exactly, without the COUNT(*) over the whole table that the
+        // obvious implementation reaches for.
+        let rows = sqlx::query(
+            "SELECT v.id, d.original_filename, v.sha256, v.uploaded_at
+             FROM document_versions v JOIN documents d ON d.id = v.document_id
+             WHERE $1::timestamptz IS NULL
+                OR (v.uploaded_at, v.id) < ($1::timestamptz, $2::uuid)
+             ORDER BY v.uploaded_at DESC, v.id DESC
+             LIMIT $3",
+        )
+        .bind(cursor.as_ref().map(|c| c.at))
+        .bind(cursor.as_ref().map(|c| c.id))
+        .bind(limit + 1)
+        .fetch_all(&mut *self.tx)
+        .await?;
+
+        let has_more = rows.len() as i64 > limit;
+        let mut next = None;
+        let items: Vec<_> = rows
+            .into_iter()
+            .take(limit as usize)
+            .map(|r| {
+                let id: uuid::Uuid = r.get("id");
+                next = Some(crate::page::Cursor {
+                    at: r.get("uploaded_at"),
+                    id,
+                });
+                (
+                    DocumentVersionId::from_uuid(id),
+                    r.get("original_filename"),
+                    r.get("sha256"),
+                )
+            })
+            .collect();
+
+        Ok(crate::page::Page {
+            items,
+            next: if has_more { next } else { None },
         })
     }
 

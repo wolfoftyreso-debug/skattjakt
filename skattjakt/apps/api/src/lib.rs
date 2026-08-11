@@ -290,13 +290,51 @@ impl Problem {
     }
 }
 
+impl Problem {
+    /// A stable, machine-readable code for this failure.
+    ///
+    /// Derived from the title so no construction site has to remember one, and
+    /// pinned by a test that lists every code the API can emit — so changing a
+    /// title is a deliberate contract change that breaks the build, rather than
+    /// a silent break of every client branching on it.
+    ///
+    /// Clients branch on this. `detail` is prose written for a person and will
+    /// be translated; branching on it would break the day it is.
+    pub fn code(&self) -> String {
+        self.title
+            .chars()
+            .map(|c| {
+                if c.is_ascii_alphanumeric() {
+                    c.to_ascii_lowercase()
+                } else {
+                    '_'
+                }
+            })
+            .collect::<String>()
+            .split('_')
+            .filter(|part| !part.is_empty())
+            .collect::<Vec<_>>()
+            .join("_")
+    }
+}
+
 impl IntoResponse for Problem {
     fn into_response(self) -> Response {
-        (
-            self.status,
-            Json(json!({"title": self.title, "detail": self.detail})),
-        )
-            .into_response()
+        // RFC 9457 (formerly 7807) shape and media type. `code` is the addition:
+        // the RFC's `type` is a URI, and a URI is a poor thing for a Swift or
+        // Kotlin switch statement to match on.
+        let body = Json(json!({
+            "code": self.code(),
+            "title": self.title,
+            "detail": self.detail,
+            "status": self.status.as_u16(),
+        }));
+        let mut response = (self.status, body).into_response();
+        response.headers_mut().insert(
+            axum::http::header::CONTENT_TYPE,
+            axum::http::HeaderValue::from_static("application/problem+json"),
+        );
+        response
     }
 }
 

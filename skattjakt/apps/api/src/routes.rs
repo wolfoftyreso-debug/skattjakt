@@ -301,9 +301,18 @@ fn prepare_document_bytes(
     Ok((bytes, mime, extracted))
 }
 
+#[derive(Debug, Deserialize)]
+pub struct PageQuery {
+    #[serde(default)]
+    pub limit: Option<i64>,
+    #[serde(default)]
+    pub cursor: Option<String>,
+}
+
 pub async fn list_documents(
     State(state): State<AppState>,
     headers: HeaderMap,
+    Query(page): Query<PageQuery>,
 ) -> Result<Response, Problem> {
     let company_id = company_scope(
         &authorise(&state, &headers).await?,
@@ -311,12 +320,31 @@ pub async fn list_documents(
     )?;
     let store = store(&state)?;
 
+    // A malformed cursor is refused rather than silently treated as "start from
+    // the beginning" — which would send a client that mangled its cursor back
+    // to page one for ever without ever telling it.
+    let cursor = match page.cursor.as_deref() {
+        Some(raw) => Some(
+            skattjakt_store::page::Cursor::decode(raw).ok_or_else(|| Problem {
+                status: StatusCode::UNPROCESSABLE_ENTITY,
+                title: "invalid cursor".into(),
+                detail: "the cursor is not one this API issued".into(),
+            })?,
+        ),
+        None => None,
+    };
+
     let mut tenant = store.tenant(company_id).await.map_err(internal)?;
-    let versions = tenant.list_document_versions().await.map_err(internal)?;
+    let result = tenant
+        .list_document_versions_page(cursor, page.limit.unwrap_or(50))
+        .await
+        .map_err(internal)?;
     tenant.commit().await.map_err(internal)?;
 
+    let next_cursor = result.next.as_ref().map(|c| c.encode());
     Ok(Json(json!({
-        "documents": versions
+        "next_cursor": next_cursor,
+        "documents": result.items
             .into_iter()
             .map(|(id, filename, sha256)| json!({
                 "document_version_id": id, "filename": filename, "sha256": sha256
