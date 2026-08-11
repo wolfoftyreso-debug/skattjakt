@@ -125,8 +125,16 @@ struct Verdict {
 }
 
 impl AnalysisPipeline {
-    pub fn new(engine: Arc<RuleEngine>, provider: Arc<dyn ModelProvider>, config: PipelineConfig) -> Self {
-        Self { engine, provider, config }
+    pub fn new(
+        engine: Arc<RuleEngine>,
+        provider: Arc<dyn ModelProvider>,
+        config: PipelineConfig,
+    ) -> Self {
+        Self {
+            engine,
+            provider,
+            config,
+        }
     }
 
     pub fn rule_set_version(&self) -> &str {
@@ -150,7 +158,11 @@ impl AnalysisPipeline {
         let mut warnings = Vec::new();
 
         observer.stage(AnalysisStage::ReadingDocuments);
-        let facts = build_fact_set(input.company.id, input.company.fiscal_year, &input.documents);
+        let facts = build_fact_set(
+            input.company.id,
+            input.company.fiscal_year,
+            &input.documents,
+        );
 
         for document in &input.documents {
             for page in &document.extracted.unreadable_pages {
@@ -250,19 +262,15 @@ impl AnalysisPipeline {
             }
 
             let corroborated = candidates.iter().any(|c| {
-                c.suggested_rule_ids.iter().any(|id| id == &evaluation.rule_id)
+                c.suggested_rule_ids
+                    .iter()
+                    .any(|id| id == &evaluation.rule_id)
                     || c.category == evaluation.category
             });
 
             let verdict = verdicts.get(&evaluation.title);
-            let opportunity = self.build_rule_opportunity(
-                input,
-                &facts,
-                rule,
-                evaluation,
-                corroborated,
-                verdict,
-            );
+            let opportunity =
+                self.build_rule_opportunity(input, &facts, rule, evaluation, corroborated, verdict);
 
             if opportunity.status == OpportunityStatus::Rejected {
                 rejected.push(opportunity);
@@ -343,7 +351,14 @@ impl AnalysisPipeline {
         match self.provider.run(&request).await {
             Ok(response) => {
                 let candidates = parse_candidates(&response.output);
-                let record = self.record(input, &request, ModelRunStatus::Succeeded, started, Some(&response), None);
+                let record = self.record(
+                    input,
+                    &request,
+                    ModelRunStatus::Succeeded,
+                    started,
+                    Some(&response),
+                    None,
+                );
                 (candidates, Some(record))
             }
             Err(error) => {
@@ -388,7 +403,10 @@ impl AnalysisPipeline {
             ));
         }
         for candidate in candidates {
-            listing.push_str(&format!("- {}: {}\n", candidate.title, candidate.observation));
+            listing.push_str(&format!(
+                "- {}: {}\n",
+                candidate.title, candidate.observation
+            ));
         }
 
         if listing.is_empty() {
@@ -412,7 +430,14 @@ impl AnalysisPipeline {
         match self.provider.run(&request).await {
             Ok(response) => {
                 let verdicts = parse_verdicts(&response.output);
-                let record = self.record(input, &request, ModelRunStatus::Succeeded, started, Some(&response), None);
+                let record = self.record(
+                    input,
+                    &request,
+                    ModelRunStatus::Succeeded,
+                    started,
+                    Some(&response),
+                    None,
+                );
                 (verdicts, Some(record))
             }
             Err(error) => {
@@ -496,7 +521,9 @@ impl AnalysisPipeline {
 
         if let ReviewState::AwaitingProfessionalReview { note } = &rule.review {
             if !note.is_empty() {
-                evidence.push(EvidenceItem::Assumption { statement: note.clone() });
+                evidence.push(EvidenceItem::Assumption {
+                    statement: note.clone(),
+                });
             }
         }
 
@@ -534,9 +561,8 @@ impl AnalysisPipeline {
             gaps as f64 / (needed.len().max(1) + evaluation.unanswered_questions.len()) as f64,
         );
 
-        let contradiction_score = UnitInterval::saturating(
-            verdict.map(|v| v.objection_strength).unwrap_or(0.0),
-        );
+        let contradiction_score =
+            UnitInterval::saturating(verdict.map(|v| v.objection_strength).unwrap_or(0.0));
 
         let model_agreement = if corroborated {
             UnitInterval::ONE
@@ -577,7 +603,7 @@ impl AnalysisPipeline {
         let mut missing = evaluation
             .missing_facts
             .iter()
-            .map(|f| humanise_fact(f))
+            .map(humanise_fact)
             .collect::<Vec<_>>();
         missing.extend(rule.missing_information_hints.iter().cloned());
         missing.extend(
@@ -608,9 +634,7 @@ impl AnalysisPipeline {
             urgency: rule.urgency,
             priority,
             rule_ids: vec![rule.rule_id.clone()],
-            rejection_reason: verdict
-                .filter(|v| !v.survives)
-                .map(|v| v.reasoning.clone()),
+            rejection_reason: verdict.filter(|v| !v.survives).map(|v| v.reasoning.clone()),
             created_at: Utc::now(),
         }
     }
@@ -712,7 +736,11 @@ impl AnalysisPipeline {
                 rule_match: UnitInterval::ZERO,
                 calculation_certainty: UnitInterval::ZERO,
                 missing_information: UnitInterval::saturating(
-                    if candidate.missing_information.is_empty() { 0.4 } else { 0.8 },
+                    if candidate.missing_information.is_empty() {
+                        0.4
+                    } else {
+                        0.8
+                    },
                 ),
                 contradiction_score: UnitInterval::saturating(
                     verdict.map(|v| v.objection_strength).unwrap_or(0.0),
@@ -757,14 +785,28 @@ impl AnalysisPipeline {
         opportunities: &[Opportunity],
     ) -> Vec<CoveredArea> {
         use OpportunityCategory::*;
-        [Tax, Costs, Vat, Personnel, Investments, ResearchAndDevelopment, Risk]
-            .into_iter()
-            .map(|category| CoveredArea {
-                category: category.label_sv().to_string(),
-                rules_evaluated: evaluations.iter().filter(|e| e.category == category).count(),
-                findings: opportunities.iter().filter(|o| o.category == category).count(),
-            })
-            .collect()
+        [
+            Tax,
+            Costs,
+            Vat,
+            Personnel,
+            Investments,
+            ResearchAndDevelopment,
+            Risk,
+        ]
+        .into_iter()
+        .map(|category| CoveredArea {
+            category: category.label_sv().to_string(),
+            rules_evaluated: evaluations
+                .iter()
+                .filter(|e| e.category == category)
+                .count(),
+            findings: opportunities
+                .iter()
+                .filter(|o| o.category == category)
+                .count(),
+        })
+        .collect()
     }
 
     fn missing_information(
@@ -808,7 +850,11 @@ impl AnalysisPipeline {
         out
     }
 
-    fn limitations(&self, input: &AnalysisInput, evaluations: &[RuleEvaluation]) -> Vec<Limitation> {
+    fn limitations(
+        &self,
+        input: &AnalysisInput,
+        evaluations: &[RuleEvaluation],
+    ) -> Vec<Limitation> {
         let mut limitations = vec![
             Limitation {
                 statement: format!(
@@ -852,7 +898,9 @@ impl AnalysisPipeline {
                 "- {}: {} (sida {}, \"{}\")\n",
                 fact.kind.key(),
                 fact.value,
-                fact.source_page.map(|p| p.to_string()).unwrap_or_else(|| "?".into()),
+                fact.source_page
+                    .map(|p| p.to_string())
+                    .unwrap_or_else(|| "?".into()),
                 fact.source_text.as_deref().unwrap_or("")
             ));
         }
@@ -923,7 +971,11 @@ impl AnalysisPipeline {
             model: self.provider.model_id().to_string(),
             task: request.task,
             prompt_version: request.prompt_version.clone(),
-            document_version_ids: input.documents.iter().map(|d| d.document_version_id).collect(),
+            document_version_ids: input
+                .documents
+                .iter()
+                .map(|d| d.document_version_id)
+                .collect(),
             status,
             usage: response.map(|r| r.usage).unwrap_or_default(),
             latency_ms: response.map(|r| r.latency_ms).unwrap_or(0),
@@ -972,7 +1024,10 @@ fn parse_verdicts(output: &serde_json::Value) -> BTreeMap<String, Verdict> {
         map.insert(
             title.to_string(),
             Verdict {
-                survives: item.get("survives").and_then(|v| v.as_bool()).unwrap_or(false),
+                survives: item
+                    .get("survives")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false),
                 reasoning: item
                     .get("reasoning")
                     .and_then(|v| v.as_str())

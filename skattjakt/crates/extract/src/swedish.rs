@@ -34,23 +34,38 @@ const LABELS: &[(&str, FactKind)] = &[
     ("handelsvaror", FactKind::ExternalCosts),
     ("personalkostnader", FactKind::PersonnelCosts),
     ("av- och nedskrivningar", FactKind::Depreciation),
-    ("avskrivningar av materiella anläggningstillgångar", FactKind::Depreciation),
+    (
+        "avskrivningar av materiella anläggningstillgångar",
+        FactKind::Depreciation,
+    ),
     ("rörelseresultat", FactKind::OperatingProfit),
     ("ränteintäkter", FactKind::InterestIncome),
     ("räntekostnader", FactKind::InterestExpense),
-    ("resultat efter finansiella poster", FactKind::ProfitBeforeTax),
+    (
+        "resultat efter finansiella poster",
+        FactKind::ProfitBeforeTax,
+    ),
     ("resultat före skatt", FactKind::ProfitBeforeTax),
     ("skatt på årets resultat", FactKind::TaxExpense),
     ("årets resultat", FactKind::NetProfit),
     // Balance sheet
-    ("immateriella anläggningstillgångar", FactKind::IntangibleAssets),
+    (
+        "immateriella anläggningstillgångar",
+        FactKind::IntangibleAssets,
+    ),
     ("materiella anläggningstillgångar", FactKind::FixedAssets),
-    ("inventarier, verktyg och installationer", FactKind::FixedAssets),
+    (
+        "inventarier, verktyg och installationer",
+        FactKind::FixedAssets,
+    ),
     ("varulager", FactKind::Inventory),
     ("kundfordringar", FactKind::Receivables),
     ("kassa och bank", FactKind::Cash),
     ("summa tillgångar", FactKind::TotalAssets),
-    ("summa eget kapital och skulder", FactKind::TotalEquityAndLiabilities),
+    (
+        "summa eget kapital och skulder",
+        FactKind::TotalEquityAndLiabilities,
+    ),
     ("summa eget kapital", FactKind::Equity),
     ("obeskattade reserver", FactKind::UntaxedReserves),
     ("avsättningar", FactKind::Provisions),
@@ -58,8 +73,14 @@ const LABELS: &[(&str, FactKind)] = &[
     ("kortfristiga skulder", FactKind::CurrentLiabilities),
     // Tax positions
     ("periodiseringsfond", FactKind::TaxAllocationReserve),
-    ("årets avsättning till periodiseringsfond", FactKind::TaxAllocationReserveThisYear),
-    ("ackumulerade överavskrivningar", FactKind::ExcessDepreciation),
+    (
+        "årets avsättning till periodiseringsfond",
+        FactKind::TaxAllocationReserveThisYear,
+    ),
+    (
+        "ackumulerade överavskrivningar",
+        FactKind::ExcessDepreciation,
+    ),
     ("outnyttjat underskott", FactKind::CarriedForwardLoss),
     ("skattemässigt resultat", FactKind::TaxableResult),
     ("ej avdragsgilla kostnader", FactKind::NonDeductibleCosts),
@@ -131,11 +152,9 @@ pub fn find_amounts(line: &str) -> Vec<i64> {
         let mut back = i;
         while back > 0 {
             let prev = chars[back - 1];
-            if prev == '-' || prev == '\u{2212}' {
-                negative = true;
-                start = back - 1;
-                break;
-            } else if prev == '(' {
+            // A hyphen, a Unicode minus, or an opening parenthesis all mark a
+            // negative in Swedish statements.
+            if matches!(prev, '-' | '\u{2212}' | '(') {
                 negative = true;
                 start = back - 1;
                 break;
@@ -240,9 +259,10 @@ pub fn extract_from_page(page: u32, text: &str, scale: Scale) -> Vec<ExtractedFa
         let (amounts, source) = match find_amounts(line) {
             found if !found.is_empty() => (found, line.to_string()),
             _ => match lines.get(index + 1) {
-                Some(next) if match_label(next).is_none() => {
-                    (find_amounts(next), format!("{} {}", line.trim(), next.trim()))
-                }
+                Some(next) if match_label(next).is_none() => (
+                    find_amounts(next),
+                    format!("{} {}", line.trim(), next.trim()),
+                ),
                 _ => (Vec::new(), String::new()),
             },
         };
@@ -273,7 +293,10 @@ mod tests {
     #[test]
     fn parses_space_grouped_thousands() {
         assert_eq!(find_amounts("Nettoomsättning 12 500 000"), vec![12_500_000]);
-        assert_eq!(find_amounts("Nettoomsättning 12\u{a0}500\u{a0}000"), vec![12_500_000]);
+        assert_eq!(
+            find_amounts("Nettoomsättning 12\u{a0}500\u{a0}000"),
+            vec![12_500_000]
+        );
     }
 
     #[test]
@@ -313,7 +336,11 @@ mod tests {
 
     #[test]
     fn takes_the_current_year_column() {
-        let facts = extract_from_page(2, "Nettoomsättning    12 500 000    11 200 000", Scale::Kronor);
+        let facts = extract_from_page(
+            2,
+            "Nettoomsättning    12 500 000    11 200 000",
+            Scale::Kronor,
+        );
         assert_eq!(facts.len(), 1);
         assert_eq!(facts[0].amount_sek, 12_500_000);
         assert_eq!(facts[0].kind, FactKind::Revenue);
@@ -322,7 +349,11 @@ mod tests {
 
     #[test]
     fn longest_label_wins_so_subtotals_are_not_confused() {
-        let facts = extract_from_page(1, "Resultat efter finansiella poster 850 000", Scale::Kronor);
+        let facts = extract_from_page(
+            1,
+            "Resultat efter finansiella poster 850 000",
+            Scale::Kronor,
+        );
         assert_eq!(facts[0].kind, FactKind::ProfitBeforeTax);
 
         let facts = extract_from_page(1, "Rörelseresultat 900 000", Scale::Kronor);

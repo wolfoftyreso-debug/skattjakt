@@ -163,6 +163,11 @@ pub struct AnalysisSummary {
 impl AnalysisResult {
     /// Derives the summary from the findings, so the headline numbers cannot
     /// disagree with the cards below them.
+    ///
+    /// The parameter list is long because every section of the report is built
+    /// by the pipeline and assembled here. Grouping them into a struct would
+    /// only move the same fields behind one more name.
+    #[allow(clippy::too_many_arguments)]
     pub fn summarise(
         analysis_id: AnalysisId,
         company_id: CompanyId,
@@ -173,8 +178,10 @@ impl AnalysisResult {
         limitations: Vec<Limitation>,
         rejected: Vec<Opportunity>,
     ) -> Self {
-        let presented: Vec<&Opportunity> =
-            opportunities.iter().filter(|o| o.status.is_presented()).collect();
+        let presented: Vec<&Opportunity> = opportunities
+            .iter()
+            .filter(|o| o.status.is_presented())
+            .collect();
 
         let high_priority_count = presented
             .iter()
@@ -258,7 +265,13 @@ mod tests {
         InvestigationEffort, OpportunityCategory, Priority, RiskLevel, Urgency,
     };
 
-    fn opp(band: PriorityBand, status: OpportunityStatus, score: u8, low: i64, high: i64) -> Opportunity {
+    fn opp(
+        band: PriorityBand,
+        status: OpportunityStatus,
+        score: u8,
+        low: i64,
+        high: i64,
+    ) -> Opportunity {
         let conf_band = if score >= 90 {
             ConfidenceBand::Strong
         } else if score >= 75 {
@@ -275,15 +288,24 @@ mod tests {
             status,
             title: format!("finding {low}"),
             rationale: "r".into(),
-            impact: MoneyRange::new(Money::from_sek(low).unwrap(), Money::from_sek(high).unwrap()),
+            impact: MoneyRange::new(
+                Money::from_sek(low).unwrap(),
+                Money::from_sek(high).unwrap(),
+            ),
             evidence: EvidenceChain::new(),
             missing_information: vec![],
             recommended_action: format!("action {low}"),
-            confidence: Confidence { score, band: conf_band },
+            confidence: Confidence {
+                score,
+                band: conf_band,
+            },
             risk: RiskLevel::Low,
             effort: InvestigationEffort::Low,
             urgency: Urgency::Routine,
-            priority: Priority { score: low as f64 / 1_000_000.0, band },
+            priority: Priority {
+                score: low as f64 / 1_000_000.0,
+                band,
+            },
             rule_ids: vec![],
             rejection_reason: None,
             created_at: Utc::now(),
@@ -306,10 +328,34 @@ mod tests {
     #[test]
     fn counts_split_by_priority_band() {
         let result = summarise(vec![
-            opp(PriorityBand::High, OpportunityStatus::Identified, 95, 10_000, 20_000),
-            opp(PriorityBand::High, OpportunityStatus::Identified, 92, 5_000, 6_000),
-            opp(PriorityBand::ShouldInvestigate, OpportunityStatus::Investigate, 80, 1_000, 2_000),
-            opp(PriorityBand::NeedsMoreEvidence, OpportunityStatus::Verify, 60, 500, 700),
+            opp(
+                PriorityBand::High,
+                OpportunityStatus::Identified,
+                95,
+                10_000,
+                20_000,
+            ),
+            opp(
+                PriorityBand::High,
+                OpportunityStatus::Identified,
+                92,
+                5_000,
+                6_000,
+            ),
+            opp(
+                PriorityBand::ShouldInvestigate,
+                OpportunityStatus::Investigate,
+                80,
+                1_000,
+                2_000,
+            ),
+            opp(
+                PriorityBand::NeedsMoreEvidence,
+                OpportunityStatus::Verify,
+                60,
+                500,
+                700,
+            ),
         ]);
         assert_eq!(result.summary.identified_opportunities, 4);
         assert_eq!(result.summary.high_priority_count, 2);
@@ -321,31 +367,82 @@ mod tests {
     #[test]
     fn rejected_findings_are_excluded_from_the_headline() {
         let result = summarise(vec![
-            opp(PriorityBand::High, OpportunityStatus::Identified, 95, 10_000, 10_000),
-            opp(PriorityBand::High, OpportunityStatus::Rejected, 95, 999_000, 999_000),
+            opp(
+                PriorityBand::High,
+                OpportunityStatus::Identified,
+                95,
+                10_000,
+                10_000,
+            ),
+            opp(
+                PriorityBand::High,
+                OpportunityStatus::Rejected,
+                95,
+                999_000,
+                999_000,
+            ),
         ]);
         assert_eq!(result.summary.identified_opportunities, 1);
-        assert_eq!(result.summary.estimated_total.high, Money::from_sek(10_000).unwrap());
+        assert_eq!(
+            result.summary.estimated_total.high,
+            Money::from_sek(10_000).unwrap()
+        );
     }
 
     #[test]
     fn unactionable_findings_add_no_money_to_the_total() {
         let result = summarise(vec![
-            opp(PriorityBand::High, OpportunityStatus::Identified, 95, 10_000, 20_000),
-            opp(PriorityBand::NeedsMoreEvidence, OpportunityStatus::Investigate, 30, 500_000, 900_000),
+            opp(
+                PriorityBand::High,
+                OpportunityStatus::Identified,
+                95,
+                10_000,
+                20_000,
+            ),
+            opp(
+                PriorityBand::NeedsMoreEvidence,
+                OpportunityStatus::Investigate,
+                30,
+                500_000,
+                900_000,
+            ),
         ]);
-        assert_eq!(result.summary.estimated_total.low, Money::from_sek(10_000).unwrap());
-        assert_eq!(result.summary.estimated_total.high, Money::from_sek(20_000).unwrap());
+        assert_eq!(
+            result.summary.estimated_total.low,
+            Money::from_sek(10_000).unwrap()
+        );
+        assert_eq!(
+            result.summary.estimated_total.high,
+            Money::from_sek(20_000).unwrap()
+        );
     }
 
     #[test]
     fn totals_are_summed_bound_wise_across_findings() {
         let result = summarise(vec![
-            opp(PriorityBand::High, OpportunityStatus::Identified, 95, 10_000, 20_000),
-            opp(PriorityBand::High, OpportunityStatus::Identified, 95, 5_000, 8_000),
+            opp(
+                PriorityBand::High,
+                OpportunityStatus::Identified,
+                95,
+                10_000,
+                20_000,
+            ),
+            opp(
+                PriorityBand::High,
+                OpportunityStatus::Identified,
+                95,
+                5_000,
+                8_000,
+            ),
         ]);
-        assert_eq!(result.summary.estimated_total.low, Money::from_sek(15_000).unwrap());
-        assert_eq!(result.summary.estimated_total.high, Money::from_sek(28_000).unwrap());
+        assert_eq!(
+            result.summary.estimated_total.low,
+            Money::from_sek(15_000).unwrap()
+        );
+        assert_eq!(
+            result.summary.estimated_total.high,
+            Money::from_sek(28_000).unwrap()
+        );
     }
 
     #[test]
@@ -360,10 +457,34 @@ mod tests {
     #[test]
     fn recommended_actions_take_the_top_three_by_priority() {
         let result = summarise(vec![
-            opp(PriorityBand::High, OpportunityStatus::Identified, 95, 100_000, 100_000),
-            opp(PriorityBand::High, OpportunityStatus::Identified, 95, 400_000, 400_000),
-            opp(PriorityBand::ShouldInvestigate, OpportunityStatus::Investigate, 80, 200_000, 200_000),
-            opp(PriorityBand::ShouldInvestigate, OpportunityStatus::Investigate, 80, 300_000, 300_000),
+            opp(
+                PriorityBand::High,
+                OpportunityStatus::Identified,
+                95,
+                100_000,
+                100_000,
+            ),
+            opp(
+                PriorityBand::High,
+                OpportunityStatus::Identified,
+                95,
+                400_000,
+                400_000,
+            ),
+            opp(
+                PriorityBand::ShouldInvestigate,
+                OpportunityStatus::Investigate,
+                80,
+                200_000,
+                200_000,
+            ),
+            opp(
+                PriorityBand::ShouldInvestigate,
+                OpportunityStatus::Investigate,
+                80,
+                300_000,
+                300_000,
+            ),
         ]);
         assert_eq!(result.recommended_actions.len(), 3);
         assert_eq!(result.recommended_actions[0], "action 400000");
@@ -374,7 +495,9 @@ mod tests {
     fn stage_progress_runs_from_zero_to_one() {
         assert_eq!(AnalysisStage::Queued.progress(), 0.0);
         assert_eq!(AnalysisStage::Done.progress(), 1.0);
-        assert!(AnalysisStage::CheckingRules.progress() > AnalysisStage::ReadingDocuments.progress());
+        assert!(
+            AnalysisStage::CheckingRules.progress() > AnalysisStage::ReadingDocuments.progress()
+        );
     }
 
     #[test]

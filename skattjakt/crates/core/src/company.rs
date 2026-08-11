@@ -81,7 +81,9 @@ impl std::fmt::Display for OrgNumber {
 fn luhn_is_valid(digits: &str) -> bool {
     let mut sum = 0u32;
     for (i, ch) in digits.chars().enumerate() {
-        let Some(d) = ch.to_digit(10) else { return false };
+        let Some(d) = ch.to_digit(10) else {
+            return false;
+        };
         // Leftmost digit is doubled for a ten-digit number.
         let v = if i % 2 == 0 { d * 2 } else { d };
         sum += if v > 9 { v - 9 } else { v };
@@ -136,14 +138,21 @@ impl FiscalYear {
     }
 
     pub fn is_calendar_year(&self) -> bool {
-        self.start.month() == 1 && self.start.day() == 1 && self.end.month() == 12 && self.end.day() == 31
+        self.start.month() == 1
+            && self.start.day() == 1
+            && self.end.month() == 12
+            && self.end.day() == 31
     }
 
     pub fn label(&self) -> String {
         if self.is_calendar_year() {
             self.start.year().to_string()
         } else {
-            format!("{}–{}", self.start.format("%Y-%m-%d"), self.end.format("%Y-%m-%d"))
+            format!(
+                "{}–{}",
+                self.start.format("%Y-%m-%d"),
+                self.end.format("%Y-%m-%d")
+            )
         }
     }
 }
@@ -255,7 +264,9 @@ mod tests {
 
     #[test]
     fn identifies_aktiebolag_series() {
-        assert!(OrgNumber::parse("556016-0680").unwrap().looks_like_aktiebolag());
+        assert!(OrgNumber::parse("556016-0680")
+            .unwrap()
+            .looks_like_aktiebolag());
     }
 
     #[test]

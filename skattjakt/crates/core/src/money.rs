@@ -71,10 +71,7 @@ impl Money {
     /// from zero. Tax rates are expressed in basis points so that a rate like
     /// 20.6% is exact rather than a float approximation.
     pub fn mul_basis_points(self, bp: i64) -> CoreResult<Money> {
-        let numerator = self
-            .ore
-            .checked_mul(bp)
-            .ok_or(CoreError::MoneyOverflow)?;
+        let numerator = self.ore.checked_mul(bp).ok_or(CoreError::MoneyOverflow)?;
         Ok(Self::from_ore(div_round_half_away(numerator, 10_000)))
     }
 
@@ -156,17 +153,26 @@ impl MoneyRange {
     }
 
     pub fn exact(value: Money) -> Self {
-        Self { low: value, high: value }
+        Self {
+            low: value,
+            high: value,
+        }
     }
 
-    pub const ZERO: MoneyRange = MoneyRange { low: Money::ZERO, high: Money::ZERO };
+    pub const ZERO: MoneyRange = MoneyRange {
+        low: Money::ZERO,
+        high: Money::ZERO,
+    };
 
     /// Widens a point estimate by a symmetric uncertainty in basis points.
     /// Used when a calculation is deterministic but its *inputs* are partly
     /// assumed, which is the normal case for a preliminary year-end.
     pub fn around(value: Money, uncertainty_bp: i64) -> CoreResult<Self> {
         let delta = value.abs()?.mul_basis_points(uncertainty_bp)?;
-        Ok(Self::new(value.checked_sub(delta)?, value.checked_add(delta)?))
+        Ok(Self::new(
+            value.checked_sub(delta)?,
+            value.checked_add(delta)?,
+        ))
     }
 
     pub fn checked_add(self, other: MoneyRange) -> CoreResult<MoneyRange> {
@@ -217,14 +223,20 @@ mod tests {
     fn basis_point_multiplication_is_exact_for_corporate_tax() {
         // 20.6 % of 100 000 kr = 20 600 kr, exactly.
         let profit = Money::from_sek(100_000).unwrap();
-        assert_eq!(profit.mul_basis_points(2060).unwrap(), Money::from_sek(20_600).unwrap());
+        assert_eq!(
+            profit.mul_basis_points(2060).unwrap(),
+            Money::from_sek(20_600).unwrap()
+        );
     }
 
     #[test]
     fn rounding_is_half_away_from_zero_in_both_directions() {
         // 1 öre * 50 % = 0.5 öre -> 1 öre, and -1 öre * 50 % -> -1 öre.
         assert_eq!(Money::from_ore(1).mul_basis_points(5000).unwrap().ore(), 1);
-        assert_eq!(Money::from_ore(-1).mul_basis_points(5000).unwrap().ore(), -1);
+        assert_eq!(
+            Money::from_ore(-1).mul_basis_points(5000).unwrap().ore(),
+            -1
+        );
     }
 
     #[test]
@@ -243,7 +255,10 @@ mod tests {
 
     #[test]
     fn display_groups_thousands_and_keeps_ore() {
-        assert_eq!(Money::from_ore(12_345_678).to_string(), "123\u{a0}456,78 kr");
+        assert_eq!(
+            Money::from_ore(12_345_678).to_string(),
+            "123\u{a0}456,78 kr"
+        );
         assert_eq!(Money::from_ore(-5000).to_string(), "-50,00 kr");
         assert_eq!(Money::from_ore(0).to_string(), "0,00 kr");
     }

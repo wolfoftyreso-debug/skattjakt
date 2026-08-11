@@ -73,27 +73,57 @@ impl EvalError {
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Expr {
     /// A required fact. Absent means the expression cannot be evaluated.
-    Fact { fact: FactKind },
+    Fact {
+        fact: FactKind,
+    },
     /// A fact that defaults to zero when absent. Only correct where absence
     /// genuinely means "none booked" — e.g. a reserve that was never made.
-    FactOrZero { fact: FactKind },
+    FactOrZero {
+        fact: FactKind,
+    },
     /// A literal amount in whole kronor.
-    Amount { sek: i64 },
+    Amount {
+        sek: i64,
+    },
     /// A named per-year amount, e.g. `prisbasbelopp`.
-    Constant { name: String },
+    Constant {
+        name: String,
+    },
 
-    Add { a: Box<Expr>, b: Box<Expr> },
-    Sub { a: Box<Expr>, b: Box<Expr> },
+    Add {
+        a: Box<Expr>,
+        b: Box<Expr>,
+    },
+    Sub {
+        a: Box<Expr>,
+        b: Box<Expr>,
+    },
     /// Multiply by a literal rate in basis points.
-    MulBp { of: Box<Expr>, bp: i64 },
+    MulBp {
+        of: Box<Expr>,
+        bp: i64,
+    },
     /// Multiply by a named per-year rate, e.g. `corporate_tax`.
-    MulRate { of: Box<Expr>, rate: String },
+    MulRate {
+        of: Box<Expr>,
+        rate: String,
+    },
     /// Clamp negatives to zero. Used constantly: an "unused headroom" that
     /// comes out negative means there is no headroom, not a negative one.
-    Max0 { of: Box<Expr> },
-    Min { a: Box<Expr>, b: Box<Expr> },
-    Max { a: Box<Expr>, b: Box<Expr> },
-    Abs { of: Box<Expr> },
+    Max0 {
+        of: Box<Expr>,
+    },
+    Min {
+        a: Box<Expr>,
+        b: Box<Expr>,
+    },
+    Max {
+        a: Box<Expr>,
+        b: Box<Expr>,
+    },
+    Abs {
+        of: Box<Expr>,
+    },
 }
 
 impl Expr {
@@ -103,17 +133,21 @@ impl Expr {
                 .value(fact)
                 .ok_or_else(|| EvalError::MissingFact(fact.key())),
             Expr::FactOrZero { fact } => Ok(facts.value(fact).unwrap_or(Money::ZERO)),
-            Expr::Amount { sek } => Money::from_sek(*sek).map_err(|_| EvalError::Overflow("amount".into())),
+            Expr::Amount { sek } => {
+                Money::from_sek(*sek).map_err(|_| EvalError::Overflow("amount".into()))
+            }
             Expr::Constant { name } => constants
                 .amount(name)
                 .ok_or_else(|| EvalError::UnknownConstant(name.clone())),
             Expr::Add { a, b } => {
                 let (x, y) = (a.eval(facts, constants)?, b.eval(facts, constants)?);
-                x.checked_add(y).map_err(|_| EvalError::Overflow("add".into()))
+                x.checked_add(y)
+                    .map_err(|_| EvalError::Overflow("add".into()))
             }
             Expr::Sub { a, b } => {
                 let (x, y) = (a.eval(facts, constants)?, b.eval(facts, constants)?);
-                x.checked_sub(y).map_err(|_| EvalError::Overflow("sub".into()))
+                x.checked_sub(y)
+                    .map_err(|_| EvalError::Overflow("sub".into()))
             }
             Expr::MulBp { of, bp } => of
                 .eval(facts, constants)?
@@ -154,9 +188,10 @@ impl Expr {
                 a.collect_facts(out);
                 b.collect_facts(out);
             }
-            Expr::MulBp { of, .. } | Expr::MulRate { of, .. } | Expr::Max0 { of } | Expr::Abs { of } => {
-                of.collect_facts(out)
-            }
+            Expr::MulBp { of, .. }
+            | Expr::MulRate { of, .. }
+            | Expr::Max0 { of }
+            | Expr::Abs { of } => of.collect_facts(out),
         }
     }
 
@@ -177,9 +212,10 @@ impl Expr {
                 a.collect_required(out);
                 b.collect_required(out);
             }
-            Expr::MulBp { of, .. } | Expr::MulRate { of, .. } | Expr::Max0 { of } | Expr::Abs { of } => {
-                of.collect_required(out)
-            }
+            Expr::MulBp { of, .. }
+            | Expr::MulRate { of, .. }
+            | Expr::Max0 { of }
+            | Expr::Abs { of } => of.collect_required(out),
         }
     }
 }
@@ -187,10 +223,15 @@ impl Expr {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use skattjakt_core::{CompanyId, DocumentVersionId, FinancialFact, FinancialFactId, FiscalYear, UnitInterval};
+    use skattjakt_core::{
+        CompanyId, DocumentVersionId, FinancialFact, FinancialFactId, FiscalYear, UnitInterval,
+    };
 
     fn constants() -> TaxYearConstants {
-        let mut c = TaxYearConstants { tax_year: 2025, ..Default::default() };
+        let mut c = TaxYearConstants {
+            tax_year: 2025,
+            ..Default::default()
+        };
         c.amounts.insert("prisbasbelopp".into(), 5_880_000); // 58 800 kr
         c.rates_bp.insert("corporate_tax".into(), 2060); // 20.6 %
         c
@@ -221,20 +262,33 @@ mod tests {
         // 25 % of the taxable result, less what is already reserved.
         let expr = Expr::Max0 {
             of: Box::new(Expr::Sub {
-                a: Box::new(Expr::MulBp { of: fact(FactKind::TaxableResult), bp: 2500 }),
-                b: Box::new(Expr::FactOrZero { fact: FactKind::TaxAllocationReserveThisYear }),
+                a: Box::new(Expr::MulBp {
+                    of: fact(FactKind::TaxableResult),
+                    bp: 2500,
+                }),
+                b: Box::new(Expr::FactOrZero {
+                    fact: FactKind::TaxAllocationReserveThisYear,
+                }),
             }),
         };
         let f = facts(&[(FactKind::TaxableResult, 1_000_000)]);
-        assert_eq!(expr.eval(&f, &constants()).unwrap(), Money::from_sek(250_000).unwrap());
+        assert_eq!(
+            expr.eval(&f, &constants()).unwrap(),
+            Money::from_sek(250_000).unwrap()
+        );
     }
 
     #[test]
     fn max0_clamps_a_negative_headroom_to_zero() {
         let expr = Expr::Max0 {
             of: Box::new(Expr::Sub {
-                a: Box::new(Expr::MulBp { of: fact(FactKind::TaxableResult), bp: 2500 }),
-                b: Box::new(Expr::FactOrZero { fact: FactKind::TaxAllocationReserveThisYear }),
+                a: Box::new(Expr::MulBp {
+                    of: fact(FactKind::TaxableResult),
+                    bp: 2500,
+                }),
+                b: Box::new(Expr::FactOrZero {
+                    fact: FactKind::TaxAllocationReserveThisYear,
+                }),
             }),
         };
         let f = facts(&[
@@ -246,7 +300,9 @@ mod tests {
 
     #[test]
     fn a_missing_required_fact_is_reported_as_missing_information() {
-        let expr = Expr::Fact { fact: FactKind::TaxableResult };
+        let expr = Expr::Fact {
+            fact: FactKind::TaxableResult,
+        };
         let err = expr.eval(&facts(&[]), &constants()).unwrap_err();
         assert!(err.is_missing_information());
         assert_eq!(err, EvalError::MissingFact("taxable_result".into()));
@@ -254,24 +310,42 @@ mod tests {
 
     #[test]
     fn fact_or_zero_defaults_instead_of_failing() {
-        let expr = Expr::FactOrZero { fact: FactKind::TaxAllocationReserveThisYear };
+        let expr = Expr::FactOrZero {
+            fact: FactKind::TaxAllocationReserveThisYear,
+        };
         assert_eq!(expr.eval(&facts(&[]), &constants()).unwrap(), Money::ZERO);
     }
 
     #[test]
     fn named_rates_and_amounts_resolve_per_year() {
-        let tax = Expr::MulRate { of: fact(FactKind::TaxableResult), rate: "corporate_tax".into() };
+        let tax = Expr::MulRate {
+            of: fact(FactKind::TaxableResult),
+            rate: "corporate_tax".into(),
+        };
         let f = facts(&[(FactKind::TaxableResult, 100_000)]);
-        assert_eq!(tax.eval(&f, &constants()).unwrap(), Money::from_sek(20_600).unwrap());
+        assert_eq!(
+            tax.eval(&f, &constants()).unwrap(),
+            Money::from_sek(20_600).unwrap()
+        );
 
-        let pbb = Expr::Constant { name: "prisbasbelopp".into() };
-        assert_eq!(pbb.eval(&f, &constants()).unwrap(), Money::from_sek(58_800).unwrap());
+        let pbb = Expr::Constant {
+            name: "prisbasbelopp".into(),
+        };
+        assert_eq!(
+            pbb.eval(&f, &constants()).unwrap(),
+            Money::from_sek(58_800).unwrap()
+        );
     }
 
     #[test]
     fn an_unknown_rate_is_an_engine_fault_not_missing_information() {
-        let expr = Expr::MulRate { of: fact(FactKind::TaxableResult), rate: "nonexistent".into() };
-        let err = expr.eval(&facts(&[(FactKind::TaxableResult, 1)]), &constants()).unwrap_err();
+        let expr = Expr::MulRate {
+            of: fact(FactKind::TaxableResult),
+            rate: "nonexistent".into(),
+        };
+        let err = expr
+            .eval(&facts(&[(FactKind::TaxableResult, 1)]), &constants())
+            .unwrap_err();
         assert!(!err.is_missing_information());
         assert_eq!(err, EvalError::UnknownRate("nonexistent".into()));
     }
@@ -280,7 +354,9 @@ mod tests {
     fn required_facts_exclude_optional_ones() {
         let expr = Expr::Sub {
             a: fact(FactKind::TaxableResult),
-            b: Box::new(Expr::FactOrZero { fact: FactKind::TaxAllocationReserveThisYear }),
+            b: Box::new(Expr::FactOrZero {
+                fact: FactKind::TaxAllocationReserveThisYear,
+            }),
         };
         assert_eq!(expr.required_facts(), vec![FactKind::TaxableResult]);
         assert_eq!(expr.referenced_facts().len(), 2);
@@ -289,10 +365,22 @@ mod tests {
     #[test]
     fn min_and_max_pick_the_right_bound() {
         let f = facts(&[(FactKind::TaxableResult, 100), (FactKind::Cash, 400)]);
-        let min = Expr::Min { a: fact(FactKind::TaxableResult), b: fact(FactKind::Cash) };
-        let max = Expr::Max { a: fact(FactKind::TaxableResult), b: fact(FactKind::Cash) };
-        assert_eq!(min.eval(&f, &constants()).unwrap(), Money::from_sek(100).unwrap());
-        assert_eq!(max.eval(&f, &constants()).unwrap(), Money::from_sek(400).unwrap());
+        let min = Expr::Min {
+            a: fact(FactKind::TaxableResult),
+            b: fact(FactKind::Cash),
+        };
+        let max = Expr::Max {
+            a: fact(FactKind::TaxableResult),
+            b: fact(FactKind::Cash),
+        };
+        assert_eq!(
+            min.eval(&f, &constants()).unwrap(),
+            Money::from_sek(100).unwrap()
+        );
+        assert_eq!(
+            max.eval(&f, &constants()).unwrap(),
+            Money::from_sek(400).unwrap()
+        );
     }
 
     #[test]

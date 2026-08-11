@@ -1,0 +1,31 @@
+# Local development. Not a production topology.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: skattjakt
+      POSTGRES_DB: skattjakt
+    ports: ["5432:5432"]
+    volumes:
+      # Migrations run as the owning role, which bypasses RLS by design.
+      - ../migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d skattjakt"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      DATABASE_URL: postgres://postgres:skattjakt@postgres:5432/skattjakt
+      # Required. Name the model this deployment should use — there is no
+      # compiled-in default, on purpose (see engineering decision D7).
+      SKATTJAKT_MODEL_ID: ${SKATTJAKT_MODEL_ID:?set SKATTJAKT_MODEL_ID}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?set ANTHROPIC_API_KEY}
+      SKATTJAKT_API_TOKEN: ${SKATTJAKT_API_TOKEN:-local-development-token}
+    ports: ["8080:8080"]

@@ -59,7 +59,11 @@ mod embedded_tests {
         let engine = RuleEngine::load_embedded().unwrap();
         for rule in engine.rules() {
             if let ReviewState::AwaitingProfessionalReview { note } = &rule.review {
-                assert!(!note.trim().is_empty(), "{} must explain what is unverified", rule.rule_id);
+                assert!(
+                    !note.trim().is_empty(),
+                    "{} must explain what is unverified",
+                    rule.rule_id
+                );
             }
         }
     }
@@ -111,7 +115,15 @@ mod embedded_tests {
     fn all_categories_in_the_product_spec_have_at_least_one_rule() {
         use skattjakt_core::OpportunityCategory::*;
         let engine = RuleEngine::load_embedded().unwrap();
-        for category in [Tax, Costs, Vat, Personnel, Investments, ResearchAndDevelopment, Risk] {
+        for category in [
+            Tax,
+            Costs,
+            Vat,
+            Personnel,
+            Investments,
+            ResearchAndDevelopment,
+            Risk,
+        ] {
             assert!(
                 engine.rules().iter().any(|r| r.category == category),
                 "no rule covers {category:?}"

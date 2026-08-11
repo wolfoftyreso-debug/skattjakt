@@ -201,7 +201,10 @@ pub enum RuleOutcome {
     /// finding — "something to investigate" — not a silent drop.
     Indeterminate { reason: String },
     /// An exception disqualifies the rule.
-    ExceptionApplies { exception_id: String, explanation: String },
+    ExceptionApplies {
+        exception_id: String,
+        explanation: String,
+    },
     /// The rule does not cover this tax year.
     OutOfScope { reason: String },
     /// The rule is structurally broken — a constant it names does not exist for
@@ -212,7 +215,10 @@ pub enum RuleOutcome {
 impl RuleOutcome {
     /// Whether the evaluation should produce something the user sees.
     pub fn produces_finding(&self) -> bool {
-        matches!(self, RuleOutcome::Matched | RuleOutcome::Indeterminate { .. })
+        matches!(
+            self,
+            RuleOutcome::Matched | RuleOutcome::Indeterminate { .. }
+        )
     }
 }
 
@@ -258,7 +264,9 @@ mod tests {
                 source_version: "v".into(),
                 url: None,
             },
-            review: ReviewState::AwaitingProfessionalReview { note: String::new() },
+            review: ReviewState::AwaitingProfessionalReview {
+                note: String::new(),
+            },
             effort: InvestigationEffort::Low,
             risk: RiskLevel::Low,
             urgency: Urgency::Routine,
@@ -284,7 +292,10 @@ mod tests {
     #[test]
     fn unreviewed_is_the_default_review_state() {
         assert!(!rule(2021, None).review.is_reviewed());
-        let reviewed = ReviewState::Reviewed { reviewer: "X".into(), date: "2026-01-01".into() };
+        let reviewed = ReviewState::Reviewed {
+            reviewer: "X".into(),
+            date: "2026-01-01".into(),
+        };
         assert!(reviewed.is_reviewed());
     }
 
@@ -299,9 +310,13 @@ mod tests {
     #[test]
     fn referenced_facts_span_conditions_impact_and_evidence() {
         let mut r = rule(2021, None);
-        r.conditions = Condition::FactPresent { fact: FactKind::TaxableResult };
+        r.conditions = Condition::FactPresent {
+            fact: FactKind::TaxableResult,
+        };
         r.impact = ImpactSpec::Point {
-            expr: Expr::Fact { fact: FactKind::Cash },
+            expr: Expr::Fact {
+                fact: FactKind::Cash,
+            },
             uncertainty_bp: 1000,
         };
         r.required_evidence = vec![FactKind::Equity];

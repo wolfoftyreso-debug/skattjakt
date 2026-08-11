@@ -256,7 +256,8 @@ impl Opportunity {
         let confidence_term = confidence.score as f64 / 100.0;
         let relevance_term = (relevance.clamp(0.0, 1.0)) * weights.relevance_weight;
 
-        let raw = economic * confidence_term * relevance_term * urgency.multiplier() / effort.divisor();
+        let raw =
+            economic * confidence_term * relevance_term * urgency.multiplier() / effort.divisor();
         let score = raw.clamp(0.0, 1.0);
 
         // A finding that cannot be acted on is never "high priority", however
@@ -308,7 +309,9 @@ impl Opportunity {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::confidence::{ConfidenceBand, ConfidenceFactors, ConfidenceThresholds, ConfidenceWeights, UnitInterval};
+    use crate::confidence::{
+        ConfidenceBand, ConfidenceFactors, ConfidenceThresholds, ConfidenceWeights, UnitInterval,
+    };
     use crate::evidence::EvidenceChain;
     use crate::ids::AnalysisId;
 
@@ -326,52 +329,125 @@ mod tests {
     }
 
     fn range(low: i64, high: i64) -> MoneyRange {
-        MoneyRange::new(Money::from_sek(low).unwrap(), Money::from_sek(high).unwrap())
+        MoneyRange::new(
+            Money::from_sek(low).unwrap(),
+            Money::from_sek(high).unwrap(),
+        )
     }
 
     #[test]
     fn larger_impact_ranks_higher_all_else_equal() {
         let w = PriorityWeights::default();
-        let small = Opportunity::compute_priority(range(1_000, 2_000), confidence(90), InvestigationEffort::Low, Urgency::Routine, 1.0, &w);
-        let large = Opportunity::compute_priority(range(100_000, 150_000), confidence(90), InvestigationEffort::Low, Urgency::Routine, 1.0, &w);
+        let small = Opportunity::compute_priority(
+            range(1_000, 2_000),
+            confidence(90),
+            InvestigationEffort::Low,
+            Urgency::Routine,
+            1.0,
+            &w,
+        );
+        let large = Opportunity::compute_priority(
+            range(100_000, 150_000),
+            confidence(90),
+            InvestigationEffort::Low,
+            Urgency::Routine,
+            1.0,
+            &w,
+        );
         assert!(large.score > small.score);
     }
 
     #[test]
     fn higher_effort_ranks_lower() {
         let w = PriorityWeights::default();
-        let easy = Opportunity::compute_priority(range(100_000, 100_000), confidence(90), InvestigationEffort::Low, Urgency::Routine, 1.0, &w);
-        let hard = Opportunity::compute_priority(range(100_000, 100_000), confidence(90), InvestigationEffort::High, Urgency::Routine, 1.0, &w);
+        let easy = Opportunity::compute_priority(
+            range(100_000, 100_000),
+            confidence(90),
+            InvestigationEffort::Low,
+            Urgency::Routine,
+            1.0,
+            &w,
+        );
+        let hard = Opportunity::compute_priority(
+            range(100_000, 100_000),
+            confidence(90),
+            InvestigationEffort::High,
+            Urgency::Routine,
+            1.0,
+            &w,
+        );
         assert!(easy.score > hard.score);
     }
 
     #[test]
     fn urgency_lifts_an_otherwise_equal_finding() {
         let w = PriorityWeights::default();
-        let routine = Opportunity::compute_priority(range(50_000, 50_000), confidence(80), InvestigationEffort::Low, Urgency::Routine, 1.0, &w);
-        let urgent = Opportunity::compute_priority(range(50_000, 50_000), confidence(80), InvestigationEffort::Low, Urgency::BeforeFiling, 1.0, &w);
+        let routine = Opportunity::compute_priority(
+            range(50_000, 50_000),
+            confidence(80),
+            InvestigationEffort::Low,
+            Urgency::Routine,
+            1.0,
+            &w,
+        );
+        let urgent = Opportunity::compute_priority(
+            range(50_000, 50_000),
+            confidence(80),
+            InvestigationEffort::Low,
+            Urgency::BeforeFiling,
+            1.0,
+            &w,
+        );
         assert!(urgent.score > routine.score);
     }
 
     #[test]
     fn a_huge_but_unactionable_finding_never_reaches_high_priority() {
         let w = PriorityWeights::default();
-        let p = Opportunity::compute_priority(range(5_000_000, 9_000_000), confidence(20), InvestigationEffort::Low, Urgency::BeforeFiling, 1.0, &w);
+        let p = Opportunity::compute_priority(
+            range(5_000_000, 9_000_000),
+            confidence(20),
+            InvestigationEffort::Low,
+            Urgency::BeforeFiling,
+            1.0,
+            &w,
+        );
         assert_eq!(p.band, PriorityBand::NeedsMoreEvidence);
     }
 
     #[test]
     fn priority_score_stays_within_bounds() {
         let w = PriorityWeights::default();
-        let p = Opportunity::compute_priority(range(50_000_000, 90_000_000), confidence(100), InvestigationEffort::Low, Urgency::BeforeFiling, 1.0, &w);
+        let p = Opportunity::compute_priority(
+            range(50_000_000, 90_000_000),
+            confidence(100),
+            InvestigationEffort::Low,
+            Urgency::BeforeFiling,
+            1.0,
+            &w,
+        );
         assert!((0.0..=1.0).contains(&p.score), "score was {}", p.score);
     }
 
     #[test]
     fn economic_term_saturates_at_the_reference_amount() {
         let w = PriorityWeights::default();
-        let at_reference = Opportunity::compute_priority(range(200_000, 200_000), confidence(100), InvestigationEffort::Low, Urgency::Routine, 1.0, &w);
-        let far_above = Opportunity::compute_priority(range(2_000_000, 2_000_000), confidence(100), InvestigationEffort::Low, Urgency::Routine, 1.0, &w);
+        let at_reference = Opportunity::compute_priority(
+            range(200_000, 200_000),
+            confidence(100),
+            InvestigationEffort::Low,
+            Urgency::Routine,
+            1.0,
+            &w,
+        );
+        let far_above = Opportunity::compute_priority(
+            range(2_000_000, 2_000_000),
+            confidence(100),
+            InvestigationEffort::Low,
+            Urgency::Routine,
+            1.0,
+            &w,
+        );
         assert_eq!(at_reference.score, far_above.score);
     }
 
@@ -404,17 +480,26 @@ mod tests {
             risk: RiskLevel::Low,
             effort: InvestigationEffort::Low,
             urgency: Urgency::Routine,
-            priority: Priority { score: 0.5, band: PriorityBand::High },
+            priority: Priority {
+                score: 0.5,
+                band: PriorityBand::High,
+            },
             rule_ids: vec![],
             rejection_reason: None,
             created_at: Utc::now(),
         };
         assert_eq!(base.countable_impact(), range(10_000, 20_000));
 
-        let rejected = Opportunity { status: OpportunityStatus::Rejected, ..base.clone() };
+        let rejected = Opportunity {
+            status: OpportunityStatus::Rejected,
+            ..base.clone()
+        };
         assert_eq!(rejected.countable_impact(), MoneyRange::ZERO);
 
-        let weak = Opportunity { confidence: confidence(10), ..base };
+        let weak = Opportunity {
+            confidence: confidence(10),
+            ..base
+        };
         assert_eq!(weak.countable_impact(), MoneyRange::ZERO);
     }
 
@@ -429,7 +514,11 @@ mod tests {
             contradiction_score: UnitInterval::saturating(0.0),
             model_agreement: UnitInterval::saturating(1.0),
         };
-        let c = Confidence::compute(&factors, &ConfidenceWeights::default(), &ConfidenceThresholds::default());
+        let c = Confidence::compute(
+            &factors,
+            &ConfidenceWeights::default(),
+            &ConfidenceThresholds::default(),
+        );
         assert!(c.score >= 75 && c.score <= 100, "score was {}", c.score);
     }
 

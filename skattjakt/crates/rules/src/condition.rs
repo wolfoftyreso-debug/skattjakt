@@ -47,7 +47,9 @@ impl Truth {
         }
     }
 
-    pub fn not(self) -> Truth {
+    /// Named `negate` rather than `not` so it cannot be confused with
+    /// `std::ops::Not`, which has different semantics for a three-valued type.
+    pub fn negate(self) -> Truth {
         match self {
             Truth::True => Truth::False,
             Truth::False => Truth::True,
@@ -121,7 +123,9 @@ impl ProfileFlag {
             ProfileFlag::DoesDevelopmentWork => "Bedriver bolaget utvecklingsarbete?",
             ProfileFlag::OwnsPremises => "Äger bolaget lokaler eller fastighet?",
             ProfileFlag::HasVehicles => "Har bolaget fordon?",
-            ProfileFlag::OwnersActiveInCompany => "Är ägarna verksamma i betydande omfattning i bolaget?",
+            ProfileFlag::OwnersActiveInCompany => {
+                "Är ägarna verksamma i betydande omfattning i bolaget?"
+            }
         }
     }
 }
@@ -156,23 +160,50 @@ pub struct EvalContext<'a> {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Condition {
     /// The quantity was extracted from a document at all.
-    FactPresent { fact: skattjakt_core::FactKind },
+    FactPresent {
+        fact: skattjakt_core::FactKind,
+    },
     /// The quantity was not found. Genuinely knowable: absence of a value in an
     /// otherwise well-parsed document is information.
-    FactAbsent { fact: skattjakt_core::FactKind },
+    FactAbsent {
+        fact: skattjakt_core::FactKind,
+    },
     /// Compare two monetary expressions.
-    Compare { left: Expr, op: CmpOp, right: Expr },
+    Compare {
+        left: Expr,
+        op: CmpOp,
+        right: Expr,
+    },
     /// An onboarding yes/no answer.
-    Profile { flag: ProfileFlag, is: bool },
+    Profile {
+        flag: ProfileFlag,
+        is: bool,
+    },
     /// A numeric profile answer.
-    ProfileNumber { field: ProfileNumber, op: CmpOp, value: i64 },
-    AccountsStateIs { state: AccountsState },
-    TaxYearAtLeast { year: i32 },
-    TaxYearAtMost { year: i32 },
+    ProfileNumber {
+        field: ProfileNumber,
+        op: CmpOp,
+        value: i64,
+    },
+    AccountsStateIs {
+        state: AccountsState,
+    },
+    TaxYearAtLeast {
+        year: i32,
+    },
+    TaxYearAtMost {
+        year: i32,
+    },
 
-    All { of: Vec<Condition> },
-    Any { of: Vec<Condition> },
-    Not { of: Box<Condition> },
+    All {
+        of: Vec<Condition>,
+    },
+    Any {
+        of: Vec<Condition>,
+    },
+    Not {
+        of: Box<Condition>,
+    },
     /// Always true. Used by rules that apply unconditionally within their year.
     Always,
 }
@@ -213,13 +244,9 @@ impl Condition {
             Condition::TaxYearAtLeast { year } => Truth::from_bool(ctx.tax_year >= *year),
             Condition::TaxYearAtMost { year } => Truth::from_bool(ctx.tax_year <= *year),
 
-            Condition::All { of } => of
-                .iter()
-                .fold(Truth::True, |acc, c| acc.and(c.eval(ctx))),
-            Condition::Any { of } => of
-                .iter()
-                .fold(Truth::False, |acc, c| acc.or(c.eval(ctx))),
-            Condition::Not { of } => of.eval(ctx).not(),
+            Condition::All { of } => of.iter().fold(Truth::True, |acc, c| acc.and(c.eval(ctx))),
+            Condition::Any { of } => of.iter().fold(Truth::False, |acc, c| acc.or(c.eval(ctx))),
+            Condition::Not { of } => of.eval(ctx).negate(),
             Condition::Always => Truth::True,
         }
     }
@@ -256,7 +283,9 @@ impl Condition {
 
     fn collect_facts(&self, out: &mut Vec<skattjakt_core::FactKind>) {
         match self {
-            Condition::FactPresent { fact } | Condition::FactAbsent { fact } => out.push(fact.clone()),
+            Condition::FactPresent { fact } | Condition::FactAbsent { fact } => {
+                out.push(fact.clone())
+            }
             Condition::Compare { left, right, .. } => {
                 out.extend(left.referenced_facts());
                 out.extend(right.referenced_facts());
@@ -309,7 +338,9 @@ pub fn validate_expr(expr: &Expr, constants: &TaxYearConstants) -> Result<(), Ev
             validate_expr(a, constants)?;
             validate_expr(b, constants)
         }
-        Expr::MulBp { of, .. } | Expr::Max0 { of } | Expr::Abs { of } => validate_expr(of, constants),
+        Expr::MulBp { of, .. } | Expr::Max0 { of } | Expr::Abs { of } => {
+            validate_expr(of, constants)
+        }
         Expr::Fact { .. } | Expr::FactOrZero { .. } | Expr::Amount { .. } => Ok(()),
     }
 }
@@ -358,7 +389,10 @@ mod tests {
     }
 
     fn constants() -> TaxYearConstants {
-        let mut c = TaxYearConstants { tax_year: 2025, ..Default::default() };
+        let mut c = TaxYearConstants {
+            tax_year: 2025,
+            ..Default::default()
+        };
         c.rates_bp.insert("corporate_tax".into(), 2060);
         c
     }
@@ -370,8 +404,8 @@ mod tests {
         assert_eq!(False.and(Unknown), False, "false dominates conjunction");
         assert_eq!(True.or(Unknown), True, "true dominates disjunction");
         assert_eq!(False.or(Unknown), Unknown);
-        assert_eq!(Unknown.not(), Unknown);
-        assert_eq!(True.not(), False);
+        assert_eq!(Unknown.negate(), Unknown);
+        assert_eq!(True.negate(), False);
     }
 
     #[test]
@@ -384,11 +418,20 @@ mod tests {
             tax_year: 2025,
             accounts_state: AccountsState::Preliminary,
         };
-        let cond = Condition::Profile { flag: ProfileFlag::InGroup, is: false };
+        let cond = Condition::Profile {
+            flag: ProfileFlag::InGroup,
+            is: false,
+        };
         assert_eq!(cond.eval(&ctx), Truth::Unknown);
 
-        let answered = CompanyProfile { in_group: Some(false), ..p.clone() };
-        let ctx2 = EvalContext { profile: &answered, ..ctx };
+        let answered = CompanyProfile {
+            in_group: Some(false),
+            ..p.clone()
+        };
+        let ctx2 = EvalContext {
+            profile: &answered,
+            ..ctx
+        };
         assert_eq!(cond.eval(&ctx2), Truth::True);
     }
 
@@ -403,7 +446,9 @@ mod tests {
             accounts_state: AccountsState::Preliminary,
         };
         let cond = Condition::Compare {
-            left: Expr::Fact { fact: FactKind::TaxableResult },
+            left: Expr::Fact {
+                fact: FactKind::TaxableResult,
+            },
             op: CmpOp::Gt,
             right: Expr::Amount { sek: 0 },
         };
@@ -422,7 +467,9 @@ mod tests {
             accounts_state: AccountsState::Preliminary,
         };
         let cond = Condition::Compare {
-            left: Expr::Fact { fact: FactKind::TaxableResult },
+            left: Expr::Fact {
+                fact: FactKind::TaxableResult,
+            },
             op: CmpOp::Gt,
             right: Expr::Amount { sek: 0 },
         };
@@ -443,11 +490,16 @@ mod tests {
         let cond = Condition::All {
             of: vec![
                 Condition::Compare {
-                    left: Expr::Fact { fact: FactKind::TaxableResult },
+                    left: Expr::Fact {
+                        fact: FactKind::TaxableResult,
+                    },
                     op: CmpOp::Gt,
                     right: Expr::Amount { sek: 0 },
                 },
-                Condition::Profile { flag: ProfileFlag::InGroup, is: false },
+                Condition::Profile {
+                    flag: ProfileFlag::InGroup,
+                    is: false,
+                },
             ],
         };
         assert_eq!(cond.eval(&ctx), Truth::Unknown);
@@ -467,11 +519,16 @@ mod tests {
         let cond = Condition::All {
             of: vec![
                 Condition::Compare {
-                    left: Expr::Fact { fact: FactKind::TaxableResult },
+                    left: Expr::Fact {
+                        fact: FactKind::TaxableResult,
+                    },
                     op: CmpOp::Gt,
                     right: Expr::Amount { sek: 0 },
                 },
-                Condition::Profile { flag: ProfileFlag::InGroup, is: false },
+                Condition::Profile {
+                    flag: ProfileFlag::InGroup,
+                    is: false,
+                },
             ],
         };
         assert_eq!(cond.eval(&ctx), Truth::False);
@@ -487,7 +544,9 @@ mod tests {
             tax_year: 2025,
             accounts_state: AccountsState::Unknown,
         };
-        let cond = Condition::AccountsStateIs { state: AccountsState::Final };
+        let cond = Condition::AccountsStateIs {
+            state: AccountsState::Final,
+        };
         assert_eq!(cond.eval(&ctx), Truth::Unknown);
     }
 
@@ -503,9 +562,15 @@ mod tests {
         };
         let cond = Condition::All {
             of: vec![
-                Condition::Profile { flag: ProfileFlag::InGroup, is: false },
+                Condition::Profile {
+                    flag: ProfileFlag::InGroup,
+                    is: false,
+                },
                 Condition::Not {
-                    of: Box::new(Condition::Profile { flag: ProfileFlag::DoesDevelopmentWork, is: false }),
+                    of: Box::new(Condition::Profile {
+                        flag: ProfileFlag::DoesDevelopmentWork,
+                        is: false,
+                    }),
                 },
             ],
         };
@@ -519,7 +584,9 @@ mod tests {
     fn validation_catches_a_misspelled_rate_at_load_time() {
         let cond = Condition::Compare {
             left: Expr::MulRate {
-                of: Box::new(Expr::Fact { fact: FactKind::TaxableResult }),
+                of: Box::new(Expr::Fact {
+                    fact: FactKind::TaxableResult,
+                }),
                 rate: "corporate_taxx".into(),
             },
             op: CmpOp::Gt,
@@ -534,7 +601,9 @@ mod tests {
             of: vec![
                 Condition::Always,
                 Condition::TaxYearAtLeast { year: 2021 },
-                Condition::FactAbsent { fact: FactKind::CarriedForwardLoss },
+                Condition::FactAbsent {
+                    fact: FactKind::CarriedForwardLoss,
+                },
             ],
         };
         let json = serde_json::to_string(&cond).unwrap();

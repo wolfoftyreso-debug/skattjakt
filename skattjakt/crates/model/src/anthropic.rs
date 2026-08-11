@@ -59,10 +59,14 @@ impl AnthropicConfig {
         })?;
 
         if api_key.trim().is_empty() {
-            return Err(ProviderError::NotConfigured("ANTHROPIC_API_KEY is empty".into()));
+            return Err(ProviderError::NotConfigured(
+                "ANTHROPIC_API_KEY is empty".into(),
+            ));
         }
         if model_id.trim().is_empty() {
-            return Err(ProviderError::NotConfigured("SKATTJAKT_MODEL_ID is empty".into()));
+            return Err(ProviderError::NotConfigured(
+                "SKATTJAKT_MODEL_ID is empty".into(),
+            ));
         }
 
         Ok(Self {
@@ -126,7 +130,10 @@ impl AnthropicProvider {
     async fn send_once(&self, request: &ModelRequest) -> ProviderResult<ApiResponse> {
         let mut builder = self
             .client
-            .post(format!("{}/v1/messages", self.config.base_url.trim_end_matches('/')))
+            .post(format!(
+                "{}/v1/messages",
+                self.config.base_url.trim_end_matches('/')
+            ))
             .header("x-api-key", &self.config.api_key)
             .header("anthropic-version", ANTHROPIC_VERSION)
             .header("content-type", "application/json");
@@ -158,9 +165,17 @@ impl AnthropicProvider {
             // relayed but never logged alongside document content.
             let message = serde_json::from_str::<ApiError>(&text)
                 .map(|e| e.error.message)
-                .unwrap_or_else(|_| status.canonical_reason().unwrap_or("request failed").to_string());
-            return Err(ProviderError::Http { status: status.as_u16(), message })
-                .map_err(|e| attach_retry_after(e, retry_after));
+                .unwrap_or_else(|_| {
+                    status
+                        .canonical_reason()
+                        .unwrap_or("request failed")
+                        .to_string()
+                });
+            return Err(ProviderError::Http {
+                status: status.as_u16(),
+                message,
+            })
+            .map_err(|e| attach_retry_after(e, retry_after));
         }
 
         serde_json::from_str(&text).map_err(|e| ProviderError::Malformed(e.to_string()))
@@ -208,7 +223,7 @@ impl ModelProvider for AnthropicProvider {
             }
         };
 
-        let output = api.into_structured_output(&request.schema)?;
+        let output = api.structured_output(&request.schema)?;
 
         Ok(ModelResponse {
             task: request.task,
@@ -246,7 +261,9 @@ struct ApiResponse {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum ContentBlock {
-    Text { text: String },
+    Text {
+        text: String,
+    },
     #[serde(other)]
     Other,
 }
@@ -287,7 +304,7 @@ impl ApiResponse {
     /// The stop reason is checked *before* the content: a refusal returns HTTP
     /// 200 with empty or partial content, so reading the first block without
     /// checking would treat a decline as an answer.
-    fn into_structured_output(&self, expected: &serde_json::Value) -> ProviderResult<serde_json::Value> {
+    fn structured_output(&self, expected: &serde_json::Value) -> ProviderResult<serde_json::Value> {
         match self.stop_reason.as_deref() {
             Some("refusal") => {
                 let details = self.stop_details.as_ref();
@@ -313,12 +330,17 @@ impl ApiResponse {
             })
             .ok_or_else(|| ProviderError::Malformed("no text block in the response".into()))?;
 
-        let value: serde_json::Value = serde_json::from_str(text)
-            .map_err(|e| ProviderError::SchemaViolation(format!("output was not valid JSON: {e}")))?;
+        let value: serde_json::Value = serde_json::from_str(text).map_err(|e| {
+            ProviderError::SchemaViolation(format!("output was not valid JSON: {e}"))
+        })?;
 
         schema::validate(&value, expected).map_err(|errors| {
             ProviderError::SchemaViolation(
-                errors.iter().map(ToString::to_string).collect::<Vec<_>>().join("; "),
+                errors
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join("; "),
             )
         })?;
 
@@ -352,7 +374,7 @@ mod tests {
             "usage": {"input_tokens": 10, "output_tokens": 4}
         }));
         assert_eq!(
-            response.into_structured_output(&schema()).unwrap(),
+            response.structured_output(&schema()).unwrap(),
             json!({"ok": true})
         );
     }
@@ -366,7 +388,7 @@ mod tests {
             "stop_reason": "refusal",
             "stop_details": {"category": "cyber", "explanation": "declined"}
         }));
-        match response.into_structured_output(&schema()) {
+        match response.structured_output(&schema()) {
             Err(ProviderError::Refused { category, .. }) => assert_eq!(category, "cyber"),
             other => panic!("expected a refusal, got {other:?}"),
         }
@@ -379,7 +401,7 @@ mod tests {
             "stop_reason": "refusal"
         }));
         assert!(matches!(
-            response.into_structured_output(&schema()),
+            response.structured_output(&schema()),
             Err(ProviderError::Refused { .. })
         ));
     }
@@ -391,7 +413,7 @@ mod tests {
             "stop_reason": "max_tokens"
         }));
         assert!(matches!(
-            response.into_structured_output(&schema()),
+            response.structured_output(&schema()),
             Err(ProviderError::Truncated)
         ));
     }
@@ -403,7 +425,7 @@ mod tests {
             "stop_reason": "end_turn"
         }));
         assert!(matches!(
-            response.into_structured_output(&schema()),
+            response.structured_output(&schema()),
             Err(ProviderError::SchemaViolation(_))
         ));
     }
@@ -415,7 +437,7 @@ mod tests {
             "stop_reason": "end_turn"
         }));
         assert!(matches!(
-            response.into_structured_output(&schema()),
+            response.structured_output(&schema()),
             Err(ProviderError::SchemaViolation(_))
         ));
     }
@@ -430,7 +452,7 @@ mod tests {
             "stop_reason": "end_turn"
         }));
         assert_eq!(
-            response.into_structured_output(&schema()).unwrap(),
+            response.structured_output(&schema()).unwrap(),
             json!({"ok": false})
         );
     }

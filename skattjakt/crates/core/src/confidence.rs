@@ -54,7 +54,9 @@ impl Eq for UnitInterval {}
 impl Ord for UnitInterval {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         // Safe: the constructor rejects NaN, so a total order exists.
-        self.0.partial_cmp(&other.0).unwrap_or(std::cmp::Ordering::Equal)
+        self.0
+            .partial_cmp(&other.0)
+            .unwrap_or(std::cmp::Ordering::Equal)
     }
 }
 
@@ -140,7 +142,11 @@ pub struct ConfidenceThresholds {
 
 impl Default for ConfidenceThresholds {
     fn default() -> Self {
-        Self { strong: 90, good: 75, investigate: 50 }
+        Self {
+            strong: 90,
+            good: 75,
+            investigate: 50,
+        }
     }
 }
 
@@ -172,12 +178,19 @@ pub struct Confidence {
 }
 
 impl Confidence {
-    pub fn compute(factors: &ConfidenceFactors, weights: &ConfidenceWeights, thresholds: &ConfidenceThresholds) -> Self {
+    pub fn compute(
+        factors: &ConfidenceFactors,
+        weights: &ConfidenceWeights,
+        thresholds: &ConfidenceThresholds,
+    ) -> Self {
         let total_weight = weights.total();
         // A misconfigured weight set must not divide by zero and must not
         // silently produce a confident answer.
         if total_weight <= f64::EPSILON {
-            return Self { score: 0, band: ConfidenceBand::NotActionable };
+            return Self {
+                score: 0,
+                band: ConfidenceBand::NotActionable,
+            };
         }
 
         let weighted = factors.document_evidence.get() * weights.document_evidence
@@ -187,7 +200,9 @@ impl Confidence {
             + factors.contradiction_score.inverse().get() * weights.consistency
             + factors.model_agreement.get() * weights.model_agreement;
 
-        let mut score = ((weighted / total_weight) * 100.0).round().clamp(0.0, 100.0) as u8;
+        let mut score = ((weighted / total_weight) * 100.0)
+            .round()
+            .clamp(0.0, 100.0) as u8;
 
         // Fail closed (section 35). These caps encode the cases where a high
         // weighted average would be misleading no matter how good the other
@@ -205,7 +220,10 @@ impl Confidence {
             score = score.min(thresholds.investigate.saturating_sub(1));
         }
 
-        Self { score, band: Self::band_for(score, thresholds) }
+        Self {
+            score,
+            band: Self::band_for(score, thresholds),
+        }
     }
 
     fn band_for(score: u8, thresholds: &ConfidenceThresholds) -> ConfidenceBand {
@@ -245,7 +263,11 @@ mod tests {
     }
 
     fn compute(f: &ConfidenceFactors) -> Confidence {
-        Confidence::compute(f, &ConfidenceWeights::default(), &ConfidenceThresholds::default())
+        Confidence::compute(
+            f,
+            &ConfidenceWeights::default(),
+            &ConfidenceThresholds::default(),
+        )
     }
 
     #[test]
@@ -301,7 +323,10 @@ mod tests {
         let mut f = ConfidenceFactors::unknown();
         f.model_agreement = u(1.0);
         let c = compute(&f);
-        assert!(!c.is_actionable(), "model self-agreement must not carry a finding");
+        assert!(
+            !c.is_actionable(),
+            "model self-agreement must not carry a finding"
+        );
     }
 
     #[test]
@@ -338,7 +363,11 @@ mod tests {
             consistency: 0.0,
             model_agreement: 0.0,
         };
-        let c = Confidence::compute(&strong_factors(), &weights, &ConfidenceThresholds::default());
+        let c = Confidence::compute(
+            &strong_factors(),
+            &weights,
+            &ConfidenceThresholds::default(),
+        );
         assert_eq!(c.score, 0);
         assert!(!c.is_actionable());
     }

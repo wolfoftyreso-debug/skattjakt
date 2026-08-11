@@ -23,15 +23,18 @@ pub mod money;
 pub mod opportunity;
 
 pub use company::{CompanyProfile, FiscalYear, OrgNumber};
-pub use confidence::{Confidence, ConfidenceBand, ConfidenceFactors, ConfidenceThresholds, ConfidenceWeights, UnitInterval};
+pub use confidence::{
+    Confidence, ConfidenceBand, ConfidenceFactors, ConfidenceThresholds, ConfidenceWeights,
+    UnitInterval,
+};
 pub use error::{CoreError, CoreResult};
 pub use evidence::{CalculationInput, EvidenceChain, EvidenceItem};
 pub use fact::{Contradiction, FactKind, FactSet, FinancialFact};
 pub use ids::*;
 pub use money::{Money, MoneyRange, SEK};
 pub use opportunity::{
-    InvestigationEffort, Opportunity, OpportunityCategory, OpportunityStatus, Priority, PriorityBand,
-    PriorityWeights, RiskLevel, Urgency,
+    InvestigationEffort, Opportunity, OpportunityCategory, OpportunityStatus, Priority,
+    PriorityBand, PriorityWeights, RiskLevel, Urgency,
 };
 
 /// The disclaimer from section 27. Held in code, in one place, so every surface

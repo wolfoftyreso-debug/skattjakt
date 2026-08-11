@@ -1,0 +1,164 @@
+# Skattjakt on Kubernetes.
+#
+# NOT VERIFIED: written without a cluster or container daemon available.
+# Review before applying — in particular the image reference, the ingress host,
+# and the secret, which is expected to be created out of band.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: skattjakt
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: skattjakt-config
+  namespace: skattjakt
+data:
+  PORT: "8080"
+  RUST_LOG: "skattjakt=info,tower_http=info"
+  SKATTJAKT_MODEL_TIMEOUT_SECS: "600"
+  SKATTJAKT_MODEL_MAX_RETRIES: "3"
+  SKATTJAKT_MODEL_FALLBACK: "1"
+  # No default model id on purpose (engineering decision D7). Set it here, per
+  # environment, to the model this deployment should actually run on.
+  SKATTJAKT_MODEL_ID: ""
+---
+# Created out of band, e.g. by External Secrets or sealed-secrets. Never in git.
+#   kubectl -n skattjakt create secret generic skattjakt-secrets \
+#     --from-literal=ANTHROPIC_API_KEY=... \
+#     --from-literal=SKATTJAKT_API_TOKEN=... \
+#     --from-literal=DATABASE_URL=...
+apiVersion: v1
+kind: Secret
+metadata:
+  name: skattjakt-secrets
+  namespace: skattjakt
+type: Opaque
+stringData:
+  ANTHROPIC_API_KEY: "REPLACE_OUT_OF_BAND"
+  SKATTJAKT_API_TOKEN: "REPLACE_OUT_OF_BAND"
+  DATABASE_URL: "REPLACE_OUT_OF_BAND"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: skattjakt-api
+  namespace: skattjakt
+  labels: { app: skattjakt-api }
+spec:
+  replicas: 2
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels: { app: skattjakt-api }
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
+  template:
+    metadata:
+      labels: { app: skattjakt-api }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile: { type: RuntimeDefault }
+      # An analysis can run for minutes; let one finish rather than cutting it off.
+      terminationGracePeriodSeconds: 120
+      containers:
+        - name: api
+          image: ghcr.io/wolfoftyreso-debug/skattjakt:0.1.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef: { name: skattjakt-config }
+            - secretRef: { name: skattjakt-secrets }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: "250m", memory: "256Mi" }
+            limits: { cpu: "2", memory: "1Gi" }
+          # Liveness touches nothing; a slow model must never restart the pod.
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 3
+          # Readiness reflects whether an analysis can actually be served.
+          readinessProbe:
+            httpGet: { path: /ready, port: http }
+            initialDelaySeconds: 3
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          startupProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 3
+            failureThreshold: 20
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: { medium: Memory, sizeLimit: 256Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: skattjakt-api
+  namespace: skattjakt
+spec:
+  type: ClusterIP
+  selector: { app: skattjakt-api }
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: skattjakt-api
+  namespace: skattjakt
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: { app: skattjakt-api }
+---
+# Deny-by-default egress. The API needs DNS, Postgres and the model provider,
+# and nothing else — a service handling other companies' financial statements
+# should not be able to reach arbitrary hosts.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: skattjakt-api
+  namespace: skattjakt
+spec:
+  podSelector:
+    matchLabels: { app: skattjakt-api }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { name: ingress-nginx }
+      ports:
+        - { protocol: TCP, port: 8080 }
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels: { k8s-app: kube-dns }
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    - to:
+        - podSelector:
+            matchLabels: { app: postgres }
+      ports:
+        - { protocol: TCP, port: 5432 }
+    # Model provider over HTTPS.
+    - ports:
+        - { protocol: TCP, port: 443 }

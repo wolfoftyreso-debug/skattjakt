@@ -54,11 +54,18 @@ impl MimeType {
     /// Maps a declared content type to a supported kind. Unsupported types are
     /// rejected at the edge rather than discovered mid-pipeline.
     pub fn from_content_type(value: &str) -> Option<Self> {
-        let normalised = value.split(';').next().unwrap_or_default().trim().to_ascii_lowercase();
+        let normalised = value
+            .split(';')
+            .next()
+            .unwrap_or_default()
+            .trim()
+            .to_ascii_lowercase();
         match normalised.as_str() {
             "application/pdf" => Some(MimeType::Pdf),
             "text/csv" | "application/csv" => Some(MimeType::Csv),
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => Some(MimeType::Xlsx),
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => {
+                Some(MimeType::Xlsx)
+            }
             "application/sie" | "text/sie" => Some(MimeType::Sie),
             "text/plain" => Some(MimeType::PlainText),
             _ => None,
@@ -127,7 +134,12 @@ pub struct DocumentVersion {
 impl DocumentVersion {
     /// The storage key layout. Tenant-prefixed so an object listing cannot
     /// return another company's material even by accident.
-    pub fn build_storage_key(company_id: CompanyId, document_id: DocumentId, version: i32, sha256: &str) -> String {
+    pub fn build_storage_key(
+        company_id: CompanyId,
+        document_id: DocumentId,
+        version: i32,
+        sha256: &str,
+    ) -> String {
         format!("companies/{company_id}/documents/{document_id}/v{version}-{sha256}")
     }
 
@@ -151,18 +163,21 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
 // The core crate stays dependency-light; SHA-256 is small enough to carry.
 fn sha2_digest(data: &[u8]) -> [u8; 32] {
     const K: [u32; 64] = [
-        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
-        0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
-        0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
-        0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
-        0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
-        0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
-        0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
-        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4,
+        0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe,
+        0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f,
+        0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
+        0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc,
+        0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
+        0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116,
+        0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7,
+        0xc67178f2,
     ];
 
     let mut h: [u32; 8] = [
-        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
+        0x5be0cd19,
     ];
 
     let bit_len = (data.len() as u64).wrapping_mul(8);
@@ -245,9 +260,15 @@ mod tests {
 
     #[test]
     fn content_type_mapping_ignores_parameters_and_case() {
-        assert_eq!(MimeType::from_content_type("application/PDF; charset=binary"), Some(MimeType::Pdf));
+        assert_eq!(
+            MimeType::from_content_type("application/PDF; charset=binary"),
+            Some(MimeType::Pdf)
+        );
         assert_eq!(MimeType::from_content_type("text/csv"), Some(MimeType::Csv));
-        assert_eq!(MimeType::from_content_type("application/x-msdownload"), None);
+        assert_eq!(
+            MimeType::from_content_type("application/x-msdownload"),
+            None
+        );
     }
 
     #[test]

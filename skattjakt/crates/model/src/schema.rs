@@ -188,7 +188,9 @@ mod tests {
             }]
         });
         let errors = validate(&value, &candidate_schema()).unwrap_err();
-        assert!(errors.iter().any(|e| e.path == "$.candidates[0].estimated_saving"));
+        assert!(errors
+            .iter()
+            .any(|e| e.path == "$.candidates[0].estimated_saving"));
     }
 
     #[test]
@@ -197,7 +199,9 @@ mod tests {
             "candidates": [{"title": "T", "category": "invented", "rationale": "r"}]
         });
         let errors = validate(&value, &candidate_schema()).unwrap_err();
-        assert!(errors.iter().any(|e| e.message.contains("not one of the permitted")));
+        assert!(errors
+            .iter()
+            .any(|e| e.message.contains("not one of the permitted")));
     }
 
     #[test]

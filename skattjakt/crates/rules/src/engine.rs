@@ -64,7 +64,10 @@ impl RuleEngine {
             .iter()
             .map(|c| (c.tax_year, c.clone()))
             .collect();
-        let engine = Self { set, constants_by_year };
+        let engine = Self {
+            set,
+            constants_by_year,
+        };
         let problems = engine.validate();
         if problems.is_empty() {
             Ok(engine)
@@ -116,11 +119,17 @@ impl RuleEngine {
             }
 
             if !(0.0..=1.0).contains(&rule.relevance) {
-                problems.push(format!("{}: relevance must be within 0.0..=1.0", rule.rule_id));
+                problems.push(format!(
+                    "{}: relevance must be within 0.0..=1.0",
+                    rule.rule_id
+                ));
             }
 
             if rule.source.citation.trim().is_empty() {
-                problems.push(format!("{}: a rule must carry a source citation", rule.rule_id));
+                problems.push(format!(
+                    "{}: a rule must carry a source citation",
+                    rule.rule_id
+                ));
             }
 
             // Every year the rule claims to cover must have constants that
@@ -178,7 +187,11 @@ impl RuleEngine {
     /// Section 31 requires this to be an explicit state, not an empty result.
     pub fn covers_tax_year(&self, tax_year: i32) -> bool {
         self.constants_by_year.contains_key(&tax_year)
-            && self.set.rules.iter().any(|r| r.applies_to_tax_year(tax_year))
+            && self
+                .set
+                .rules
+                .iter()
+                .any(|r| r.applies_to_tax_year(tax_year))
     }
 
     pub fn evaluate(&self, rule: &Rule, ctx: &EvalContext<'_>) -> RuleEvaluation {
@@ -246,11 +259,14 @@ impl RuleEngine {
         } else if let Some(err) = impact_error {
             if err.is_missing_information() {
                 RuleOutcome::Indeterminate {
-                    reason: "regeln är tillämplig men underlaget räcker inte för att beräkna effekten"
-                        .to_string(),
+                    reason:
+                        "regeln är tillämplig men underlaget räcker inte för att beräkna effekten"
+                            .to_string(),
                 }
             } else {
-                RuleOutcome::RuleError { reason: err.to_string() }
+                RuleOutcome::RuleError {
+                    reason: err.to_string(),
+                }
             }
         } else if !exception_notes.is_empty() {
             RuleOutcome::Indeterminate {
@@ -293,22 +309,27 @@ impl RuleEngine {
         &self,
         rule: &Rule,
         ctx: &EvalContext<'_>,
-    ) -> (Option<MoneyRange>, Option<CalculationRecord>, Option<EvalError>) {
+    ) -> (
+        Option<MoneyRange>,
+        Option<CalculationRecord>,
+        Option<EvalError>,
+    ) {
         match &rule.impact {
             ImpactSpec::None => (None, None, None),
 
-            ImpactSpec::Point { expr, uncertainty_bp } => {
-                match expr.eval(ctx.facts, ctx.constants) {
-                    Ok(value) => match MoneyRange::around(value, *uncertainty_bp) {
-                        Ok(range) => {
-                            let record = self.record(expr, "point_with_uncertainty", ctx, range);
-                            (Some(range), Some(record), None)
-                        }
-                        Err(_) => (None, None, Some(EvalError::Overflow("uncertainty".into()))),
-                    },
-                    Err(e) => (None, None, Some(e)),
-                }
-            }
+            ImpactSpec::Point {
+                expr,
+                uncertainty_bp,
+            } => match expr.eval(ctx.facts, ctx.constants) {
+                Ok(value) => match MoneyRange::around(value, *uncertainty_bp) {
+                    Ok(range) => {
+                        let record = self.record(expr, "point_with_uncertainty", ctx, range);
+                        (Some(range), Some(record), None)
+                    }
+                    Err(_) => (None, None, Some(EvalError::Overflow("uncertainty".into()))),
+                },
+                Err(e) => (None, None, Some(e)),
+            },
 
             ImpactSpec::Range { low, high } => {
                 let lo = low.eval(ctx.facts, ctx.constants);
@@ -372,7 +393,13 @@ pub fn context<'a>(
     tax_year: i32,
     accounts_state: skattjakt_core::document::AccountsState,
 ) -> EvalContext<'a> {
-    EvalContext { facts, profile, constants, tax_year, accounts_state }
+    EvalContext {
+        facts,
+        profile,
+        constants,
+        tax_year,
+        accounts_state,
+    }
 }
 
 #[cfg(test)]
@@ -388,7 +415,10 @@ mod tests {
     };
 
     fn constants(year: i32) -> TaxYearConstants {
-        let mut c = TaxYearConstants { tax_year: year, ..Default::default() };
+        let mut c = TaxYearConstants {
+            tax_year: year,
+            ..Default::default()
+        };
         c.rates_bp.insert("corporate_tax".into(), 2060);
         c.amounts.insert("prisbasbelopp".into(), 5_880_000);
         c
@@ -440,7 +470,9 @@ mod tests {
             description: "d".into(),
             category: OpportunityCategory::Tax,
             conditions: Condition::Compare {
-                left: Expr::Fact { fact: FactKind::TaxableResult },
+                left: Expr::Fact {
+                    fact: FactKind::TaxableResult,
+                },
                 op: CmpOp::Gt,
                 right: Expr::Amount { sek: 0 },
             },
@@ -448,7 +480,9 @@ mod tests {
             impact: ImpactSpec::Point {
                 expr: Expr::MulRate {
                     of: Box::new(Expr::MulBp {
-                        of: Box::new(Expr::Fact { fact: FactKind::TaxableResult }),
+                        of: Box::new(Expr::Fact {
+                            fact: FactKind::TaxableResult,
+                        }),
                         bp: 2500,
                     }),
                     rate: "corporate_tax".into(),
@@ -463,7 +497,9 @@ mod tests {
                 source_version: "2025".into(),
                 url: None,
             },
-            review: ReviewState::AwaitingProfessionalReview { note: String::new() },
+            review: ReviewState::AwaitingProfessionalReview {
+                note: String::new(),
+            },
             effort: InvestigationEffort::Low,
             risk: RiskLevel::Low,
             urgency: Urgency::BeforeFiling,
@@ -481,18 +517,18 @@ mod tests {
         .expect("test rule set should be valid")
     }
 
-    fn ctx<'a>(
-        f: &'a FactSet,
-        p: &'a CompanyProfile,
-        c: &'a TaxYearConstants,
-    ) -> EvalContext<'a> {
+    fn ctx<'a>(f: &'a FactSet, p: &'a CompanyProfile, c: &'a TaxYearConstants) -> EvalContext<'a> {
         context(f, p, c, 2025, AccountsState::Preliminary)
     }
 
     #[test]
     fn a_matching_rule_computes_its_impact() {
         let engine = engine_with(vec![test_rule()]);
-        let (f, p, c) = (facts(&[(FactKind::TaxableResult, 1_000_000)]), profile(), constants(2025));
+        let (f, p, c) = (
+            facts(&[(FactKind::TaxableResult, 1_000_000)]),
+            profile(),
+            constants(2025),
+        );
         let eval = engine.evaluate(&engine.rules()[0], &ctx(&f, &p, &c));
 
         assert_eq!(eval.outcome, RuleOutcome::Matched);
@@ -507,7 +543,11 @@ mod tests {
     #[test]
     fn a_failing_condition_is_not_applicable_rather_than_a_finding() {
         let engine = engine_with(vec![test_rule()]);
-        let (f, p, c) = (facts(&[(FactKind::TaxableResult, -5_000)]), profile(), constants(2025));
+        let (f, p, c) = (
+            facts(&[(FactKind::TaxableResult, -5_000)]),
+            profile(),
+            constants(2025),
+        );
         let eval = engine.evaluate(&engine.rules()[0], &ctx(&f, &p, &c));
         assert!(matches!(eval.outcome, RuleOutcome::NotApplicable { .. }));
         assert!(!eval.outcome.produces_finding());
@@ -519,7 +559,10 @@ mod tests {
         let (f, p, c) = (facts(&[]), profile(), constants(2025));
         let eval = engine.evaluate(&engine.rules()[0], &ctx(&f, &p, &c));
         assert!(matches!(eval.outcome, RuleOutcome::Indeterminate { .. }));
-        assert!(eval.outcome.produces_finding(), "a gap is still worth surfacing");
+        assert!(
+            eval.outcome.produces_finding(),
+            "a gap is still worth surfacing"
+        );
         assert!(eval.missing_facts.contains(&FactKind::TaxableResult));
     }
 
@@ -535,11 +578,20 @@ mod tests {
             explanation: "Koncernbidrag kan påverka bedömningen.".into(),
         });
         let engine = engine_with(vec![rule]);
-        let p = CompanyProfile { in_group: Some(true), ..profile() };
-        let (f, c) = (facts(&[(FactKind::TaxableResult, 1_000_000)]), constants(2025));
+        let p = CompanyProfile {
+            in_group: Some(true),
+            ..profile()
+        };
+        let (f, c) = (
+            facts(&[(FactKind::TaxableResult, 1_000_000)]),
+            constants(2025),
+        );
         let eval = engine.evaluate(&engine.rules()[0], &ctx(&f, &p, &c));
         assert!(matches!(eval.outcome, RuleOutcome::ExceptionApplies { .. }));
-        assert!(eval.impact.is_none(), "a disqualified rule must not report money");
+        assert!(
+            eval.impact.is_none(),
+            "a disqualified rule must not report money"
+        );
     }
 
     #[test]
@@ -554,8 +606,14 @@ mod tests {
             explanation: "Koncernförhållande är inte utrett.".into(),
         });
         let engine = engine_with(vec![rule]);
-        let p = CompanyProfile { in_group: None, ..profile() };
-        let (f, c) = (facts(&[(FactKind::TaxableResult, 1_000_000)]), constants(2025));
+        let p = CompanyProfile {
+            in_group: None,
+            ..profile()
+        };
+        let (f, c) = (
+            facts(&[(FactKind::TaxableResult, 1_000_000)]),
+            constants(2025),
+        );
         let eval = engine.evaluate(&engine.rules()[0], &ctx(&f, &p, &c));
         assert!(matches!(eval.outcome, RuleOutcome::Indeterminate { .. }));
         assert!(!eval.exception_notes.is_empty());
@@ -566,7 +624,11 @@ mod tests {
         let mut rule = test_rule();
         rule.tax_year_to = Some(2022);
         let engine = engine_with(vec![rule]);
-        let (f, p, c) = (facts(&[(FactKind::TaxableResult, 1)]), profile(), constants(2025));
+        let (f, p, c) = (
+            facts(&[(FactKind::TaxableResult, 1)]),
+            profile(),
+            constants(2025),
+        );
         let eval = engine.evaluate(&engine.rules()[0], &ctx(&f, &p, &c));
         assert!(matches!(eval.outcome, RuleOutcome::OutOfScope { .. }));
     }
@@ -577,7 +639,11 @@ mod tests {
         old.rule_id = "se.test.old".into();
         old.tax_year_to = Some(2022);
         let engine = engine_with(vec![test_rule(), old]);
-        let (f, p, c) = (facts(&[(FactKind::TaxableResult, 1_000)]), profile(), constants(2025));
+        let (f, p, c) = (
+            facts(&[(FactKind::TaxableResult, 1_000)]),
+            profile(),
+            constants(2025),
+        );
         let evals = engine.evaluate_all(&ctx(&f, &p, &c));
         assert_eq!(evals.len(), 1);
         assert_eq!(evals[0].rule_id, "se.test.headroom");
@@ -587,7 +653,10 @@ mod tests {
     fn a_missing_constant_for_the_year_is_a_rule_error_not_a_silent_pass() {
         let engine = engine_with(vec![test_rule()]);
         // A year the constants table does not cover.
-        let empty = TaxYearConstants { tax_year: 2030, ..Default::default() };
+        let empty = TaxYearConstants {
+            tax_year: 2030,
+            ..Default::default()
+        };
         let (f, p) = (facts(&[(FactKind::TaxableResult, 1_000_000)]), profile());
         let context = context(&f, &p, &empty, 2030, AccountsState::Preliminary);
         let eval = engine.evaluate(&engine.rules()[0], &context);
@@ -633,7 +702,9 @@ mod tests {
         let mut rule = test_rule();
         rule.impact = ImpactSpec::Point {
             expr: Expr::MulRate {
-                of: Box::new(Expr::Fact { fact: FactKind::TaxableResult }),
+                of: Box::new(Expr::Fact {
+                    fact: FactKind::TaxableResult,
+                }),
                 rate: "does_not_exist".into(),
             },
             uncertainty_bp: 0,
@@ -666,12 +737,19 @@ mod tests {
     #[test]
     fn the_calculation_record_captures_inputs_for_reproduction() {
         let engine = engine_with(vec![test_rule()]);
-        let (f, p, c) = (facts(&[(FactKind::TaxableResult, 1_000_000)]), profile(), constants(2025));
+        let (f, p, c) = (
+            facts(&[(FactKind::TaxableResult, 1_000_000)]),
+            profile(),
+            constants(2025),
+        );
         let eval = engine.evaluate(&engine.rules()[0], &ctx(&f, &p, &c));
         let calc = eval.calculation.unwrap();
         assert_eq!(calc.inputs.len(), 1);
         assert_eq!(calc.inputs[0].name, "taxable_result");
         assert_eq!(calc.inputs[0].value, Money::from_sek(1_000_000).unwrap());
-        assert!(calc.expression.is_object(), "the expression must be stored verbatim");
+        assert!(
+            calc.expression.is_object(),
+            "the expression must be stored verbatim"
+        );
     }
 }

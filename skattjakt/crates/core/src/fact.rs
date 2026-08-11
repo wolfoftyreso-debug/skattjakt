@@ -201,7 +201,9 @@ impl FactSet {
     pub fn insert(&mut self, fact: FinancialFact) {
         let key = fact.kind.key();
         match self.index.get(&key) {
-            Some(&existing) if self.facts[existing].extraction_confidence >= fact.extraction_confidence => {
+            Some(&existing)
+                if self.facts[existing].extraction_confidence >= fact.extraction_confidence =>
+            {
                 // Keep the better-supported reading as canonical, but retain
                 // this one so contradictions remain visible.
                 self.facts.push(fact);
@@ -247,7 +249,11 @@ impl FactSet {
     /// information factor of the confidence engine and the report section that
     /// tells the user what would make the analysis better.
     pub fn missing_among(&self, kinds: &[FactKind]) -> Vec<FactKind> {
-        kinds.iter().filter(|k| self.get(k).is_none()).cloned().collect()
+        kinds
+            .iter()
+            .filter(|k| self.get(k).is_none())
+            .cloned()
+            .collect()
     }
 
     /// Two readings of the same quantity that disagree. A genuine signal in its
@@ -322,7 +328,10 @@ mod tests {
         let mut set = FactSet::new();
         set.insert(fact(FactKind::Revenue, 1_000, 0.6));
         set.insert(fact(FactKind::Revenue, 2_000, 0.9));
-        assert_eq!(set.value(&FactKind::Revenue), Some(Money::from_sek(2_000).unwrap()));
+        assert_eq!(
+            set.value(&FactKind::Revenue),
+            Some(Money::from_sek(2_000).unwrap())
+        );
         assert_eq!(set.all_readings(&FactKind::Revenue).len(), 2);
     }
 
@@ -331,7 +340,10 @@ mod tests {
         let mut set = FactSet::new();
         set.insert(fact(FactKind::Revenue, 2_000, 0.9));
         set.insert(fact(FactKind::Revenue, 1_000, 0.4));
-        assert_eq!(set.value(&FactKind::Revenue), Some(Money::from_sek(2_000).unwrap()));
+        assert_eq!(
+            set.value(&FactKind::Revenue),
+            Some(Money::from_sek(2_000).unwrap())
+        );
     }
 
     #[test]
@@ -358,7 +370,11 @@ mod tests {
         assert_eq!(set.balance_sheet_balances(), None);
 
         set.insert(fact(FactKind::TotalAssets, 500, 1.0));
-        assert_eq!(set.balance_sheet_balances(), None, "one side alone answers nothing");
+        assert_eq!(
+            set.balance_sheet_balances(),
+            None,
+            "one side alone answers nothing"
+        );
 
         set.insert(fact(FactKind::TotalEquityAndLiabilities, 500, 1.0));
         assert_eq!(set.balance_sheet_balances(), Some(true));
@@ -385,8 +401,14 @@ mod tests {
         let mut set = FactSet::new();
         set.insert(fact(FactKind::Other("konstverk".into()), 10, 1.0));
         set.insert(fact(FactKind::Other("bilförmån".into()), 20, 1.0));
-        assert_eq!(set.value(&FactKind::Other("konstverk".into())), Some(Money::from_sek(10).unwrap()));
-        assert_eq!(set.value(&FactKind::Other("bilförmån".into())), Some(Money::from_sek(20).unwrap()));
+        assert_eq!(
+            set.value(&FactKind::Other("konstverk".into())),
+            Some(Money::from_sek(10).unwrap())
+        );
+        assert_eq!(
+            set.value(&FactKind::Other("bilförmån".into())),
+            Some(Money::from_sek(20).unwrap())
+        );
     }
 
     #[test]
@@ -395,14 +417,20 @@ mod tests {
         assert!(FactKind::Depreciation.is_cost());
         assert!(FactKind::InterestExpense.is_cost());
         assert!(!FactKind::Revenue.is_cost());
-        assert!(!FactKind::OperatingProfit.is_cost(), "a result may legitimately be negative");
+        assert!(
+            !FactKind::OperatingProfit.is_cost(),
+            "a result may legitimately be negative"
+        );
         assert!(!FactKind::TaxableResult.is_cost());
     }
 
     #[test]
     fn fact_kind_keys_are_stable_snake_case() {
         assert_eq!(FactKind::ProfitBeforeTax.key(), "profit_before_tax");
-        assert_eq!(FactKind::TaxAllocationReserve.key(), "tax_allocation_reserve");
+        assert_eq!(
+            FactKind::TaxAllocationReserve.key(),
+            "tax_allocation_reserve"
+        );
     }
 
     #[test]

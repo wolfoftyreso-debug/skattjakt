@@ -141,7 +141,10 @@ impl EvidenceChain {
             .items
             .iter()
             .filter_map(|i| match i {
-                EvidenceItem::DocumentValue { document_version_id, .. } => Some(*document_version_id),
+                EvidenceItem::DocumentValue {
+                    document_version_id,
+                    ..
+                } => Some(*document_version_id),
                 _ => None,
             })
             .collect();
@@ -207,7 +210,10 @@ mod tests {
 
     #[test]
     fn an_empty_chain_is_not_actionable() {
-        assert_eq!(EvidenceChain::new().validate_actionable(), Err(CoreError::EvidenceRequired));
+        assert_eq!(
+            EvidenceChain::new().validate_actionable(),
+            Err(CoreError::EvidenceRequired)
+        );
     }
 
     #[test]
@@ -231,7 +237,10 @@ mod tests {
 
     #[test]
     fn document_value_plus_rule_is_actionable() {
-        let chain = EvidenceChain::new().with(doc_value()).with(rule()).with(model());
+        let chain = EvidenceChain::new()
+            .with(doc_value())
+            .with(rule())
+            .with(model());
         assert!(chain.validate_actionable().is_ok());
         assert!(!chain.is_model_only());
         assert!(chain.has_document_anchor());
@@ -240,17 +249,23 @@ mod tests {
 
     #[test]
     fn assumptions_are_extractable_for_display() {
-        let chain = EvidenceChain::new()
-            .with(doc_value())
-            .with(rule())
-            .with(EvidenceItem::Assumption { statement: "Bolaget är inte i koncern.".to_string() });
+        let chain =
+            EvidenceChain::new()
+                .with(doc_value())
+                .with(rule())
+                .with(EvidenceItem::Assumption {
+                    statement: "Bolaget är inte i koncern.".to_string(),
+                });
         assert_eq!(chain.assumptions(), vec!["Bolaget är inte i koncern."]);
     }
 
     #[test]
     fn document_versions_are_deduplicated() {
         let item = doc_value();
-        let chain = EvidenceChain::new().with(item.clone()).with(item).with(rule());
+        let chain = EvidenceChain::new()
+            .with(item.clone())
+            .with(item)
+            .with(rule());
         assert_eq!(chain.document_versions().len(), 1);
     }
 }

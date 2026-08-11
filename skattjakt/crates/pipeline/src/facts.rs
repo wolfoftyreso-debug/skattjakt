@@ -87,7 +87,10 @@ mod tests {
             document_id: DocumentId::new(),
             document_version_id: DocumentVersionId::new(),
             extracted: ExtractedDocument {
-                pages: vec![Page { number: 1, text: text.to_string() }],
+                pages: vec![Page {
+                    number: 1,
+                    text: text.to_string(),
+                }],
                 unreadable_pages: vec![],
                 scale: Scale::Kronor,
             },
@@ -99,21 +102,36 @@ mod tests {
         let docs = vec![document("Nettoomsättning    12 500 000")];
         let set = build_fact_set(CompanyId::new(), FiscalYear::calendar(2025).unwrap(), &docs);
 
-        let fact = set.get(&FactKind::Revenue).expect("revenue should be extracted");
+        let fact = set
+            .get(&FactKind::Revenue)
+            .expect("revenue should be extracted");
         assert_eq!(fact.value, Money::from_sek(12_500_000).unwrap());
-        assert!(fact.is_traceable(), "a fact must carry its page and source text");
+        assert!(
+            fact.is_traceable(),
+            "a fact must carry its page and source text"
+        );
         assert_eq!(fact.source_page, Some(1));
     }
 
     #[test]
     fn a_document_with_unreadable_pages_yields_lower_confidence() {
         let mut doc = document("Nettoomsättning    1 000");
-        doc.extracted.pages.push(Page { number: 2, text: String::new() });
+        doc.extracted.pages.push(Page {
+            number: 2,
+            text: String::new(),
+        });
         doc.extracted.unreadable_pages.push(2);
 
-        let set = build_fact_set(CompanyId::new(), FiscalYear::calendar(2025).unwrap(), &[doc]);
+        let set = build_fact_set(
+            CompanyId::new(),
+            FiscalYear::calendar(2025).unwrap(),
+            &[doc],
+        );
         let fact = set.get(&FactKind::Revenue).unwrap();
-        assert!(fact.extraction_confidence.get() < 0.6, "half the pages were unreadable");
+        assert!(
+            fact.extraction_confidence.get() < 0.6,
+            "half the pages were unreadable"
+        );
     }
 
     #[test]
@@ -144,7 +162,10 @@ mod sign_tests {
             document_id: DocumentId::new(),
             document_version_id: DocumentVersionId::new(),
             extracted: ExtractedDocument {
-                pages: vec![Page { number: 1, text: text.to_string() }],
+                pages: vec![Page {
+                    number: 1,
+                    text: text.to_string(),
+                }],
                 unreadable_pages: vec![],
                 scale: Scale::Kronor,
             },

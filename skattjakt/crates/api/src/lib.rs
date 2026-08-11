@@ -17,13 +17,14 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use chrono::NaiveDate;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::json;
-use skattjakt_core::analysis::AnalysisResult;
 use skattjakt_core::document::{AccountsState, MimeType};
 use skattjakt_core::{AnalysisId, CompanyId, CompanyProfile, FiscalYear, OrgNumber};
 use skattjakt_model::{ModelProvider, ScriptedProvider};
-use skattjakt_pipeline::pipeline::{AnalysisPipeline, PipelineConfig, PipelineError, SilentObserver};
+use skattjakt_pipeline::pipeline::{
+    AnalysisPipeline, PipelineConfig, PipelineError, SilentObserver,
+};
 use skattjakt_pipeline::{AnalysisInput, DocumentInput};
 use skattjakt_rules::{ReviewState, RuleEngine};
 
@@ -84,7 +85,9 @@ impl AppState {
             engine,
             provider,
             config: PipelineConfig::default(),
-            api_token: std::env::var("SKATTJAKT_API_TOKEN").ok().filter(|t| !t.is_empty()),
+            api_token: std::env::var("SKATTJAKT_API_TOKEN")
+                .ok()
+                .filter(|t| !t.is_empty()),
             model_configured,
         })
     }
@@ -114,7 +117,11 @@ struct Problem {
 
 impl Problem {
     fn bad_request(title: &str, detail: impl Into<String>) -> Self {
-        Self { status: StatusCode::BAD_REQUEST, title: title.into(), detail: detail.into() }
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            title: title.into(),
+            detail: detail.into(),
+        }
     }
 
     fn unauthorized() -> Self {
@@ -130,7 +137,11 @@ impl Problem {
 
 impl IntoResponse for Problem {
     fn into_response(self) -> Response {
-        (self.status, Json(json!({"title": self.title, "detail": self.detail}))).into_response()
+        (
+            self.status,
+            Json(json!({"title": self.title, "detail": self.detail})),
+        )
+            .into_response()
     }
 }
 
@@ -230,7 +241,12 @@ async fn rules(State(state): State<AppState>, headers: HeaderMap) -> Result<Resp
         })
         .collect();
 
-    let unreviewed = state.engine.rules().iter().filter(|r| !r.review.is_reviewed()).count();
+    let unreviewed = state
+        .engine
+        .rules()
+        .iter()
+        .filter(|r| !r.review.is_reviewed())
+        .count();
 
     Ok(Json(json!({
         "version": state.engine.version(),
@@ -296,9 +312,6 @@ pub struct DocumentUpload {
     pub content_base64: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
-struct AnalysisResponse(AnalysisResult);
-
 async fn analyse(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -316,8 +329,11 @@ async fn analyse(
     let org_number = OrgNumber::parse(&request.company.org_number)
         .map_err(|e| Problem::bad_request("invalid organisationsnummer", e.to_string()))?;
 
-    let fiscal_year = FiscalYear::new(request.company.fiscal_year.start, request.company.fiscal_year.end)
-        .map_err(|e| Problem::bad_request("invalid fiscal year", e.to_string()))?;
+    let fiscal_year = FiscalYear::new(
+        request.company.fiscal_year.start,
+        request.company.fiscal_year.end,
+    )
+    .map_err(|e| Problem::bad_request("invalid fiscal year", e.to_string()))?;
 
     let company = CompanyProfile {
         id: CompanyId::new(),
@@ -400,7 +416,10 @@ fn prepare_document(upload: DocumentUpload) -> Result<DocumentInput, Problem> {
         (Some(_), Some(_)) => {
             return Err(Problem::bad_request(
                 "ambiguous document",
-                format!("{}: supply either text or content_base64, not both", upload.filename),
+                format!(
+                    "{}: supply either text or content_base64, not both",
+                    upload.filename
+                ),
             ))
         }
         (Some(text), None) => text.into_bytes(),
@@ -422,7 +441,11 @@ fn prepare_document(upload: DocumentUpload) -> Result<DocumentInput, Problem> {
     if !mime.matches_content(&bytes) {
         return Err(Problem::bad_request(
             "content does not match its declared type",
-            format!("{} does not look like {}", upload.filename, mime.as_content_type()),
+            format!(
+                "{} does not look like {}",
+                upload.filename,
+                mime.as_content_type()
+            ),
         ));
     }
 

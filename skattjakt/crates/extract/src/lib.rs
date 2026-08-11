@@ -98,7 +98,11 @@ pub fn extract(bytes: &[u8], mime: MimeType) -> Result<ExtractedDocument, Extrac
         }
     };
 
-    let unreadable_pages = pages.iter().filter(|p| p.is_empty()).map(|p| p.number).collect();
+    let unreadable_pages = pages
+        .iter()
+        .filter(|p| p.is_empty())
+        .map(|p| p.number)
+        .collect();
     let scale = detect_scale(
         &pages
             .iter()
@@ -107,7 +111,11 @@ pub fn extract(bytes: &[u8], mime: MimeType) -> Result<ExtractedDocument, Extrac
             .join("\n"),
     );
 
-    let document = ExtractedDocument { pages, unreadable_pages, scale };
+    let document = ExtractedDocument {
+        pages,
+        unreadable_pages,
+        scale,
+    };
 
     if document.pages.is_empty() || document.readable_fraction() == 0.0 {
         return Err(ExtractError::NoText);
@@ -130,7 +138,10 @@ fn extract_pdf(bytes: &[u8]) -> Result<Vec<Page>, ExtractError> {
     let pages: Vec<Page> = text
         .split('\u{c}')
         .enumerate()
-        .map(|(i, page)| Page { number: i as u32 + 1, text: page.to_string() })
+        .map(|(i, page)| Page {
+            number: i as u32 + 1,
+            text: page.to_string(),
+        })
         .collect();
 
     if pages.is_empty() {
@@ -152,7 +163,10 @@ mod tests {
 
     #[test]
     fn an_empty_document_is_an_error_not_an_empty_result() {
-        assert!(matches!(extract(b"   \n", MimeType::PlainText), Err(ExtractError::NoText)));
+        assert!(matches!(
+            extract(b"   \n", MimeType::PlainText),
+            Err(ExtractError::NoText)
+        ));
     }
 
     #[test]
@@ -175,10 +189,22 @@ mod tests {
     fn readable_fraction_reflects_blank_pages() {
         let doc = ExtractedDocument {
             pages: vec![
-                Page { number: 1, text: "text".into() },
-                Page { number: 2, text: "  ".into() },
-                Page { number: 3, text: "more".into() },
-                Page { number: 4, text: String::new() },
+                Page {
+                    number: 1,
+                    text: "text".into(),
+                },
+                Page {
+                    number: 2,
+                    text: "  ".into(),
+                },
+                Page {
+                    number: 3,
+                    text: "more".into(),
+                },
+                Page {
+                    number: 4,
+                    text: String::new(),
+                },
             ],
             unreadable_pages: vec![2, 4],
             scale: Scale::Kronor,
@@ -190,8 +216,14 @@ mod tests {
     fn facts_are_collected_across_pages_with_page_attribution() {
         let doc = ExtractedDocument {
             pages: vec![
-                Page { number: 1, text: "Nettoomsättning 1 000 000".into() },
-                Page { number: 2, text: "Summa tillgångar 5 000 000".into() },
+                Page {
+                    number: 1,
+                    text: "Nettoomsättning 1 000 000".into(),
+                },
+                Page {
+                    number: 2,
+                    text: "Summa tillgångar 5 000 000".into(),
+                },
             ],
             unreadable_pages: vec![],
             scale: Scale::Kronor,
@@ -204,7 +236,11 @@ mod tests {
 
     #[test]
     fn the_thousands_scale_is_detected_from_the_document_as_a_whole() {
-        let doc = extract(b"Belopp i tkr\nNettoomsattning 12 500\n", MimeType::PlainText).unwrap();
+        let doc = extract(
+            b"Belopp i tkr\nNettoomsattning 12 500\n",
+            MimeType::PlainText,
+        )
+        .unwrap();
         assert_eq!(doc.scale, Scale::Thousands);
     }
 }

@@ -118,7 +118,10 @@ pub struct TokenUsage {
 #[derive(Debug, Error)]
 pub enum ProviderError {
     #[error("the model declined the request ({category}): {explanation}")]
-    Refused { category: String, explanation: String },
+    Refused {
+        category: String,
+        explanation: String,
+    },
 
     #[error("the response was cut off before it was complete; raise max_tokens")]
     Truncated,
@@ -210,7 +213,10 @@ pub struct ScriptedProvider {
 
 impl ScriptedProvider {
     pub fn new() -> Self {
-        Self { responses: BTreeMap::new(), model_id: "scripted-1".to_string() }
+        Self {
+            responses: BTreeMap::new(),
+            model_id: "scripted-1".to_string(),
+        }
     }
 
     pub fn with(mut self, task: ReasoningTask, output: serde_json::Value) -> Self {
@@ -230,11 +236,9 @@ impl ModelProvider for ScriptedProvider {
     }
 
     async fn run(&self, request: &ModelRequest) -> ProviderResult<ModelResponse> {
-        let output = self
-            .responses
-            .get(&request.task)
-            .cloned()
-            .ok_or_else(|| ProviderError::NotConfigured(format!("no scripted response for {}", request.task)))?;
+        let output = self.responses.get(&request.task).cloned().ok_or_else(|| {
+            ProviderError::NotConfigured(format!("no scripted response for {}", request.task))
+        })?;
 
         Ok(ModelResponse {
             task: request.task,
@@ -254,27 +258,55 @@ mod tests {
 
     #[test]
     fn task_keys_are_stable() {
-        assert_eq!(ReasoningTask::OpportunityDiscovery.key(), "opportunity_discovery");
-        assert_eq!(ReasoningTask::ContradictionCheck.to_string(), "contradiction_check");
+        assert_eq!(
+            ReasoningTask::OpportunityDiscovery.key(),
+            "opportunity_discovery"
+        );
+        assert_eq!(
+            ReasoningTask::ContradictionCheck.to_string(),
+            "contradiction_check"
+        );
     }
 
     #[test]
     fn retryable_classification_matches_provider_semantics() {
         assert!(ProviderError::Transport("reset".into()).is_retryable());
-        assert!(ProviderError::Http { status: 429, message: "rate limited".into() }.is_retryable());
-        assert!(ProviderError::Http { status: 529, message: "overloaded".into() }.is_retryable());
-        assert!(ProviderError::Http { status: 503, message: "down".into() }.is_retryable());
+        assert!(ProviderError::Http {
+            status: 429,
+            message: "rate limited".into()
+        }
+        .is_retryable());
+        assert!(ProviderError::Http {
+            status: 529,
+            message: "overloaded".into()
+        }
+        .is_retryable());
+        assert!(ProviderError::Http {
+            status: 503,
+            message: "down".into()
+        }
+        .is_retryable());
 
-        assert!(!ProviderError::Http { status: 400, message: "bad".into() }.is_retryable());
-        assert!(!ProviderError::Refused { category: "cyber".into(), explanation: "no".into() }.is_retryable());
+        assert!(!ProviderError::Http {
+            status: 400,
+            message: "bad".into()
+        }
+        .is_retryable());
+        assert!(!ProviderError::Refused {
+            category: "cyber".into(),
+            explanation: "no".into()
+        }
+        .is_retryable());
         assert!(!ProviderError::SchemaViolation("missing field".into()).is_retryable());
         assert!(!ProviderError::Truncated.is_retryable());
     }
 
     #[tokio::test]
     async fn the_scripted_provider_returns_the_configured_output() {
-        let provider = ScriptedProvider::new()
-            .with(ReasoningTask::OpportunityDiscovery, serde_json::json!({"candidates": []}));
+        let provider = ScriptedProvider::new().with(
+            ReasoningTask::OpportunityDiscovery,
+            serde_json::json!({"candidates": []}),
+        );
 
         let request = ModelRequest {
             task: ReasoningTask::OpportunityDiscovery,
@@ -323,11 +355,24 @@ mod tests {
             finished_at: Utc::now(),
         };
         let value = serde_json::to_value(&response).unwrap();
-        let mut keys: Vec<&str> = value.as_object().unwrap().keys().map(String::as_str).collect();
+        let mut keys: Vec<&str> = value
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
         keys.sort_unstable();
         assert_eq!(
             keys,
-            vec!["finished_at", "latency_ms", "model", "output", "prompt_version", "task", "usage"],
+            vec![
+                "finished_at",
+                "latency_ms",
+                "model",
+                "output",
+                "prompt_version",
+                "task",
+                "usage"
+            ],
             "a field was added to ModelResponse — check it is not a reasoning trace"
         );
     }

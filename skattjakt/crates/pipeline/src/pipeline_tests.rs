@@ -50,7 +50,10 @@ fn document(text: &str) -> DocumentInput {
         document_id: skattjakt_core::DocumentId::new(),
         document_version_id: skattjakt_core::DocumentVersionId::new(),
         extracted: ExtractedDocument {
-            pages: vec![Page { number: 1, text: text.to_string() }],
+            pages: vec![Page {
+                number: 1,
+                text: text.to_string(),
+            }],
             unreadable_pages: vec![],
             scale: Scale::Kronor,
         },
@@ -77,7 +80,10 @@ fn pipeline(provider: ScriptedProvider) -> AnalysisPipeline {
 /// A provider that returns nothing from either pass.
 fn silent_provider() -> ScriptedProvider {
     ScriptedProvider::new()
-        .with(ReasoningTask::OpportunityDiscovery, json!({"candidates": []}))
+        .with(
+            ReasoningTask::OpportunityDiscovery,
+            json!({"candidates": []}),
+        )
         .with(ReasoningTask::ContradictionCheck, json!({"verdicts": []}))
 }
 
@@ -95,8 +101,13 @@ async fn an_uncovered_tax_year_fails_loudly_rather_than_returning_nothing() {
     let mut analysis = input(vec![document(INCOME_STATEMENT)]);
     analysis.company.fiscal_year = FiscalYear::calendar(2030).unwrap();
 
-    let result = pipeline(silent_provider()).run(&analysis, &SilentObserver).await;
-    assert!(matches!(result, Err(PipelineError::TaxYearNotCovered(2030))));
+    let result = pipeline(silent_provider())
+        .run(&analysis, &SilentObserver)
+        .await;
+    assert!(matches!(
+        result,
+        Err(PipelineError::TaxYearNotCovered(2030))
+    ));
 }
 
 #[tokio::test]
@@ -142,7 +153,11 @@ async fn every_presented_finding_carries_a_document_value_and_a_rule() {
         .await
         .unwrap();
 
-    for opportunity in result.opportunities.iter().filter(|o| !o.rule_ids.is_empty()) {
+    for opportunity in result
+        .opportunities
+        .iter()
+        .filter(|o| !o.rule_ids.is_empty())
+    {
         assert!(
             opportunity.evidence.has_document_anchor(),
             "{} has no document value behind it",
@@ -169,7 +184,10 @@ async fn a_computed_finding_reports_a_range_never_a_single_figure() {
         .iter()
         .filter(|o| !o.impact.is_zero())
         .collect();
-    assert!(!with_money.is_empty(), "expected at least one quantified finding");
+    assert!(
+        !with_money.is_empty(),
+        "expected at least one quantified finding"
+    );
     for opportunity in with_money {
         assert!(
             opportunity.impact.low < opportunity.impact.high,
@@ -183,7 +201,10 @@ async fn a_computed_finding_reports_a_range_never_a_single_figure() {
 #[tokio::test]
 async fn the_skeptic_can_remove_a_finding_entirely() {
     let provider = ScriptedProvider::new()
-        .with(ReasoningTask::OpportunityDiscovery, json!({"candidates": []}))
+        .with(
+            ReasoningTask::OpportunityDiscovery,
+            json!({"candidates": []}),
+        )
         .with(
             ReasoningTask::ContradictionCheck,
             json!({"verdicts": [{
@@ -200,7 +221,10 @@ async fn the_skeptic_can_remove_a_finding_entirely() {
         .unwrap();
 
     assert!(
-        !result.opportunities.iter().any(|o| o.title == "Periodiseringsfond"),
+        !result
+            .opportunities
+            .iter()
+            .any(|o| o.title == "Periodiseringsfond"),
         "a refuted finding must not be presented"
     );
     let rejected = result
@@ -220,7 +244,10 @@ async fn a_surviving_objection_lowers_confidence_without_removing_the_finding() 
         .0;
 
     let provider = ScriptedProvider::new()
-        .with(ReasoningTask::OpportunityDiscovery, json!({"candidates": []}))
+        .with(
+            ReasoningTask::OpportunityDiscovery,
+            json!({"candidates": []}),
+        )
         .with(
             ReasoningTask::ContradictionCheck,
             json!({"verdicts": [{
@@ -277,7 +304,10 @@ async fn a_model_candidate_with_no_rule_behind_it_is_never_actionable() {
         .expect("the candidate should still be surfaced as a question");
 
     assert_eq!(finding.status, OpportunityStatus::Investigate);
-    assert!(finding.impact.is_zero(), "no rule, no calculation, therefore no figure");
+    assert!(
+        finding.impact.is_zero(),
+        "no rule, no calculation, therefore no figure"
+    );
     assert!(
         !finding.confidence.is_actionable(),
         "a model-only finding must not be actionable"
@@ -297,8 +327,12 @@ async fn a_model_failure_degrades_to_a_rules_only_analysis() {
         !result.opportunities.is_empty(),
         "rule-based findings should survive a model outage"
     );
-    assert!(runs.iter().any(|r| r.status == skattjakt_model::ModelRunStatus::Failed));
-    assert!(runs.iter().all(|r| r.error.is_some() || r.output != serde_json::Value::Null));
+    assert!(runs
+        .iter()
+        .any(|r| r.status == skattjakt_model::ModelRunStatus::Failed));
+    assert!(runs
+        .iter()
+        .all(|r| r.error.is_some() || r.output != serde_json::Value::Null));
 }
 
 #[tokio::test]
@@ -353,7 +387,9 @@ async fn a_document_with_nothing_to_find_is_a_designed_result_not_an_empty_page(
     // Section 32: report what was checked, even when nothing was found.
     let (result, _) = pipeline(silent_provider())
         .run(
-            &input(vec![document("RESULTATRÄKNING\nNettoomsättning    100 000\n")]),
+            &input(vec![document(
+                "RESULTATRÄKNING\nNettoomsättning    100 000\n",
+            )]),
             &SilentObserver,
         )
         .await
@@ -397,13 +433,19 @@ async fn conflicting_values_across_documents_produce_a_warning() {
         .await
         .unwrap();
 
-    assert!(result.warnings.iter().any(|w| w.code == "conflicting_values"));
+    assert!(result
+        .warnings
+        .iter()
+        .any(|w| w.code == "conflicting_values"));
 }
 
 #[tokio::test]
 async fn an_unreadable_page_is_reported_rather_than_ignored() {
     let mut doc = document(INCOME_STATEMENT);
-    doc.extracted.pages.push(Page { number: 2, text: String::new() });
+    doc.extracted.pages.push(Page {
+        number: 2,
+        text: String::new(),
+    });
     doc.extracted.unreadable_pages.push(2);
 
     let (result, _) = pipeline(silent_provider())
@@ -440,7 +482,11 @@ async fn model_runs_are_recorded_without_any_reasoning_trace() {
         .await
         .unwrap();
 
-    assert_eq!(runs.len(), 2, "discovery and skeptic should both be recorded");
+    assert_eq!(
+        runs.len(),
+        2,
+        "discovery and skeptic should both be recorded"
+    );
     for run in &runs {
         assert!(!run.prompt_version.is_empty());
         assert!(!run.document_version_ids.is_empty());

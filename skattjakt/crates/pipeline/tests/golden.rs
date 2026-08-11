@@ -90,8 +90,14 @@ fn load_cases() -> Vec<GoldenCase> {
 
 async fn run_case(case: &GoldenCase) -> AnalysisResult {
     let provider = ScriptedProvider::new()
-        .with(ReasoningTask::OpportunityDiscovery, case.model_candidates.clone())
-        .with(ReasoningTask::ContradictionCheck, case.model_verdicts.clone());
+        .with(
+            ReasoningTask::OpportunityDiscovery,
+            case.model_candidates.clone(),
+        )
+        .with(
+            ReasoningTask::ContradictionCheck,
+            case.model_verdicts.clone(),
+        );
 
     let pipeline = AnalysisPipeline::new(
         Arc::new(RuleEngine::load_embedded().expect("rule set loads")),
@@ -103,8 +109,15 @@ async fn run_case(case: &GoldenCase) -> AnalysisResult {
         .documents
         .iter()
         .map(|text| {
-            let pages = vec![Page { number: 1, text: text.clone() }];
-            let unreadable = pages.iter().filter(|p| p.is_empty()).map(|p| p.number).collect();
+            let pages = vec![Page {
+                number: 1,
+                text: text.clone(),
+            }];
+            let unreadable = pages
+                .iter()
+                .filter(|p| p.is_empty())
+                .map(|p| p.number)
+                .collect();
             DocumentInput {
                 document_id: skattjakt_core::DocumentId::new(),
                 document_version_id: skattjakt_core::DocumentVersionId::new(),
@@ -181,7 +194,11 @@ impl Metrics {
 /// Invariants that must hold for every finding in every case. A breach here is
 /// a critical error, not a scoring miss.
 fn check_critical(case: &GoldenCase, result: &AnalysisResult, metrics: &mut Metrics) {
-    let mut fail = |message: String| metrics.critical_errors.push(format!("{}: {message}", case.id));
+    let mut fail = |message: String| {
+        metrics
+            .critical_errors
+            .push(format!("{}: {message}", case.id))
+    };
 
     for opportunity in &result.opportunities {
         if opportunity.status == OpportunityStatus::Identified {
@@ -191,7 +208,9 @@ fn check_critical(case: &GoldenCase, result: &AnalysisResult, metrics: &mut Metr
             ));
         }
 
-        if opportunity.confidence.is_actionable() && opportunity.evidence.validate_actionable().is_err() {
+        if opportunity.confidence.is_actionable()
+            && opportunity.evidence.validate_actionable().is_err()
+        {
             fail(format!(
                 "\"{}\" is actionable without a document value and a rule",
                 opportunity.title
@@ -199,7 +218,10 @@ fn check_critical(case: &GoldenCase, result: &AnalysisResult, metrics: &mut Metr
         }
 
         if opportunity.evidence.is_model_only() && opportunity.confidence.is_actionable() {
-            fail(format!("\"{}\" rests on the model alone", opportunity.title));
+            fail(format!(
+                "\"{}\" rests on the model alone",
+                opportunity.title
+            ));
         }
 
         if !opportunity.impact.is_zero() && !opportunity.evidence.has_calculation() {
@@ -210,7 +232,10 @@ fn check_critical(case: &GoldenCase, result: &AnalysisResult, metrics: &mut Metr
         }
 
         if !opportunity.impact.is_zero() && opportunity.impact.low == opportunity.impact.high {
-            fail(format!("\"{}\" reports a point estimate, not a range", opportunity.title));
+            fail(format!(
+                "\"{}\" reports a point estimate, not a range",
+                opportunity.title
+            ));
         }
 
         if opportunity.recommended_action.trim().is_empty() {
@@ -221,7 +246,10 @@ fn check_critical(case: &GoldenCase, result: &AnalysisResult, metrics: &mut Metr
     // A rejected finding must never reach the presented list or the total.
     for rejected in &result.rejected {
         if result.opportunities.iter().any(|o| o.id == rejected.id) {
-            fail(format!("\"{}\" was both rejected and presented", rejected.title));
+            fail(format!(
+                "\"{}\" was both rejected and presented",
+                rejected.title
+            ));
         }
     }
 
@@ -345,9 +373,17 @@ async fn every_case_is_reproducible() {
         let second = run_case(&case).await;
 
         let titles = |r: &AnalysisResult| {
-            r.opportunities.iter().map(|o| o.title.clone()).collect::<Vec<_>>()
+            r.opportunities
+                .iter()
+                .map(|o| o.title.clone())
+                .collect::<Vec<_>>()
         };
-        assert_eq!(titles(&first), titles(&second), "{} is not reproducible", case.id);
+        assert_eq!(
+            titles(&first),
+            titles(&second),
+            "{} is not reproducible",
+            case.id
+        );
         assert_eq!(
             first.summary.estimated_total, second.summary.estimated_total,
             "{} produced a different total on a second run",
@@ -372,7 +408,10 @@ async fn a_case_with_nothing_to_find_still_explains_what_was_checked() {
         "the user must be told which areas were checked"
     );
     assert!(!result.limitations.is_empty());
-    assert_eq!(result.summary.estimated_total, skattjakt_core::MoneyRange::ZERO);
+    assert_eq!(
+        result.summary.estimated_total,
+        skattjakt_core::MoneyRange::ZERO
+    );
 }
 
 #[test]

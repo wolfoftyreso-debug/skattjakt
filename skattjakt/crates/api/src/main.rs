@@ -24,7 +24,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "skattjakt starting"
     );
 
-    let port: u16 = std::env::var("PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(8080);
+    let port: u16 = std::env::var("PORT")
+        .ok()
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(8080);
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
     tracing::info!(%addr, "listening");
@@ -38,7 +41,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// Drains in-flight analyses on SIGTERM so a rolling deploy does not cut one
 /// off mid-run.
 async fn shutdown_signal() {
-    let ctrl_c = async { tokio::signal::ctrl_c().await.ok(); };
+    let ctrl_c = async {
+        tokio::signal::ctrl_c().await.ok();
+    };
     #[cfg(unix)]
     let terminate = async {
         if let Ok(mut signal) =

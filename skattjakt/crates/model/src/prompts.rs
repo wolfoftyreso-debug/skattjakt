@@ -37,13 +37,16 @@ redovisningskonsult kan följa resonemanget tillbaka till en post i underlaget."
 /// The system prompt for a task.
 pub fn system_prompt(task: ReasoningTask) -> String {
     let specific = match task {
-        ReasoningTask::FinancialExtraction => "\
+        ReasoningTask::FinancialExtraction => {
+            "\
 Din uppgift nu: läs den extraherade texten och identifiera de ekonomiska poster \
 du kan hitta. För varje post anger du vilken sida den stod på och exakt vilken \
 textrad du läste den ur, så att beloppet kan stämmas av mot originalet. \
-Belopp anges i hela kronor. Ta bara med poster du faktiskt ser.",
+Belopp anges i hela kronor. Ta bara med poster du faktiskt ser."
+        }
 
-        ReasoningTask::OpportunityDiscovery => "\
+        ReasoningTask::OpportunityDiscovery => {
+            "\
 Din uppgift nu: leta brett efter sådant som kan vara värt att undersöka — \
 skattemässiga positioner, kostnader som kan vara felklassificerade, \
 periodiseringar, momsfrågor, personalrelaterade frågor, investeringar, \
@@ -51,9 +54,11 @@ utvecklingsarbete, och sådant som ser ovanligt ut utan att nödvändigtvis vara
 
 Var generös i det här steget. Ett nästa steg kommer att försöka motbevisa varje \
 kandidat, så det är bättre att lyfta något som senare faller än att missa det. \
-Men varje kandidat måste peka på en konkret post i underlaget.",
+Men varje kandidat måste peka på en konkret post i underlaget."
+        }
 
-        ReasoningTask::ContradictionCheck => "\
+        ReasoningTask::ContradictionCheck => {
+            "\
 Din uppgift nu: försök motbevisa varje kandidat. Du är skeptikern, inte \
 förespråkaren.
 
@@ -63,28 +68,39 @@ den här typen? Har någon tolkat en siffra fel? Saknas något avgörande?
 
 Utgå från att kandidaten är fel tills underlaget visar något annat. Om du är \
 osäker ska den falla. Ett fynd som inte överlever är billigare än ett som inte \
-håller.",
+håller."
+        }
 
-        ReasoningTask::FinalSynthesis => "\
+        ReasoningTask::FinalSynthesis => {
+            "\
 Din uppgift nu: sammanfatta analysen för företagaren. Skriv på svenska, konkret \
 och utan överdrifter. Säg vad som hittades, vad som bör tas vidare först, och vad \
-som skulle göra analysen bättre. Lova ingenting om utfall.",
+som skulle göra analysen bättre. Lova ingenting om utfall."
+        }
 
-        ReasoningTask::DocumentUnderstanding => "\
+        ReasoningTask::DocumentUnderstanding => {
+            "\
 Din uppgift nu: avgör vilken sorts dokument detta är, vilken period det avser och \
-om bokslutet verkar preliminärt eller färdigt.",
+om bokslutet verkar preliminärt eller färdigt."
+        }
 
-        ReasoningTask::TaxReasoning => "\
+        ReasoningTask::TaxReasoning => {
+            "\
 Din uppgift nu: beskriv vilken skattemässig fråga iakttagelsen väcker och vilket \
-underlag som skulle behövas för att avgöra den. Beräkna ingenting.",
+underlag som skulle behövas för att avgöra den. Beräkna ingenting."
+        }
 
-        ReasoningTask::EvidenceValidation => "\
+        ReasoningTask::EvidenceValidation => {
+            "\
 Din uppgift nu: bedöm om det angivna underlaget faktiskt bär slutsatsen, eller om \
-kopplingen är svagare än den ser ut.",
+kopplingen är svagare än den ser ut."
+        }
 
-        ReasoningTask::CalculationReview => "\
+        ReasoningTask::CalculationReview => {
+            "\
 Din uppgift nu: granska om beräkningens ingångsvärden är de rimliga posterna att \
-utgå från. Räkna inte om beloppet.",
+utgå från. Räkna inte om beloppet."
+        }
     };
 
     format!("{SHARED_FRAMING}\n\n{specific}")

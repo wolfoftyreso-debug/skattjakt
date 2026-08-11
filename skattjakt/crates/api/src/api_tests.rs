@@ -65,7 +65,9 @@ fn analysis_body(document_text: &str, fiscal_year: (&str, &str)) -> Value {
 async fn send(state: AppState, request: Request<Body>) -> (StatusCode, Value) {
     let response = router(state).oneshot(request).await.unwrap();
     let status = response.status();
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
     (status, value)
 }
@@ -83,7 +85,10 @@ fn post_analysis(body: Value, token: Option<&str>) -> Request<Body> {
 
 #[tokio::test]
 async fn health_needs_no_credentials_and_touches_nothing() {
-    let request = Request::builder().uri("/health").body(Body::empty()).unwrap();
+    let request = Request::builder()
+        .uri("/health")
+        .body(Body::empty())
+        .unwrap();
     let (status, body) = send(state(), request).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["status"], "ok");
@@ -95,7 +100,10 @@ async fn readiness_reports_why_it_is_not_ready() {
     degraded.model_configured = false;
     degraded.api_token = None;
 
-    let request = Request::builder().uri("/ready").body(Body::empty()).unwrap();
+    let request = Request::builder()
+        .uri("/ready")
+        .body(Body::empty())
+        .unwrap();
     let (status, body) = send(degraded, request).await;
 
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
@@ -108,7 +116,10 @@ async fn readiness_reports_why_it_is_not_ready() {
 
 #[tokio::test]
 async fn readiness_is_green_when_everything_is_configured() {
-    let request = Request::builder().uri("/ready").body(Body::empty()).unwrap();
+    let request = Request::builder()
+        .uri("/ready")
+        .body(Body::empty())
+        .unwrap();
     let (status, body) = send(state(), request).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["ready"], true);
@@ -117,10 +128,15 @@ async fn readiness_is_green_when_everything_is_configured() {
 
 #[tokio::test]
 async fn the_contract_is_served_from_the_running_build() {
-    let request = Request::builder().uri("/v1/openapi.yaml").body(Body::empty()).unwrap();
+    let request = Request::builder()
+        .uri("/v1/openapi.yaml")
+        .body(Body::empty())
+        .unwrap();
     let response = router(state()).oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let text = String::from_utf8(bytes.to_vec()).unwrap();
     assert!(text.starts_with("openapi: 3.1.0"));
     assert!(text.contains("/v1/analyses"));
@@ -128,7 +144,11 @@ async fn the_contract_is_served_from_the_running_build() {
 
 #[tokio::test]
 async fn the_analysis_route_rejects_a_missing_token() {
-    let (status, body) = send(state(), post_analysis(analysis_body(STATEMENT, ("2025-01-01", "2025-12-31")), None)).await;
+    let (status, body) = send(
+        state(),
+        post_analysis(analysis_body(STATEMENT, ("2025-01-01", "2025-12-31")), None),
+    )
+    .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     assert_eq!(body["title"], "unauthorized");
 }
@@ -137,7 +157,10 @@ async fn the_analysis_route_rejects_a_missing_token() {
 async fn the_analysis_route_rejects_a_wrong_token() {
     let (status, _) = send(
         state(),
-        post_analysis(analysis_body(STATEMENT, ("2025-01-01", "2025-12-31")), Some("wrong")),
+        post_analysis(
+            analysis_body(STATEMENT, ("2025-01-01", "2025-12-31")),
+            Some("wrong"),
+        ),
     )
     .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
@@ -149,30 +172,48 @@ async fn an_unconfigured_token_closes_the_route_rather_than_opening_it() {
     open.api_token = None;
     let (status, _) = send(
         open,
-        post_analysis(analysis_body(STATEMENT, ("2025-01-01", "2025-12-31")), Some("anything")),
+        post_analysis(
+            analysis_body(STATEMENT, ("2025-01-01", "2025-12-31")),
+            Some("anything"),
+        ),
     )
     .await;
-    assert_eq!(status, StatusCode::UNAUTHORIZED, "no token must mean closed, not open");
+    assert_eq!(
+        status,
+        StatusCode::UNAUTHORIZED,
+        "no token must mean closed, not open"
+    );
 }
 
 #[tokio::test]
 async fn a_valid_analysis_returns_findings_with_evidence_and_a_disclaimer() {
     let (status, body) = send(
         state(),
-        post_analysis(analysis_body(STATEMENT, ("2025-01-01", "2025-12-31")), Some(TOKEN)),
+        post_analysis(
+            analysis_body(STATEMENT, ("2025-01-01", "2025-12-31")),
+            Some(TOKEN),
+        ),
     )
     .await;
 
     assert_eq!(status, StatusCode::OK);
     assert!(!body["disclaimer"].as_str().unwrap().is_empty());
-    assert!(body["summary"]["identified_opportunities"].as_u64().unwrap() > 0);
+    assert!(
+        body["summary"]["identified_opportunities"]
+            .as_u64()
+            .unwrap()
+            > 0
+    );
 
     let opportunities = body["opportunities"].as_array().unwrap();
     for opportunity in opportunities {
         // Money is always an interval, never a single figure.
         assert!(opportunity["impact"]["low"].is_i64());
         assert!(opportunity["impact"]["high"].is_i64());
-        assert!(!opportunity["recommended_action"].as_str().unwrap().is_empty());
+        assert!(!opportunity["recommended_action"]
+            .as_str()
+            .unwrap()
+            .is_empty());
         // Nothing may be presented as established while the rule set is unreviewed.
         assert_ne!(opportunity["status"], "identified");
     }
@@ -201,7 +242,10 @@ async fn a_tax_year_the_rule_set_does_not_cover_is_an_explicit_error() {
     // Section 31: better a clear refusal than a confident empty analysis.
     let (status, problem) = send(
         state(),
-        post_analysis(analysis_body(STATEMENT, ("2030-01-01", "2030-12-31")), Some(TOKEN)),
+        post_analysis(
+            analysis_body(STATEMENT, ("2030-01-01", "2030-12-31")),
+            Some(TOKEN),
+        ),
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -246,7 +290,12 @@ async fn a_base64_document_is_decoded_and_analysed() {
     });
     let (status, response) = send(state(), post_analysis(body, Some(TOKEN))).await;
     assert_eq!(status, StatusCode::OK);
-    assert!(response["summary"]["identified_opportunities"].as_u64().unwrap() > 0);
+    assert!(
+        response["summary"]["identified_opportunities"]
+            .as_u64()
+            .unwrap()
+            > 0
+    );
 }
 
 #[tokio::test]
@@ -271,9 +320,15 @@ async fn the_rule_listing_discloses_which_rules_are_unreviewed() {
     assert_eq!(body["version"], "se-2025.1");
     let rules = body["rules"].as_array().unwrap();
     assert!(!rules.is_empty());
-    assert_eq!(body["unreviewed_count"].as_u64().unwrap() as usize, rules.len());
+    assert_eq!(
+        body["unreviewed_count"].as_u64().unwrap() as usize,
+        rules.len()
+    );
     for rule in rules {
-        assert!(!rule["source"].as_str().unwrap().is_empty(), "every rule cites a source");
+        assert!(
+            !rule["source"].as_str().unwrap().is_empty(),
+            "every rule cites a source"
+        );
         assert_eq!(rule["reviewed"], false);
     }
 }
@@ -284,12 +339,24 @@ fn encode_base64(bytes: &[u8]) -> String {
     const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::new();
     for chunk in bytes.chunks(3) {
-        let b = [chunk[0], *chunk.get(1).unwrap_or(&0), *chunk.get(2).unwrap_or(&0)];
+        let b = [
+            chunk[0],
+            *chunk.get(1).unwrap_or(&0),
+            *chunk.get(2).unwrap_or(&0),
+        ];
         let n = ((b[0] as u32) << 16) | ((b[1] as u32) << 8) | b[2] as u32;
         out.push(TABLE[(n >> 18) as usize & 63] as char);
         out.push(TABLE[(n >> 12) as usize & 63] as char);
-        out.push(if chunk.len() > 1 { TABLE[(n >> 6) as usize & 63] as char } else { '=' });
-        out.push(if chunk.len() > 2 { TABLE[n as usize & 63] as char } else { '=' });
+        out.push(if chunk.len() > 1 {
+            TABLE[(n >> 6) as usize & 63] as char
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 {
+            TABLE[n as usize & 63] as char
+        } else {
+            '='
+        });
     }
     out
 }
@@ -298,21 +365,31 @@ fn encode_base64(bytes: &[u8]) -> String {
 fn base64_round_trips() {
     for case in [&b""[..], b"a", b"ab", b"abc", b"abcd", STATEMENT.as_bytes()] {
         let encoded = encode_base64(case);
-        assert_eq!(decode_base64(&encoded).as_deref(), Some(case), "failed on {case:?}");
+        assert_eq!(
+            decode_base64(&encoded).as_deref(),
+            Some(case),
+            "failed on {case:?}"
+        );
     }
 }
 
 #[test]
 fn base64_rejects_invalid_input() {
     assert!(decode_base64("!!!!").is_none());
-    assert!(decode_base64("a").is_none(), "a single character carries no whole byte");
+    assert!(
+        decode_base64("a").is_none(),
+        "a single character carries no whole byte"
+    );
 }
 
 #[test]
 fn base64_tolerates_whitespace_from_wrapped_payloads() {
     let encoded = encode_base64(b"hello world");
     let wrapped = format!("{}\n{}", &encoded[..4], &encoded[4..]);
-    assert_eq!(decode_base64(&wrapped).as_deref(), Some(&b"hello world"[..]));
+    assert_eq!(
+        decode_base64(&wrapped).as_deref(),
+        Some(&b"hello world"[..])
+    );
 }
 
 #[test]
