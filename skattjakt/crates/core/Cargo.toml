@@ -1,0 +1,15 @@
+[package]
+name = "skattjakt-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Skattjakt domain model: money, financial facts, evidence chains, opportunities, confidence and priority."
+
+[dependencies]
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
