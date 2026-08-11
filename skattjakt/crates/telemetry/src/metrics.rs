@@ -24,10 +24,7 @@ use skattjakt_core::Classification;
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum LabelError {
     #[error("metric label {name} is classified {level} and metric labels accept PUBLIC only")]
-    TooSensitive {
-        name: String,
-        level: Classification,
-    },
+    TooSensitive { name: String, level: Classification },
     #[error("metric label {name} has an unbounded value; use a bounded enumeration")]
     Unbounded { name: String },
 }
@@ -197,7 +194,13 @@ impl Registry {
         Self::default()
     }
 
-    fn family(&self, name: &'static str, kind: MetricKind, help: &'static str, unit: Option<&'static str>) {
+    fn family(
+        &self,
+        name: &'static str,
+        kind: MetricKind,
+        help: &'static str,
+        unit: Option<&'static str>,
+    ) {
         let mut families = self.families.write().expect("metrics registry poisoned");
         families.entry(name).or_insert_with(|| Family {
             kind,
@@ -217,7 +220,13 @@ impl Registry {
         self.family(name, MetricKind::Gauge, help, None);
     }
 
-    pub fn register_histogram(&self, name: &'static str, help: &'static str, unit: &'static str, bounds: Vec<u64>) {
+    pub fn register_histogram(
+        &self,
+        name: &'static str,
+        help: &'static str,
+        unit: &'static str,
+        bounds: Vec<u64>,
+    ) {
         self.family(name, MetricKind::Histogram, help, Some(unit));
         let mut families = self.families.write().expect("metrics registry poisoned");
         if let Some(family) = families.get_mut(name) {
@@ -300,7 +309,8 @@ impl Registry {
                                 .unwrap_or_else(|_| labels.clone());
                             let _ = writeln!(out, "{name}_bucket{} {cumulative}", with_le.render());
                         }
-                        cumulative += histogram.buckets[histogram.bounds.len()].load(Ordering::Relaxed);
+                        cumulative +=
+                            histogram.buckets[histogram.bounds.len()].load(Ordering::Relaxed);
                         let with_inf = labels
                             .clone()
                             .insert("le", "+Inf", Classification::Public)
@@ -382,40 +392,106 @@ pub mod names {
 pub fn register_all(registry: &Registry) {
     use names::*;
 
-    registry.register_counter(HTTP_REQUESTS, "HTTP requests handled, by method, route and status class.");
-    registry.register_histogram(HTTP_DURATION, "HTTP request duration.", "milliseconds", vec![5, 10, 25, 50, 100, 250, 500, 1_000, 2_500, 5_000, 10_000]);
+    registry.register_counter(
+        HTTP_REQUESTS,
+        "HTTP requests handled, by method, route and status class.",
+    );
+    registry.register_histogram(
+        HTTP_DURATION,
+        "HTTP request duration.",
+        "milliseconds",
+        vec![5, 10, 25, 50, 100, 250, 500, 1_000, 2_500, 5_000, 10_000],
+    );
     registry.register_gauge(HTTP_IN_FLIGHT, "HTTP requests currently being handled.");
     registry.register_counter(RATE_LIMITED, "Requests rejected by the rate limiter.");
-    registry.register_histogram(DB_QUERY_DURATION, "Database query duration.", "milliseconds", vec![1, 5, 10, 25, 50, 100, 250, 1_000]);
+    registry.register_histogram(
+        DB_QUERY_DURATION,
+        "Database query duration.",
+        "milliseconds",
+        vec![1, 5, 10, 25, 50, 100, 250, 1_000],
+    );
 
     registry.register_counter(JOBS_ENQUEUED, "Jobs enqueued, by kind.");
-    registry.register_counter(JOBS_COMPLETED, "Jobs that reached a terminal state, by kind and outcome.");
+    registry.register_counter(
+        JOBS_COMPLETED,
+        "Jobs that reached a terminal state, by kind and outcome.",
+    );
     registry.register_counter(JOB_ATTEMPTS, "Job attempts started, by kind.");
-    registry.register_histogram(JOB_DURATION, "Job attempt duration.", "milliseconds", vec![1_000, 5_000, 15_000, 30_000, 60_000, 120_000, 300_000, 600_000]);
+    registry.register_histogram(
+        JOB_DURATION,
+        "Job attempt duration.",
+        "milliseconds",
+        vec![
+            1_000, 5_000, 15_000, 30_000, 60_000, 120_000, 300_000, 600_000,
+        ],
+    );
     registry.register_gauge(JOBS_QUEUED_DEPTH, "Jobs waiting to be claimed, by kind.");
-    registry.register_counter(JOBS_DEAD_LETTERED, "Jobs moved to the dead letter queue, by kind.");
+    registry.register_counter(
+        JOBS_DEAD_LETTERED,
+        "Jobs moved to the dead letter queue, by kind.",
+    );
     registry.register_gauge(JOB_QUEUE_AGE, "Age of the oldest queued job.");
 
     registry.register_counter(ANALYSES_STARTED, "Analyses started.");
     registry.register_counter(ANALYSES_FINISHED, "Analyses finished, by terminal state.");
-    registry.register_histogram(ANALYSIS_DURATION, "End-to-end analysis duration.", "milliseconds", vec![10_000, 30_000, 60_000, 120_000, 300_000, 600_000, 1_200_000]);
-    registry.register_counter(OPPORTUNITIES_FOUND, "Opportunities produced, by category and status.");
-    registry.register_counter(FOUND_NOTHING, "Analyses that completed with no presented finding.");
+    registry.register_histogram(
+        ANALYSIS_DURATION,
+        "End-to-end analysis duration.",
+        "milliseconds",
+        vec![10_000, 30_000, 60_000, 120_000, 300_000, 600_000, 1_200_000],
+    );
+    registry.register_counter(
+        OPPORTUNITIES_FOUND,
+        "Opportunities produced, by category and status.",
+    );
+    registry.register_counter(
+        FOUND_NOTHING,
+        "Analyses that completed with no presented finding.",
+    );
     registry.register_counter(DOCUMENTS_UPLOADED, "Documents accepted, by mime type.");
-    registry.register_counter(EXTRACTION_FACTS, "Financial facts extracted from documents.");
+    registry.register_counter(
+        EXTRACTION_FACTS,
+        "Financial facts extracted from documents.",
+    );
 
     registry.register_counter(MODEL_CALLS, "Model calls, by task and outcome.");
     registry.register_counter(MODEL_TOKENS, "Model tokens, by direction.");
     registry.register_counter(MODEL_COST_MICRO_ORE, "Accumulated model cost in micro-ore.");
-    registry.register_histogram(MODEL_LATENCY, "Model call latency.", "milliseconds", vec![500, 1_000, 2_500, 5_000, 10_000, 30_000, 60_000, 120_000]);
-    registry.register_counter(MODEL_FALLBACKS, "Model calls served by a fallback rather than the requested model.");
-    registry.register_counter(MODEL_REFUSALS, "Model calls that ended in a refusal stop reason.");
-    registry.register_counter(MODEL_SCHEMA_FAILURES, "Model responses that did not satisfy the requested schema.");
-    registry.register_counter(BUDGET_EXCEEDED, "Analyses stopped because they reached their cost ceiling.");
-    registry.register_counter(SKEPTIC_REJECTIONS, "Findings the falsification pass demoted or removed.");
-    registry.register_counter(PROMPT_INJECTION_SUSPECTED, "Document segments that matched an instruction-like pattern.");
+    registry.register_histogram(
+        MODEL_LATENCY,
+        "Model call latency.",
+        "milliseconds",
+        vec![500, 1_000, 2_500, 5_000, 10_000, 30_000, 60_000, 120_000],
+    );
+    registry.register_counter(
+        MODEL_FALLBACKS,
+        "Model calls served by a fallback rather than the requested model.",
+    );
+    registry.register_counter(
+        MODEL_REFUSALS,
+        "Model calls that ended in a refusal stop reason.",
+    );
+    registry.register_counter(
+        MODEL_SCHEMA_FAILURES,
+        "Model responses that did not satisfy the requested schema.",
+    );
+    registry.register_counter(
+        BUDGET_EXCEEDED,
+        "Analyses stopped because they reached their cost ceiling.",
+    );
+    registry.register_counter(
+        SKEPTIC_REJECTIONS,
+        "Findings the falsification pass demoted or removed.",
+    );
+    registry.register_counter(
+        PROMPT_INJECTION_SUSPECTED,
+        "Document segments that matched an instruction-like pattern.",
+    );
 
-    registry.register_counter(RETENTION_DELETED, "Objects deleted by the retention job, by kind.");
+    registry.register_counter(
+        RETENTION_DELETED,
+        "Objects deleted by the retention job, by kind.",
+    );
 }
 
 #[cfg(test)]
@@ -510,7 +586,10 @@ mod tests {
                 let name = rest.split_whitespace().next().unwrap();
                 assert!(name.starts_with("skattjakt_"), "{name} is unprefixed");
                 if rest.ends_with("counter") {
-                    assert!(name.ends_with("_total"), "{name} is a counter without _total");
+                    assert!(
+                        name.ends_with("_total"),
+                        "{name} is a counter without _total"
+                    );
                 }
             }
         }

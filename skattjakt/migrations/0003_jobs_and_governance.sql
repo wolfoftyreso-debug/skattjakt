@@ -98,6 +98,14 @@ CREATE TABLE dead_letters (
 
 CREATE INDEX dead_letters_open ON dead_letters (created_at) WHERE acknowledged_at IS NULL;
 
+-- The analysis remembers whether it read preliminary or final accounts. It was
+-- previously carried only in the request that started the run, which made the
+-- run impossible to reproduce once a worker rather than the request did the
+-- work.
+ALTER TABLE analysis_jobs
+    ADD COLUMN accounts_state TEXT NOT NULL DEFAULT 'preliminary'
+        CHECK (accounts_state IN ('preliminary', 'final'));
+
 -- ---------------------------------------------------------------------------
 -- Model cost accounting (sections 46, 68, 69)
 -- ---------------------------------------------------------------------------

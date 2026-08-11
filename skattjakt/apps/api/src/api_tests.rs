@@ -43,6 +43,13 @@ fn state() -> AppState {
         blobs: Arc::new(skattjakt_store::FilesystemBlobStore::new(
             std::env::temp_dir().join("skattjakt-tests"),
         )),
+        // No database, so no queue: the stateless surface computes inline.
+        queue: None,
+        metrics: {
+            let registry = skattjakt_telemetry::Registry::new();
+            skattjakt_telemetry::metrics::register_all(&registry);
+            registry
+        },
     }
 }
 
@@ -443,4 +450,184 @@ async fn the_interface_needs_no_credentials_to_load() {
     let request = Request::builder().uri("/").body(Body::empty()).unwrap();
     let response = router(state()).oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
+}
+
+// ---------------------------------------------------------------------------
+// Observability (sections 43, 45)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn the_scrape_endpoint_serves_the_prometheus_text_format() {
+    let request = Request::builder()
+        .uri("/metrics")
+        .body(Body::empty())
+        .unwrap();
+    let response = router(state()).oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok()),
+        Some("text/plain; version=0.0.4; charset=utf-8")
+    );
+
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let body = String::from_utf8(bytes.to_vec()).unwrap();
+    assert!(body.contains("# TYPE skattjakt_http_requests_total counter"));
+    assert!(body.contains("# HELP skattjakt_analyses_started_total"));
+}
+
+#[tokio::test]
+async fn requests_are_counted_by_templated_route_not_by_path() {
+    let state = state();
+    let id = "8a5e1e6c-1234-4321-8888-000000000000";
+
+    let request = Request::builder()
+        .uri(format!("/v1/analyses/{id}"))
+        .body(Body::empty())
+        .unwrap();
+    let _ = router(state.clone()).oneshot(request).await.unwrap();
+
+    let request = Request::builder()
+        .uri("/metrics")
+        .body(Body::empty())
+        .unwrap();
+    let response = router(state).oneshot(request).await.unwrap();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let body = String::from_utf8(bytes.to_vec()).unwrap();
+
+    assert!(
+        !body.contains("8a5e1e6c"),
+        "an identifier reached a metric label"
+    );
+    assert!(body.contains("route=\"/v1/analyses/{id}\""));
+}
+
+#[tokio::test]
+async fn no_metric_label_carries_a_tenant_identifier() {
+    let state = state();
+    for uri in ["/health", "/ready", "/v1/rules", "/v1/openapi.yaml"] {
+        let request = Request::builder().uri(uri).body(Body::empty()).unwrap();
+        let _ = router(state.clone()).oneshot(request).await.unwrap();
+    }
+
+    let request = Request::builder()
+        .uri("/metrics")
+        .body(Body::empty())
+        .unwrap();
+    let response = router(state).oneshot(request).await.unwrap();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let body = String::from_utf8(bytes.to_vec()).unwrap();
+
+    for forbidden in [
+        "company_id=",
+        "company=",
+        "tenant=",
+        "correlation_id=",
+        "org_number=",
+        "user=",
+    ] {
+        assert!(
+            !body.contains(forbidden),
+            "{forbidden} appeared in the scrape body"
+        );
+    }
+}
+
+#[tokio::test]
+async fn every_response_carries_a_correlation_id() {
+    let request = Request::builder()
+        .uri("/health")
+        .body(Body::empty())
+        .unwrap();
+    let response = router(state()).oneshot(request).await.unwrap();
+    let header = response
+        .headers()
+        .get("x-correlation-id")
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string)
+        .expect("no correlation id on the response");
+    assert!(uuid::Uuid::parse_str(&header).is_ok());
+}
+
+#[tokio::test]
+async fn a_client_supplied_correlation_id_is_honoured_when_it_parses() {
+    let supplied = "018f4d5e-0000-7000-8000-000000000000";
+    let request = Request::builder()
+        .uri("/health")
+        .header("x-correlation-id", supplied)
+        .body(Body::empty())
+        .unwrap();
+    let response = router(state()).oneshot(request).await.unwrap();
+    assert_eq!(
+        response
+            .headers()
+            .get("x-correlation-id")
+            .and_then(|v| v.to_str().ok()),
+        Some(supplied)
+    );
+}
+
+#[tokio::test]
+async fn a_forged_correlation_id_is_replaced_rather_than_echoed() {
+    // An arbitrary header value would be an injection point into the log store.
+    let request = Request::builder()
+        .uri("/health")
+        .header(
+            "x-correlation-id",
+            "\" }{ \"level\": \"info\", \"msg\": \"forged",
+        )
+        .body(Body::empty())
+        .unwrap();
+    let response = router(state()).oneshot(request).await.unwrap();
+    let header = response
+        .headers()
+        .get("x-correlation-id")
+        .and_then(|v| v.to_str().ok())
+        .unwrap();
+    assert!(!header.contains("forged"));
+    assert!(uuid::Uuid::parse_str(header).is_ok());
+}
+
+#[tokio::test]
+async fn the_trace_context_is_continued_rather_than_restarted() {
+    let inbound = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+    let request = Request::builder()
+        .uri("/health")
+        .header("traceparent", inbound)
+        .body(Body::empty())
+        .unwrap();
+    let response = router(state()).oneshot(request).await.unwrap();
+    let outbound = response
+        .headers()
+        .get("traceparent")
+        .and_then(|v| v.to_str().ok())
+        .expect("no traceparent on the response");
+    // Same trace, new span.
+    assert!(outbound.contains("4bf92f3577b34da6a3ce929d0e0e4736"));
+    assert!(!outbound.contains("00f067aa0ba902b7"));
+}
+
+#[tokio::test]
+async fn background_analyses_are_refused_without_a_queue() {
+    // The stateless deployment has no database and therefore no queue. It must
+    // say so rather than accept work it cannot durably hold.
+    let request = Request::builder()
+        .method("POST")
+        .uri("/v1/analyses/stored")
+        .header("authorization", format!("Bearer {TOKEN}"))
+        .header("content-type", "application/json")
+        .body(Body::from(
+            json!({"document_version_ids": ["8a5e1e6c-1234-4321-8888-000000000000"]}).to_string(),
+        ))
+        .unwrap();
+    let response = router(state()).oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED);
 }

@@ -405,7 +405,10 @@ mod tests {
     fn a_resumed_analysis_continues_against_what_it_already_spent() {
         let budget = Budget::resumed(3 * MICRO_ORE_PER_SEK, 2 * MICRO_ORE_PER_SEK, 4, 24);
         assert_eq!(budget.remaining(), MICRO_ORE_PER_SEK);
-        assert_eq!(budget.check(2 * MICRO_ORE_PER_SEK), Err(BudgetError::Exhausted));
+        assert_eq!(
+            budget.check(2 * MICRO_ORE_PER_SEK),
+            Err(BudgetError::Exhausted)
+        );
     }
 
     #[test]

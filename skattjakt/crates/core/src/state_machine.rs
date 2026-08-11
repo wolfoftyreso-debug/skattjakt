@@ -204,7 +204,9 @@ impl AnalysisState {
 
             // Everything else, including every transition out of a terminal
             // state, is a bug in the caller.
-            (Queued | Running | Retrying, _) => return Err(InvalidTransition { from: self, event }),
+            (Queued | Running | Retrying, _) => {
+                return Err(InvalidTransition { from: self, event })
+            }
             (Succeeded | Failed | Cancelled | DeadLettered, _) => {
                 return Err(InvalidTransition { from: self, event })
             }

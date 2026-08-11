@@ -13,6 +13,7 @@ path = "src/main.rs"
 
 [dependencies]
 skattjakt-core.workspace = true
+skattjakt-extract.workspace = true
 skattjakt-gateway.workspace = true
 skattjakt-jobs.workspace = true
 skattjakt-model.workspace = true

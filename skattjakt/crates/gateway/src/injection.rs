@@ -275,7 +275,10 @@ Personalkostnader                  -5 200 000
 Avskrivningar                        -410 000
 Rörelseresultat                     2 970 000
 Periodiseringsfond avsatt 2021        800 000";
-        assert!(!scan(ordinary).is_suspicious(), "false positive on a real statement");
+        assert!(
+            !scan(ordinary).is_suspicious(),
+            "false positive on a real statement"
+        );
     }
 
     #[test]

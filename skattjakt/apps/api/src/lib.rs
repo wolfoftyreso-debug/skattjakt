@@ -9,6 +9,7 @@
 #![forbid(unsafe_code)]
 #![warn(missing_debug_implementations)]
 
+pub mod observe;
 pub mod routes;
 
 use std::sync::Arc;
@@ -30,6 +31,7 @@ use skattjakt_pipeline::pipeline::{
 use skattjakt_pipeline::{AnalysisInput, DocumentInput};
 use skattjakt_rules::{ReviewState, RuleEngine};
 use skattjakt_store::{BlobStore, FilesystemBlobStore, Store};
+use skattjakt_telemetry::{metrics, CorrelationId, Registry, CORRELATION_HEADER};
 
 /// The contract, compiled in so a deployed build can always serve the exact
 /// contract it was built against.
@@ -59,6 +61,23 @@ pub struct AppState {
     /// and returned, never stored.
     pub store: Option<Store>,
     pub blobs: Arc<dyn BlobStore>,
+    /// The durable queue. Present exactly when persistence is: a queue without
+    /// a database has nowhere to put a job.
+    pub queue: Option<skattjakt_jobs::Queue>,
+    pub metrics: Registry,
+}
+
+/// Reads the correlation id from the request, or mints one.
+///
+/// Accepted from the client only when it parses as a UUID: an arbitrary header
+/// value would be an injection point into the log store, which is exactly the
+/// kind of thing that is only noticed after it has been exploited.
+pub fn correlation_id(headers: &HeaderMap) -> CorrelationId {
+    headers
+        .get(CORRELATION_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .and_then(CorrelationId::parse)
+        .unwrap_or_default()
 }
 
 impl std::fmt::Debug for AppState {
@@ -113,6 +132,19 @@ impl AppState {
         let blob_root =
             std::env::var("SKATTJAKT_BLOB_ROOT").unwrap_or_else(|_| "./data/documents".to_string());
 
+        let registry = Registry::new();
+        metrics::register_all(&registry);
+
+        // The API enqueues; it never claims. The worker id is recorded on the
+        // enqueue path only for provenance, and is never used to hold a lease.
+        let queue = store.as_ref().map(|store| {
+            skattjakt_jobs::Queue::new(
+                store.pool().clone(),
+                registry.clone(),
+                std::env::var("HOSTNAME").unwrap_or_else(|_| "skattjakt-api".to_string()),
+            )
+        });
+
         Ok(Self {
             engine,
             provider,
@@ -126,6 +158,8 @@ impl AppState {
             model_configured,
             store,
             blobs: Arc::new(FilesystemBlobStore::new(blob_root)),
+            queue,
+            metrics: registry,
         })
     }
 }
@@ -153,7 +187,12 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/v1/analyses/{id}/report", get(routes::get_report))
         .route("/v1/opportunities/{id}", get(routes::get_opportunity))
+        .route("/metrics", get(observe::metrics))
         .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            observe::observe,
+        ))
         .with_state(state)
 }
 
@@ -174,6 +213,18 @@ impl Problem {
             status: StatusCode::BAD_REQUEST,
             title: title.into(),
             detail: detail.into(),
+        }
+    }
+
+    /// 429, with the two things a client needs to back off correctly.
+    pub fn rate_limited(limit: i32, resets_at: chrono::DateTime<chrono::Utc>) -> Self {
+        let seconds = (resets_at - chrono::Utc::now()).num_seconds().max(1);
+        Self {
+            status: StatusCode::TOO_MANY_REQUESTS,
+            title: "rate limited".into(),
+            detail: format!(
+                "the quota for this operation is {limit} per window; try again in {seconds} seconds"
+            ),
         }
     }
 

@@ -12,13 +12,15 @@ use axum::Json;
 use serde::Deserialize;
 use serde_json::json;
 use skattjakt_core::analysis::{AnalysisStage, AnalysisStatus};
-use skattjakt_core::document::{AccountsState, DocumentKind};
-use skattjakt_core::{AnalysisId, CompanyId, CompanyProfile, DocumentVersionId, OpportunityId};
-use skattjakt_pipeline::pipeline::{AnalysisPipeline, SilentObserver, StageObserver};
-use skattjakt_pipeline::{AnalysisInput, DocumentInput};
+use skattjakt_core::document::DocumentKind;
+use skattjakt_core::{AnalysisId, CompanyId, DocumentVersionId, OpportunityId};
+use skattjakt_jobs::{IdempotencyKey, JobKind, NewJob, Queue};
+use skattjakt_pipeline::pipeline::SilentObserver;
+use skattjakt_store::RateBucket;
+use skattjakt_telemetry::{names, LabelSet};
 use uuid::Uuid;
 
-use crate::{authorise, AppState, DocumentUpload, Problem, Scope};
+use crate::{authorise, correlation_id, AppState, DocumentUpload, Problem, Scope};
 
 /// Generates a bearer token with 256 bits of entropy from the OS.
 fn generate_token() -> String {
@@ -39,6 +41,24 @@ fn store(state: &AppState) -> Result<&skattjakt_store::Store, Problem> {
                  POST /v1/analyses with inline documents is available without it."
             .into(),
     })
+}
+
+fn queue(state: &AppState) -> Result<&Queue, Problem> {
+    state.queue.as_ref().ok_or_else(|| Problem {
+        status: StatusCode::NOT_IMPLEMENTED,
+        title: "the job queue is not configured".into(),
+        detail: "DATABASE_URL is not set; background analyses need one.".into(),
+    })
+}
+
+/// Turns a queue failure into a 500 without leaking its message to the client.
+fn queue_error(error: skattjakt_jobs::QueueError) -> Problem {
+    tracing::error!(error = %error, "queue operation failed");
+    Problem {
+        status: StatusCode::INTERNAL_SERVER_ERROR,
+        title: "internal error".into(),
+        detail: "the analysis could not be queued".into(),
+    }
 }
 
 fn company_scope(scope: Scope) -> Result<CompanyId, Problem> {
@@ -312,43 +332,101 @@ pub async fn start_analysis(
 
     let analysis_id = AnalysisId::new();
     let accounts_state = crate::parse_accounts_state(request.accounts_state.as_deref())?;
+    let correlation = correlation_id(&headers);
 
     let mut tenant = store.tenant(company_id).await.map_err(internal)?;
-    let profile = tenant.company().await.map_err(internal)?;
+
+    // Rate limit before anything expensive happens (section 67). Counted per
+    // tenant in the database rather than per process, because several API
+    // replicas serve the same customer and an in-memory limiter would multiply
+    // the quota by the replica count.
+    let decision = tenant
+        .check_rate_limit(RateBucket::Analysis)
+        .await
+        .map_err(internal)?;
+    if !decision.allowed {
+        tenant.commit().await.map_err(internal)?;
+        state.metrics.increment(
+            names::RATE_LIMITED,
+            LabelSet::new().enumerated("bucket", "analysis"),
+        );
+        return Err(Problem::rate_limited(decision.limit, decision.resets_at));
+    }
+
     // Resolve every document version up front, so a bad id is a 400 now rather
     // than a failed job later.
-    let mut documents = Vec::new();
     for id in &version_ids {
-        let version = tenant.document_version(*id).await.map_err(|e| match e {
+        tenant.document_version(*id).await.map_err(|e| match e {
             skattjakt_store::StoreError::NotFound => Problem::bad_request(
                 "unknown document",
                 format!("no document version {id} for this company"),
             ),
             other => internal(other),
         })?;
-        documents.push(version);
     }
     tenant
-        .create_analysis(analysis_id, &version_ids, state.engine.version())
+        .create_analysis(
+            analysis_id,
+            &version_ids,
+            state.engine.version(),
+            accounts_state,
+        )
         .await
         .map_err(internal)?;
     tenant.commit().await.map_err(internal)?;
 
-    let background = state.clone();
-    tokio::spawn(async move {
-        if let Err(error) = run_analysis(
-            background,
-            company_id,
-            analysis_id,
-            profile,
-            documents,
-            accounts_state,
-        )
+    // Hand the work to the durable queue rather than to a background task in
+    // this process. A `tokio::spawn` here dies with the pod, and a rolling
+    // deploy would silently lose every analysis in flight.
+    let queue = queue(&state)?;
+    let idempotency_key = match headers.get("idempotency-key").and_then(|v| v.to_str().ok()) {
+        Some(raw) => IdempotencyKey::parse(raw)
+            .map_err(|e| Problem::bad_request("invalid idempotency key", e.to_string()))?,
+        // Derived from the work itself, so a client that retries a timed-out
+        // request without a key still gets one analysis rather than two.
+        None => IdempotencyKey::derived(
+            JobKind::Analysis,
+            company_id.0,
+            &request.document_version_ids,
+        ),
+    };
+
+    let enqueued = queue
+        .enqueue(NewJob {
+            kind: JobKind::Analysis,
+            company_id: company_id.0,
+            subject_id: analysis_id.0,
+            idempotency_key,
+            correlation_id: correlation,
+            traceparent: headers
+                .get(skattjakt_telemetry::TRACEPARENT_HEADER)
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_string),
+            delay: None,
+        })
         .await
-        {
-            tracing::error!(%analysis_id, error, "analysis failed");
-        }
-    });
+        .map_err(queue_error)?;
+
+    if !enqueued.is_new() {
+        // The key matched a job that already exists. Return that one: a
+        // duplicate request must not cost the customer a second model bill.
+        let existing = queue.get(enqueued.job_id()).await.map_err(queue_error)?;
+        return Ok((
+            StatusCode::ACCEPTED,
+            Json(json!({
+                "analysis_id": existing.subject_id,
+                "status": existing.state.as_str(),
+                "stage": "queued",
+                "duplicate_of": existing.subject_id,
+                "poll": format!("/v1/analyses/{}", existing.subject_id),
+            })),
+        )
+            .into_response());
+    }
+
+    state
+        .metrics
+        .increment(names::ANALYSES_STARTED, LabelSet::new());
 
     Ok((
         StatusCode::ACCEPTED,
@@ -362,118 +440,10 @@ pub async fn start_analysis(
         .into_response())
 }
 
-/// Reports stage transitions into the database so a polling client can watch
-/// the analysis progress (section 3, step 3).
-struct DatabaseObserver {
-    store: skattjakt_store::Store,
-    company_id: CompanyId,
-    analysis_id: AnalysisId,
-    handle: tokio::runtime::Handle,
-}
-
-impl StageObserver for DatabaseObserver {
-    fn stage(&self, stage: AnalysisStage) {
-        let store = self.store.clone();
-        let (company_id, analysis_id) = (self.company_id, self.analysis_id);
-        // Progress reporting must never fail the analysis it is reporting on.
-        self.handle.spawn(async move {
-            if let Ok(mut tenant) = store.tenant(company_id).await {
-                let _ = tenant.set_stage(analysis_id, stage).await;
-                let _ = tenant.commit().await;
-            }
-        });
-    }
-}
-
-async fn run_analysis(
-    state: AppState,
-    company_id: CompanyId,
-    analysis_id: AnalysisId,
-    profile: CompanyProfile,
-    versions: Vec<skattjakt_core::document::DocumentVersion>,
-    accounts_state: AccountsState,
-) -> Result<(), String> {
-    let store = state
-        .store
-        .clone()
-        .expect("persistence was checked by the caller");
-
-    let mut documents = Vec::new();
-    for version in &versions {
-        let bytes = state
-            .blobs
-            .get(&version.storage_key)
-            .await
-            .map_err(|e| e.to_string())?;
-
-        // The stored hash is checked on read. A blob that no longer matches the
-        // bytes we recorded must not silently become the basis of an analysis.
-        if !version.verify_hash(&bytes) {
-            let message = format!(
-                "document version {} no longer matches its recorded hash",
-                version.id
-            );
-            let mut tenant = store.tenant(company_id).await.map_err(|e| e.to_string())?;
-            let _ = tenant.fail_analysis(analysis_id, &message).await;
-            let _ = tenant.commit().await;
-            return Err(message);
-        }
-
-        let extracted = skattjakt_extract::extract(&bytes, version.mime_type)
-            .map_err(|e| format!("{}: {e}", version.id))?;
-        documents.push(DocumentInput {
-            document_id: version.document_id,
-            document_version_id: version.id,
-            extracted,
-        });
-    }
-
-    let input = AnalysisInput {
-        analysis_id,
-        company: profile.clone(),
-        documents,
-        accounts_state,
-    };
-
-    let facts =
-        skattjakt_pipeline::build_fact_set(company_id, profile.fiscal_year, &input.documents);
-    let stored_facts: Vec<_> = facts.iter().cloned().collect();
-
-    let pipeline = AnalysisPipeline::new(
-        state.engine.clone(),
-        state.provider.clone(),
-        state.config.clone(),
-    );
-
-    let observer = DatabaseObserver {
-        store: store.clone(),
-        company_id,
-        analysis_id,
-        handle: tokio::runtime::Handle::current(),
-    };
-
-    match pipeline.run(&input, &observer).await {
-        Ok((result, runs)) => {
-            let mut tenant = store.tenant(company_id).await.map_err(|e| e.to_string())?;
-            tenant
-                .insert_facts(&stored_facts)
-                .await
-                .map_err(|e| e.to_string())?;
-            tenant
-                .complete_analysis(&result, &runs)
-                .await
-                .map_err(|e| e.to_string())?;
-            tenant.commit().await.map_err(|e| e.to_string())?;
-            Ok(())
-        }
-        Err(error) => {
-            let mut tenant = store.tenant(company_id).await.map_err(|e| e.to_string())?;
-            let _ = tenant.fail_analysis(analysis_id, &error.to_string()).await;
-            let _ = tenant.commit().await;
-            Err(error.to_string())
-        }
-    }
-}
+// Analyses are executed by `skattjakt-analysis-worker`, not here. The stage
+// observer, the pipeline invocation and the result writing moved with it; see
+// `workers/analysis-worker/src/runner.rs`. What remains in the API is the part
+// that belongs to a request: validate, record, enqueue, answer.
 
 pub async fn get_analysis(
     State(state): State<AppState>,

@@ -35,16 +35,29 @@ pub enum NodeId {
     /// A rule at a specific version. `se.periodiseringsfond.unused@se-2025.1`
     /// and `...@se-2025.2` are different nodes, which is what makes a rule
     /// revision traceable.
-    Rule { rule_id: String, rule_version: String },
-    Calculation { calculation_id: CalculationId },
-    ModelRun { model_run_id: ModelRunId },
+    Rule {
+        rule_id: String,
+        rule_version: String,
+    },
+    Calculation {
+        calculation_id: CalculationId,
+    },
+    ModelRun {
+        model_run_id: ModelRunId,
+    },
     /// A stated assumption, keyed by its text so identical assumptions merge.
-    Assumption { statement: String },
+    Assumption {
+        statement: String,
+    },
     /// A presented finding. Always a sink.
-    Finding { opportunity_id: OpportunityId },
+    Finding {
+        opportunity_id: OpportunityId,
+    },
     /// The analysis a finding belongs to. Lets the graph answer "which runs are
     /// affected" without a second lookup.
-    Analysis { analysis_id: AnalysisId },
+    Analysis {
+        analysis_id: AnalysisId,
+    },
 }
 
 impl NodeId {
@@ -283,9 +296,9 @@ impl EvidenceGraph {
     /// matter how confident the model was.
     pub fn finding_is_document_anchored(&self, opportunity_id: OpportunityId) -> bool {
         let finding = NodeId::Finding { opportunity_id };
-        self.edges
-            .iter()
-            .any(|e| e.to == finding && e.kind == EdgeKind::Supports && e.from.is_document_anchored())
+        self.edges.iter().any(|e| {
+            e.to == finding && e.kind == EdgeKind::Supports && e.from.is_document_anchored()
+        })
     }
 
     /// Rebuilds adjacency after deserialisation, which drops it.
@@ -404,9 +417,7 @@ mod tests {
             opportunity_id: finding_id,
         });
         assert!(provenance.iter().any(NodeId::is_document_anchored));
-        assert!(provenance
-            .iter()
-            .any(|n| matches!(n, NodeId::Rule { .. })));
+        assert!(provenance.iter().any(|n| matches!(n, NodeId::Rule { .. })));
     }
 
     #[test]

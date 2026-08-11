@@ -152,8 +152,8 @@ impl Queue {
     /// but not yet leased.
     pub async fn claim(&self, kind: JobKind) -> QueueResult<Option<Job>> {
         let now = Utc::now();
-        let lease_until = now
-            + Duration::from_std(kind.lease()).unwrap_or_else(|_| Duration::minutes(20));
+        let lease_until =
+            now + Duration::from_std(kind.lease()).unwrap_or_else(|_| Duration::minutes(20));
 
         let mut tx = self.pool.begin().await?;
 
@@ -240,7 +240,12 @@ impl Queue {
     /// `detail` is a kind, not a message: "provider_timeout", "pdf_unreadable".
     /// Anything read out of the customer's document would end up in an
     /// operator's queue view, which is exactly what section 20 forbids.
-    pub async fn fail(&self, job: &Job, retryable: bool, detail: &str) -> QueueResult<AnalysisState> {
+    pub async fn fail(
+        &self,
+        job: &Job,
+        retryable: bool,
+        detail: &str,
+    ) -> QueueResult<AnalysisState> {
         let event = job.event_for_failure(retryable);
         let next_run = matches!(event, AnalysisEvent::TransientFailure)
             .then(|| job.next_run_after(Utc::now()));
@@ -250,10 +255,9 @@ impl Queue {
         // it back to `queued` once the backoff has elapsed. Two states rather
         // than one so an operator can tell "waiting to retry" from "waiting for
         // a worker", which are different problems.
-        Ok(job
-            .state
+        job.state
             .try_transition(event)
-            .map_err(|_| QueueError::IllegalTransition(job.id))?)
+            .map_err(|_| QueueError::IllegalTransition(job.id))
     }
 
     /// Stops a job on request. Safe to call on a job another worker holds: the
@@ -292,7 +296,9 @@ impl Queue {
         .await?;
 
         let attempt: i32 = row.try_get("attempt").unwrap_or(0);
-        let correlation: Uuid = row.try_get("correlation_id").unwrap_or_else(|_| Uuid::nil());
+        let correlation: Uuid = row
+            .try_get("correlation_id")
+            .unwrap_or_else(|_| Uuid::nil());
         record_transition(
             &mut tx,
             job_id,
@@ -425,10 +431,15 @@ impl Queue {
             let id = JobId(row.try_get("id").map_err(QueueError::Database)?);
             let attempt: i32 = row.try_get("attempt").unwrap_or(0);
             let max_attempts: i32 = row.try_get("max_attempts").unwrap_or(1);
-            let correlation: Uuid = row.try_get("correlation_id").unwrap_or_else(|_| Uuid::nil());
+            let correlation: Uuid = row
+                .try_get("correlation_id")
+                .unwrap_or_else(|_| Uuid::nil());
 
             let (event, next) = if attempt >= max_attempts {
-                (AnalysisEvent::AttemptsExhausted, AnalysisState::DeadLettered)
+                (
+                    AnalysisEvent::AttemptsExhausted,
+                    AnalysisState::DeadLettered,
+                )
             } else {
                 (AnalysisEvent::LeaseExpired, AnalysisState::Retrying)
             };
@@ -551,7 +562,8 @@ impl Queue {
                     attempts: row.try_get::<i32, _>("attempts").unwrap_or(0) as u32,
                     last_error: row.try_get("last_error").ok(),
                     correlation_id: CorrelationId::from_uuid(
-                        row.try_get("correlation_id").unwrap_or_else(|_| Uuid::nil()),
+                        row.try_get("correlation_id")
+                            .unwrap_or_else(|_| Uuid::nil()),
                     ),
                     created_at: row.try_get("created_at").map_err(QueueError::Database)?,
                 })
@@ -560,7 +572,10 @@ impl Queue {
     }
 
     /// The history of one job, for an incident review.
-    pub async fn transitions(&self, job_id: JobId) -> QueueResult<Vec<(String, String, String, DateTime<Utc>)>> {
+    pub async fn transitions(
+        &self,
+        job_id: JobId,
+    ) -> QueueResult<Vec<(String, String, String, DateTime<Utc>)>> {
         let rows = sqlx::query(
             "SELECT from_state, to_state, event, at FROM job_transitions
              WHERE job_id = $1 ORDER BY at, id",
@@ -594,6 +609,12 @@ pub struct DeadLetter {
     pub created_at: DateTime<Utc>,
 }
 
+/// Appends one row to the transition log.
+///
+/// Eight parameters because a transition is eight facts and every one of them
+/// is written. Grouping them into a struct would move the same fields behind
+/// one more name and make the call sites longer, not clearer.
+#[allow(clippy::too_many_arguments)]
 async fn record_transition(
     tx: &mut Transaction<'_, Postgres>,
     job_id: JobId,
@@ -627,7 +648,9 @@ fn state_from_row(row: &sqlx::postgres::PgRow, column: &str) -> QueueResult<Anal
 
 fn job_from_row(row: &sqlx::postgres::PgRow) -> QueueResult<Job> {
     let kind: String = row.try_get("kind").map_err(QueueError::Database)?;
-    let key: String = row.try_get("idempotency_key").map_err(QueueError::Database)?;
+    let key: String = row
+        .try_get("idempotency_key")
+        .map_err(QueueError::Database)?;
     Ok(Job {
         id: JobId(row.try_get("id").map_err(QueueError::Database)?),
         kind: JobKind::parse(&kind)
@@ -643,7 +666,8 @@ fn job_from_row(row: &sqlx::postgres::PgRow) -> QueueResult<Job> {
         leased_until: row.try_get("leased_until").ok(),
         leased_by: row.try_get("leased_by").ok(),
         correlation_id: CorrelationId::from_uuid(
-            row.try_get("correlation_id").unwrap_or_else(|_| Uuid::nil()),
+            row.try_get("correlation_id")
+                .unwrap_or_else(|_| Uuid::nil()),
         ),
         traceparent: row.try_get("traceparent").ok(),
         last_error: row.try_get("last_error").ok(),

@@ -198,11 +198,7 @@ impl IdempotencyKey {
             // A long list would blow the length limit; the first 8 hex chars of
             // each part are ample within one scope, and collisions inside a
             // single company merely coalesce two identical requests.
-            sorted
-                .iter()
-                .map(|p| &p[..8])
-                .collect::<Vec<_>>()
-                .join("-")
+            sorted.iter().map(|p| &p[..8]).collect::<Vec<_>>().join("-")
         ))
     }
 
@@ -248,8 +244,7 @@ impl Job {
 
     /// True when a worker is holding it and has not run out of time.
     pub fn lease_is_live_at(&self, now: DateTime<Utc>) -> bool {
-        self.state == AnalysisState::Running
-            && self.leased_until.is_some_and(|until| until > now)
+        self.state == AnalysisState::Running && self.leased_until.is_some_and(|until| until > now)
     }
 
     /// The event a failed attempt should produce, given how many attempts are
@@ -303,7 +298,10 @@ mod tests {
     fn backoff_is_capped() {
         let policy = JobKind::Analysis.policy();
         let delay = policy.delay_for(50, job_id(200));
-        assert!(delay <= policy.max_backoff, "{delay:?} exceeded the ceiling");
+        assert!(
+            delay <= policy.max_backoff,
+            "{delay:?} exceeded the ceiling"
+        );
     }
 
     #[test]
@@ -319,7 +317,10 @@ mod tests {
         let policy = JobKind::Analysis.policy();
         let a = policy.delay_for(2, job_id(0));
         let b = policy.delay_for(2, job_id(255));
-        assert_ne!(a, b, "identical backoff would retry both in the same second");
+        assert_ne!(
+            a, b,
+            "identical backoff would retry both in the same second"
+        );
     }
 
     #[test]

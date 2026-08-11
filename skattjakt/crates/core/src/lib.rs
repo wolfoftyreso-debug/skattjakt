@@ -27,14 +27,13 @@ pub mod state_machine;
 
 pub use classification::{Classification, Classified, REDACTED};
 pub use company::{CompanyProfile, FiscalYear, OrgNumber};
-pub use evidence_graph::{EdgeKind, EvidenceGraph, NodeId};
-pub use state_machine::{AnalysisEvent, AnalysisState, InvalidTransition, StateTransition};
 pub use confidence::{
     Confidence, ConfidenceBand, ConfidenceFactors, ConfidenceThresholds, ConfidenceWeights,
     UnitInterval,
 };
 pub use error::{CoreError, CoreResult};
 pub use evidence::{CalculationInput, EvidenceChain, EvidenceItem};
+pub use evidence_graph::{EdgeKind, EvidenceGraph, NodeId};
 pub use fact::{Contradiction, FactKind, FactSet, FinancialFact};
 pub use ids::*;
 pub use money::{Money, MoneyRange, SEK};
@@ -42,6 +41,7 @@ pub use opportunity::{
     InvestigationEffort, Opportunity, OpportunityCategory, OpportunityStatus, Priority,
     PriorityBand, PriorityWeights, RiskLevel, Urgency,
 };
+pub use state_machine::{AnalysisEvent, AnalysisState, InvalidTransition, StateTransition};
 
 /// The disclaimer from section 27. Held in code, in one place, so every surface
 /// that shows results shows the same words.

@@ -142,7 +142,8 @@ impl TraceContext {
         let flags = parts.next()?;
         // Version ff is explicitly forbidden; higher versions must still parse
         // their first four fields, so unknown versions are accepted.
-        if version.len() != 2 || version == "ff" || !version.bytes().all(|b| b.is_ascii_hexdigit()) {
+        if version.len() != 2 || version == "ff" || !version.bytes().all(|b| b.is_ascii_hexdigit())
+        {
             return None;
         }
         if version == "00" && parts.next().is_some() {
@@ -236,17 +237,15 @@ mod tests {
             context.trace_id.to_hex(),
             "4bf92f3577b34da6a3ce929d0e0e4736"
         );
-        assert_eq!(
-            context.parent_span_id.unwrap().to_hex(),
-            "00f067aa0ba902b7"
-        );
+        assert_eq!(context.parent_span_id.unwrap().to_hex(), "00f067aa0ba902b7");
         assert!(context.sampled);
     }
 
     #[test]
     fn an_all_zero_trace_id_is_rejected() {
         assert!(
-            TraceContext::parse("00-00000000000000000000000000000000-00f067aa0ba902b7-01").is_none()
+            TraceContext::parse("00-00000000000000000000000000000000-00f067aa0ba902b7-01")
+                .is_none()
         );
     }
 

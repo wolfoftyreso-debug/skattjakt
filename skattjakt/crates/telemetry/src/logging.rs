@@ -82,14 +82,8 @@ impl LogRecord {
     /// Adds a field at a stated classification. Accepting anything means the
     /// call site is never blocked mid-incident; `render` is where the decision
     /// is applied, uniformly, without the author having to remember.
-    pub fn field(
-        mut self,
-        name: &str,
-        value: impl Into<Value>,
-        level: Classification,
-    ) -> Self {
-        self.fields
-            .insert(name.to_string(), (level, value.into()));
+    pub fn field(mut self, name: &str, value: impl Into<Value>, level: Classification) -> Self {
+        self.fields.insert(name.to_string(), (level, value.into()));
         self
     }
 
@@ -128,7 +122,10 @@ impl LogRecord {
         object.insert("level".into(), Value::String(self.level.as_str().into()));
         object.insert("msg".into(), Value::String(self.message.into()));
         if let Some(correlation) = &self.correlation {
-            object.insert("correlation_id".into(), Value::String(correlation.to_string()));
+            object.insert(
+                "correlation_id".into(),
+                Value::String(correlation.to_string()),
+            );
         }
         for (name, (level, value)) in &self.fields {
             let rendered = if level.permitted_at(ceiling) {
@@ -164,9 +161,7 @@ impl LogRecord {
 /// call and every log line. It is the only identifier that appears in logs, and
 /// that is the trade: an operator can follow one request end to end without any
 /// log store ever holding a company id.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
 pub struct CorrelationId(uuid::Uuid);
 
@@ -209,8 +204,8 @@ pub const CORRELATION_HEADER: &str = "x-correlation-id";
 /// Installs the JSON subscriber. Called once per binary.
 pub fn init(default_filter: &str) {
     use tracing_subscriber::EnvFilter;
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(default_filter));
+    let filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_filter));
     // `try_init` rather than `init`: a test binary that initialises twice
     // should not abort.
     let _ = tracing_subscriber::fmt()
@@ -227,7 +222,8 @@ mod tests {
 
     #[test]
     fn a_financial_amount_is_redacted_from_the_log_line() {
-        let record = LogRecord::info("analysis finished").sensitive("estimated_total_ore", 18_600_000i64);
+        let record =
+            LogRecord::info("analysis finished").sensitive("estimated_total_ore", 18_600_000i64);
         let line = record.to_line();
         assert!(!line.contains("18600000"));
         assert!(line.contains(REDACTED));
@@ -235,8 +231,8 @@ mod tests {
 
     #[test]
     fn a_company_id_is_redacted_from_the_log_line() {
-        let record =
-            LogRecord::info("analysis started").confidential("company_id", "8a5e1e6c-0000-0000-0000-000000000000");
+        let record = LogRecord::info("analysis started")
+            .confidential("company_id", "8a5e1e6c-0000-0000-0000-000000000000");
         assert!(!record.to_line().contains("8a5e1e6c"));
     }
 

@@ -12,6 +12,7 @@
 #![warn(missing_debug_implementations)]
 
 pub mod blob;
+pub mod governance;
 
 use std::collections::BTreeMap;
 
@@ -29,6 +30,10 @@ use sqlx::{Postgres, Row, Transaction};
 use thiserror::Error;
 
 pub use blob::{BlobError, BlobStore, FilesystemBlobStore};
+pub use governance::{
+    sweep_rate_limit_windows, DeletionScope, DeletionStage, RateBucket, RateDecision,
+    RetentionPolicy,
+};
 
 #[derive(Debug, Error)]
 pub enum StoreError {
@@ -175,7 +180,7 @@ async fn set_tenant(tx: &mut Transaction<'_, Postgres>, company_id: CompanyId) -
 /// A transaction with the tenant applied.
 #[derive(Debug)]
 pub struct Tenant<'a> {
-    tx: Transaction<'a, Postgres>,
+    pub(crate) tx: Transaction<'a, Postgres>,
     company_id: CompanyId,
 }
 
@@ -427,16 +432,25 @@ impl Tenant<'_> {
         id: AnalysisId,
         document_version_ids: &[DocumentVersionId],
         rule_set_version: &str,
+        accounts_state: AccountsState,
     ) -> StoreResult<()> {
         let ids: Vec<uuid::Uuid> = document_version_ids.iter().map(|d| d.0).collect();
         sqlx::query(
-            "INSERT INTO analysis_jobs (id, company_id, document_version_ids, status, stage, rule_set_version)
-             VALUES ($1, $2, $3, 'pending', 'queued', $4)",
+            "INSERT INTO analysis_jobs (id, company_id, document_version_ids, status, stage,
+                                        rule_set_version, accounts_state)
+             VALUES ($1, $2, $3, 'pending', 'queued', $4, $5)",
         )
         .bind(id.0)
         .bind(self.company_id.0)
         .bind(&ids)
         .bind(rule_set_version)
+        // `Unknown` is stored as preliminary: the conservative reading, since
+        // a preliminary set of accounts is treated with more caution than a
+        // final one and never the other way round.
+        .bind(match accounts_state {
+            AccountsState::Final => "final",
+            _ => "preliminary",
+        })
         .execute(&mut *self.tx)
         .await?;
 
@@ -523,8 +537,8 @@ impl Tenant<'_> {
 
     pub async fn analysis(&mut self, id: AnalysisId) -> StoreResult<StoredAnalysis> {
         let row = sqlx::query(
-            "SELECT id, status, stage, rule_set_version, result, error,
-                    created_at, started_at, finished_at
+            "SELECT id, document_version_ids, accounts_state, status, stage,
+                    rule_set_version, result, error, created_at, started_at, finished_at
              FROM analysis_jobs WHERE id = $1",
         )
         .bind(id.0)
@@ -533,8 +547,17 @@ impl Tenant<'_> {
         .ok_or(StoreError::NotFound)?;
 
         let result: Option<Value> = row.get("result");
+        let version_ids: Vec<uuid::Uuid> = row.get("document_version_ids");
         Ok(StoredAnalysis {
             id,
+            document_version_ids: version_ids
+                .into_iter()
+                .map(DocumentVersionId::from_uuid)
+                .collect(),
+            accounts_state: match row.get::<String, _>("accounts_state").as_str() {
+                "final" => AccountsState::Final,
+                _ => AccountsState::Preliminary,
+            },
             status: match row.get::<String, _>("status").as_str() {
                 "running" => AnalysisStatus::Running,
                 "succeeded" => AnalysisStatus::Succeeded,
@@ -829,6 +852,11 @@ impl Tenant<'_> {
 #[derive(Debug, Clone)]
 pub struct StoredAnalysis {
     pub id: AnalysisId,
+    /// The document versions pinned when the analysis was created. A worker
+    /// reads these rather than whatever is current, so a later upload cannot
+    /// change what a running analysis is based on.
+    pub document_version_ids: Vec<DocumentVersionId>,
+    pub accounts_state: AccountsState,
     pub status: AnalysisStatus,
     pub stage: AnalysisStage,
     pub rule_set_version: String,
