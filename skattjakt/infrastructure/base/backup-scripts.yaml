@@ -69,13 +69,14 @@ data:
     echo "$latest"
 
   restore-test.sh: |
-    #!/bin/sh
+    #!/bin/bash
     # Restores the latest backup into a throwaway database and checks that what
     # came back is what went in (section 34).
     #
-    # Three assertions, in the order in which they fail in practice:
+    # Four assertions, in the order in which they fail in practice:
     #   1. the dump restores at all;
-    #   2. every table that should exist does;
+    #   2. every table the live database has came back;
+    #   2b. row-level security is forced on the same tables it is live;
     #   3. the row counts are within a plausible range of production's.
     #
     # A restore that produces an empty but structurally correct database passes
@@ -102,39 +103,45 @@ data:
     # broken backup passes its own test.
     pg_restore --dbname="$scratch" --no-owner --no-privileges --exit-on-error "$dump"
 
-    # (2) Every table the application needs.
-    missing=""
-    for table in companies documents document_versions financial_facts \
-                 analysis_jobs model_runs opportunities opportunity_evidence \
-                 calculations audit_events api_tokens jobs job_transitions \
-                 dead_letters analysis_budgets rate_limit_counters \
-                 retention_policies deletion_requests rule_set_approvals; do
-      exists="$(psql -d "$scratch" -tAc \
-        "SELECT to_regclass('public.${table}') IS NOT NULL")"
-      if [ "$exists" != "t" ]; then
-        missing="${missing} ${table}"
-      fi
-    done
-    if [ -n "$missing" ]; then
-      echo "restored database is missing tables:${missing}" >&2
+    # (2) Every table the live database has, compared against the live database.
+    #
+    # This used to be a list of names written by hand. By the time anyone ran it,
+    # eighteen of the thirty-seven tables were missing from that list — every
+    # identity table and every simulation table among them — so a backup that had
+    # lost all of them would have passed. A frozen list of what to check decays
+    # from the day it is written, and silently: a missing entry looks exactly
+    # like a passing one.
+    #
+    # Asking the live database instead cannot go stale, because a migration that
+    # adds a table adds it to both sides at once.
+    table_query="SELECT table_name FROM information_schema.tables
+                 WHERE table_schema = 'public' ORDER BY table_name"
+    live_tables="$(psql -d skattjakt -tAc "$table_query")"
+    restored_tables="$(psql -d "$scratch" -tAc "$table_query")"
+
+    missing="$(comm -23 <(echo "$live_tables") <(echo "$restored_tables") | tr '\n' ' ')"
+    if [ -n "$(echo "$missing" | tr -d ' ')" ]; then
+      echo "restored database is missing tables the live one has:${missing}" >&2
       exit 1
     fi
+    echo "{\"msg\":\"tables verified\",\"count\":$(echo "$live_tables" | wc -l)}"
 
     # (2b) Row-level security survived the round trip. A restore that drops the
     # policies produces a database that works perfectly and isolates nothing.
-    unprotected="$(psql -d "$scratch" -tAc "
-      SELECT count(*) FROM pg_tables t
-      WHERE t.schemaname = 'public'
-        AND t.tablename IN ('documents','document_versions','financial_facts',
-                            'analysis_jobs','model_runs','opportunities')
-        AND NOT EXISTS (
-          SELECT 1 FROM pg_class c
-          WHERE c.relname = t.tablename AND c.relrowsecurity AND c.relforcerowsecurity
-        )")"
-    if [ "$unprotected" != "0" ]; then
-      echo "restored database has ${unprotected} tenant tables without forced row-level security" >&2
+    # Compared against the live database for the same reason as the table list: a
+    # named set of six tables stopped being all of them nineteen tables ago.
+    forced_query="SELECT relname FROM pg_class
+                  WHERE relnamespace = 'public'::regnamespace AND relkind = 'r'
+                    AND relrowsecurity AND relforcerowsecurity
+                  ORDER BY relname"
+    live_forced="$(psql -d skattjakt -tAc "$forced_query")"
+    restored_forced="$(psql -d "$scratch" -tAc "$forced_query")"
+    unprotected="$(comm -23 <(echo "$live_forced") <(echo "$restored_forced") | tr '\n' ' ')"
+    if [ -n "$(echo "$unprotected" | tr -d ' ')" ]; then
+      echo "restored database lost forced row-level security on:${unprotected}" >&2
       exit 1
     fi
+    echo "{\"msg\":\"row-level security verified\",\"tables\":$(echo "$live_forced" | wc -l)}"
 
     # (3) Plausible contents. Compared against production rather than against a
     # constant, so the check keeps meaning something as the service grows.

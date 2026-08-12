@@ -519,6 +519,33 @@ PYTHON
     fi
 done
 
+# --- what the policies actually permit -------------------------------------
+#
+# The assertions above check that a NetworkPolicy exists and has the right
+# shape. That is not the same as checking what it permits, and the difference
+# was not academic: the notification worker's own egress policy allowed port
+# 5432, `postgres-ingress` never listed it, and a connection needs both ends —
+# so the outbox worker could not reach the database at all. Every structural
+# check passed while nothing would have been delivered.
+#
+# `networkpolicy.py` implements the evaluation rules and asserts the intended
+# connectivity matrix. It verifies the policy *logic*; enforcement is the CNI's
+# and needs a cluster where a pod can start.
+
+echo
+echo "the connectivity the policies encode"
+for env in "${ENVIRONMENTS[@]}"; do
+    rendered="$WORKDIR/$env.yaml"
+    [[ -s "$rendered" ]] || continue
+    if output="$(python3 "$ROOT/tests/infrastructure/networkpolicy.py" \
+            "$rendered" "skattjakt-$env" 2>&1)"; then
+        pass "$env: $(grep -E '^passed' <<<"$output")"
+    else
+        fail "$env: the policies do not encode the intended connectivity"
+        grep -E "FAIL" <<<"$output" | sed 's/^/      /'
+    fi
+done
+
 # --- files that are not rendered by an overlay -----------------------------
 
 echo

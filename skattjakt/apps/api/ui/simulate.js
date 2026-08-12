@@ -627,7 +627,10 @@ function drawConvergence() {
 function renderRuns() {
   const runs = state.simulation.runs || [];
   el("runs-table").innerHTML =
-    "<thead><tr><th>Körd</th><th>Status</th><th>Iterationer</th><th>Seed</th><th>Modell</th><th></th></tr></thead><tbody>"
+    "<thead><tr><th>Körd</th><th>Status</th><th>Iterationer</th><th>Seed</th><th>Modell</th>"
+    // Not an empty <th>: a screen reader announces the column and then nothing.
+    // Hidden visually because the heading would be noise beside a single button.
+    + '<th><span class="visually-hidden">Åtgärd</span></th></tr></thead><tbody>'
     + runs.map((run) => `<tr>
         <td>${escape(new Date(run.requested_at).toLocaleString("sv-SE"))}</td>
         <td>${escape(run.state)}</td>

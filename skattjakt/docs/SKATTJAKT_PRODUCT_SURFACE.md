@@ -58,7 +58,7 @@ building it — not rewriting the core (§32, §36).
 
 | Component | Required now | Architecture ready | Implemented | Tested | Production ready |
 |---|---|---|---|---|---|
-| **Web** | ✓ | ✓ | ✓ beta interface, cookie sessions | ✓ e2e + 17 cookie/CSRF checks | ◐ see §4 below |
+| **Web** | ✓ | ✓ | ✓ beta interface, cookie sessions | ✓ e2e + 53 browser checks + 16 accessibility checks | ◐ see §4 below |
 | **Apple / iOS** | — | ✓ | — deliberately not | — | — |
 | **Android** | — | ✓ | — deliberately not | — | — |
 | **API** | ✓ | ✓ | ✓ 38 paths | ✓ contract + live suites | ✓ |
@@ -74,10 +74,10 @@ building it — not rewriting the core (§32, §36).
 | **Background jobs** | ✓ | ✓ | ✓ leases, retries, DLQ | ✓ failure 24/24 | ✓ |
 | **Simulation / probability** | ✓ | ✓ | ✓ 11 distributions, expression model, 12 endpoints | ✓ 109 unit + 69 live checks | ✓ |
 | **Observability** | ✓ | ✓ | ✓ metrics, logs, correlation, OTLP export | ✓ 12 checks against a real collector | ✓ |
-| **Security** | ✓ | ✓ | ✓ | ✓ security 39/39 | ✓ |
+| **Security** | ✓ | ✓ | ✓ + CSP and security headers | ✓ security 56/56, 41 connectivity checks | ✓ |
 | **CI/CD** | ✓ | ✓ | ✓ 8 gates | ✓ | ✓ |
 | **Kubernetes** | ✓ | ✓ | ✓ 37 objects × 3 envs | ✓ 111/111 accepted by a real API server; 3 defects found and fixed | ◐ **applied, no pod started** — see §5.1 |
-| **Backup / recovery** | ✓ | ✓ | ✓ daily + weekly restore test | ✓ scripts reviewed | ✗ never run in a cluster |
+| **Backup / recovery** | ✓ | ✓ | ✓ daily + weekly restore test | ✓ 20 checks: dump, encrypt, upload, restore, verify | ◐ run against real storage, not in a cluster |
 | **Documentation** | ✓ | ✓ | ✓ 14 documents | ✓ CI checks the couplings | ✓ |
 
 `◐` = partially. `✗` = not, and the reason is stated.
@@ -113,15 +113,29 @@ from.
 
 ## 4. Where the web client is `◐`
 
-The beta interface is real, driven end to end, and served by the build. It is
-not a finished production web application:
+The beta interface is real, driven end to end in a browser, and served by the
+build. It is not a finished production web application:
 
 - No offline or degraded state beyond an error message.
-- Accessibility has not been audited against WCAG.
 - No client-side telemetry.
 
-Stated rather than implied, because "implemented" and "production ready" are
-different columns for a reason.
+**Accessibility has now been audited** and is no longer on that list. axe-core
+runs against both pages in every state a person sees — signed out, with a model
+loaded, with a result on screen, and inside each of the five tab panels — in
+light and dark, at 200% zoom, plus keyboard reachability and focus visibility
+that automated rules cannot judge. 16 checks, all passing.
+
+It found two real defects, both fixed: a table column heading that was empty,
+so a screen reader announced the column and then nothing; and no focus
+indicator on buttons, because the stylesheet styled focus for inputs and
+selects and left buttons to a browser default that Chromium paints only for
+`:focus-visible`.
+
+What that audit **does not** claim is WCAG conformance. Automated tooling finds
+a minority of the failures in the standard: it cannot judge whether a label is
+meaningful, whether a reading order makes sense, or whether an error message is
+comprehensible. It is a floor, and a genuine one — the machine-checkable rules
+pass on every screen — but a conformance claim needs a person.
 
 ---
 
@@ -172,7 +186,53 @@ both container runtimes tried. Every pod reaches `Scheduled` and stops at
 the manifests: it fails identically for coredns. See §6 for what it leaves
 unproven.
 
-### 5.2 Totals
+### 5.2 Backup and restore, run for real
+
+The matrix carried backup as `✗ never run in a cluster — scripts reviewed`.
+Reviewed is not tested, so the scripts were run *as the CronJobs run them* —
+the same files, extracted from the same ConfigMap, with the same environment —
+against a real PostgreSQL, a real MinIO and real `age` encryption. 20 checks:
+the dump uploads encrypted, the stored bytes do not contain the customer's
+name, an unencrypted upload is refused, the backup comes back, decrypts and
+restores, every table and every row-level security policy survives, individual
+values survive, a corrupted dump fails the restore rather than half-applying,
+and the wrong key does not decrypt.
+
+**It found the defect that mattered.** The restore test compared the restored
+database against a **hand-written list of table names**. By the time anyone ran
+it, 18 of the 37 tables were absent from that list — every identity table
+(`users`, `sessions`, `user_credentials`) and every simulation table. A backup
+that had lost all of them would have passed its own verification.
+
+The list did not fail. It stopped covering things, which is the failure mode of
+every frozen list, and it is silent: a missing entry looks exactly like a
+passing one. It now asks the live database what tables it has and compares set
+against set, which cannot go stale because a migration adds a table to both
+sides at once.
+
+### 5.3 What the NetworkPolicies actually permit
+
+Enforcement needs a cluster where a pod can start. The *logic* does not, and
+the two are different claims: a policy that is enforced perfectly and says the
+wrong thing is not protection.
+
+An evaluator implements the NetworkPolicy rules — a pod no policy selects is
+unrestricted; policies are a union and can only ever allow more; a connection
+must be permitted at **both** ends — and asserts the intended connectivity
+matrix for all three environments. 41 checks each.
+
+**It found a defect that every structural check had passed.** The notification
+worker's own egress policy allowed port 5432 to Postgres. `postgres-ingress`
+never listed the notification worker. A connection needs both ends, so in
+production the outbox worker **could not reach the database at all**: it would
+have claimed nothing, delivered nothing, and said nothing louder than a
+connection refusal in a log.
+
+That is the same omission, one layer down, as the one that gave this worker no
+Deployment at all — the workload was added, the route to the database was not.
+Checking one side of a policy is how a policy set looks complete and is not.
+
+### 5.4 Totals
 
 Verified in this environment, in this session:
 
@@ -196,7 +256,13 @@ Not verified, and not claimed:
   HPA behaviour under real load, probe outcomes, Argo CD reconciliation,
   ingress and TLS termination. The manifests are applied and admitted; no pod
   has run. §5.1 says why, and it is the environment rather than the manifests.
-- The backup and restore CronJobs running for real.
+
+  NetworkPolicy *semantics* are no longer on this list. What the policies
+  permit is now evaluated directly — see §5.3 — which is a different claim from
+  enforcement and worth separating: the policies were wrong, and no amount of
+  enforcement would have made a wrong policy right.
+- The backup and restore CronJobs running **on a schedule, in a cluster**. The
+  scripts themselves are no longer untested: §5.2.
 - Trivy, cosign signing, SLSA provenance against a registry.
 - Any mobile client, because none was built.
 

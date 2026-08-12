@@ -166,6 +166,15 @@ spec:
             matchLabels: { app.kubernetes.io/name: skattjakt-api }
         - podSelector:
             matchLabels: { app.kubernetes.io/name: skattjakt-analysis-worker }
+        # The notification worker was missing here, and its own egress policy
+        # allowed 5432 — which is why nothing looked wrong. A connection needs
+        # *both* ends to allow it, so the effect was that the outbox worker
+        # could not reach the database at all: it would have claimed nothing,
+        # delivered nothing, and reported no error louder than a connection
+        # refusal in a log. The same shape of omission as the one that gave
+        # this worker no Deployment at all.
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: skattjakt-notification-worker }
         - podSelector:
             matchLabels: { app.kubernetes.io/name: skattjakt-backup }
       ports:

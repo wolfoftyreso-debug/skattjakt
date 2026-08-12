@@ -61,8 +61,9 @@ A full account of what has and has not been verified is in
 ## Quick start
 
 ```sh
-cargo test --workspace                                  # 451 tests
+cargo test --workspace                                  # 613 tests
 cargo test -p skattjakt-pipeline --test golden -- --nocapture   # the golden dataset
+cargo test -p skattjakt-simulate --release --test performance -- --ignored --nocapture
 
 export PGBIN=$(ls -d /usr/lib/postgresql/*/bin | tail -1)
 ./tests/security/tenant-isolation.sh                    # RLS against a real cluster
@@ -73,13 +74,20 @@ export PGBIN=$(ls -d /usr/lib/postgresql/*/bin | tail -1)
 
 ./tests/integration/s3-blobstore.sh                     # S3 against a real MinIO
 ./tests/integration/e2e-on-s3.sh                        # the whole product on S3
-./tests/infrastructure/validate-manifests.sh            # 3 environments
+./tests/integration/simulations.sh                      # the Monte Carlo chain
+./tests/infrastructure/backup-restore.sh                # dump, encrypt, restore, verify
+./tests/infrastructure/validate-manifests.sh            # 3 environments + connectivity
 ./tests/infrastructure/validate-docs.sh                 # the docs still describe it
+
+# In a browser. Needs playwright and axe-core; see the header of each script.
+./tests/e2e/simulation-ui.sh                            # the interface, wired to the API
+./tests/e2e/accessibility.sh                            # axe-core on every screen
 
 SKATTJAKT_API_TOKEN=dev cargo run -p skattjakt-api
 ```
 
-Then open <http://localhost:8080/>, paste `dev` as the token, and run the flow.
+Then open <http://localhost:8080/> for the analysis flow, or
+<http://localhost:8080/simulations> for the Monte Carlo layer.
 
 Then:
 

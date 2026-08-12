@@ -54,6 +54,13 @@
   }
   textarea { min-height: 190px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82rem; }
   input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  /* Buttons were left to the browser's default ring, which Chromium paints only
+     for :focus-visible — so a button reached any way other than the keyboard
+     showed no indicator at all. Stated here so the indicator does not depend on
+     which browser, and on how focus arrived. */
+  button:focus, summary:focus, [tabindex]:focus {
+    outline: 2px solid var(--accent); outline-offset: 2px;
+  }
   .row { display: grid; grid-template-columns: 1fr 1fr; gap: 0 1rem; }
   @media (max-width: 560px) { .row { grid-template-columns: 1fr; } }
 
@@ -105,3 +112,11 @@
 .gap-l { margin-top: .8rem; }
 .gap-xl { margin-top: .9rem; }
 .below { margin-bottom: 1.5rem; }
+
+/* Present for a screen reader, absent for everything else. Used wherever a
+   control needs a name that would be noise on screen — a table column holding
+   one button, for instance. */
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}

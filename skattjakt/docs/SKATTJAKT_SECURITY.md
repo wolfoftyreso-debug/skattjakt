@@ -272,6 +272,19 @@ worker's egress excludes RFC 1918, `169.254.0.0/16` and loopback.
 
 ## 8. Network posture
 
+**Verified by:** `tests/infrastructure/networkpolicy.py`, 41 checks per environment.
+
+The policies' *logic* is evaluated directly rather than inspected: a pod no
+policy selects is unrestricted, policies are a union that can only ever allow
+more, and a connection must be permitted at both ends. That last rule is the
+one that caught a real defect — the notification worker's egress allowed 5432
+while `postgres-ingress` never listed it, so the outbox worker could not reach
+the database at all while every structural check passed.
+
+Enforcement remains the CNI's and remains unverified here; see
+`SKATTJAKT_PRODUCT_SURFACE.md` §5.3.
+
+
 **Enforced by:** `infrastructure/base/{namespace,networkpolicies}.yaml`.
 **Proved by:** `tests/infrastructure/validate-manifests.sh`, which asserts each
 property below across all three environments.
