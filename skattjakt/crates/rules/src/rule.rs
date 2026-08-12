@@ -5,6 +5,8 @@
 //! has reviewed it. An unreviewed rule can still run; it just cannot produce a
 //! finding presented as established.
 
+use std::collections::BTreeSet;
+
 use serde::{Deserialize, Serialize};
 use skattjakt_core::{
     FactKind, InvestigationEffort, Money, MoneyRange, OpportunityCategory, RiskLevel, Urgency,
@@ -143,8 +145,19 @@ impl Source {
     }
 
     /// A citation as a person would write it.
+    /// The citation as a reader would write it.
+    ///
+    /// A paragraph reference is set directly against the document —
+    /// `Inkomstskattelag (1999:1229) 30 kap. 5 §` — because that is how statute
+    /// is cited. Everything else is a named part of a document rather than a
+    /// reference into it, and running the two together produced citations that
+    /// read as a sentence fragment. Those take a dash.
     pub fn citation(&self) -> String {
-        format!("{} {}", self.title, self.locator)
+        if self.locator.contains('§') || self.locator.contains("kap") {
+            format!("{} {}", self.title, self.locator)
+        } else {
+            format!("{} — {}", self.title, self.locator)
+        }
     }
 }
 
@@ -288,7 +301,17 @@ impl Rule {
         }
         facts.extend(self.impact.required_facts());
         facts.extend(self.required_evidence.iter().cloned());
-        facts.dedup_by_key(|f| f.key());
+
+        // `Vec::dedup_by_key` removes only *adjacent* duplicates, which this
+        // list is not: a fact named in the conditions and again in
+        // `required_evidence` has the impact's facts between them and survives.
+        // The customer then sees the same balance-sheet line quoted twice under
+        // "what this rests on", which reads as two pieces of evidence.
+        //
+        // First occurrence wins, so the order stays conditions → exceptions →
+        // impact → evidence, which is the order the reasoning happened in.
+        let mut seen = BTreeSet::new();
+        facts.retain(|fact| seen.insert(fact.key()));
         facts
     }
 }
@@ -450,6 +473,51 @@ mod tests {
         assert!(facts.contains(&FactKind::TaxableResult));
         assert!(facts.contains(&FactKind::Cash));
         assert!(facts.contains(&FactKind::Equity));
+    }
+
+    #[test]
+    fn a_fact_named_twice_is_listed_once() {
+        // The shape that got through: `taxable_result` in the conditions and
+        // again in `required_evidence`, with the impact's fact between them.
+        // `dedup_by_key` only removes adjacent duplicates, so both survived and
+        // the finding quoted the same line from the accounts twice.
+        let mut r = rule(2021, None);
+        r.conditions = Condition::FactPresent {
+            fact: FactKind::TaxableResult,
+        };
+        r.impact = ImpactSpec::Point {
+            expr: Expr::Fact {
+                fact: FactKind::Cash,
+            },
+            uncertainty_bp: 1000,
+        };
+        r.required_evidence = vec![FactKind::TaxableResult];
+
+        let facts = r.referenced_facts();
+        assert_eq!(
+            facts,
+            vec![FactKind::TaxableResult, FactKind::Cash],
+            "a fact named in two places must be listed once, in first-seen order"
+        );
+    }
+
+    #[test]
+    fn every_shipped_rule_lists_each_fact_once() {
+        // The property, asserted against the rules that actually ship rather
+        // than against a fixture — this is where the defect lived.
+        let engine = crate::RuleEngine::load_embedded().unwrap();
+        for rule in engine.rules() {
+            let facts = rule.referenced_facts();
+            let mut unique: Vec<_> = facts.iter().map(|f| f.key()).collect();
+            unique.sort_unstable();
+            unique.dedup();
+            assert_eq!(
+                facts.len(),
+                unique.len(),
+                "{} lists a fact more than once",
+                rule.rule_id
+            );
+        }
     }
 
     #[test]
