@@ -292,6 +292,10 @@ impl S3BlobStore {
 
 #[async_trait::async_trait]
 impl BlobStore for S3BlobStore {
+    fn presign_put(&self, key: &str, expires_in_secs: u64) -> Option<String> {
+        self.presign("PUT", key, expires_in_secs).ok()
+    }
+
     async fn put(&self, key: &str, bytes: &[u8]) -> BlobResult<()> {
         let response = self
             .send(reqwest::Method::PUT, key, Some(bytes.to_vec()))

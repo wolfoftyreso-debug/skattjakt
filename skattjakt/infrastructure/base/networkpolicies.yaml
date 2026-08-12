@@ -247,3 +247,56 @@ spec:
       ports:
         - protocol: TCP
           port: 443
+---
+# The notification worker.
+#
+# Narrower than the analysis worker's: it reads the outbox and talks to a mail
+# relay. It never touches a document, so it gets no object-storage egress —
+# a workload that cannot reach the documents cannot leak them.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: notification-worker-egress
+  namespace: skattjakt
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: skattjakt-notification-worker }
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: skattjakt-postgres }
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: observability }
+      ports:
+        - protocol: TCP
+          port: 4318
+    # The mail relay. Submission ports only — 25 is for server-to-server
+    # transfer and a workload that can reach it is a workload that can be used
+    # to send mail as anyone.
+    - ports:
+        - protocol: TCP
+          port: 587
+        - protocol: TCP
+          port: 465
+      to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 169.254.0.0/16
+              - 127.0.0.0/8
+    # DNS, without which every rule above fails in a way that reads like the
+    # dependency being down.
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels: { k8s-app: kube-dns }
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

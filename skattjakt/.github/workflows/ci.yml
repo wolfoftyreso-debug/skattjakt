@@ -209,13 +209,18 @@ jobs:
           "
 
   manifests:
-    name: Manifests and documentation
+    name: Manifests, migrations and documentation
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: skattjakt
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install PostgreSQL
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql
 
       - name: Install kustomize and kubeconform
         run: |
@@ -236,6 +241,15 @@ jobs:
       # document actively misleads someone at 03:00: an alert with no runbook
       # section, an alert querying a metric nobody emits, a document pointing
       # at a file that moved.
+      # Fresh install *and* upgrade-with-data from every earlier version. Every
+      # other suite starts from an empty database, so they answer the first
+      # question every time and the second one never.
+      - name: Migration safety
+        run: |
+          export PGBIN=$(ls -d /usr/lib/postgresql/*/bin | tail -1)
+          chmod -R a+rX .
+          ./tests/infrastructure/migrations.sh
+
       - name: Validate the documentation
         run: ./tests/infrastructure/validate-docs.sh
 
@@ -282,6 +296,15 @@ jobs:
 
       # Build only. Publishing is a separate, gated workflow — a merge to a
       # branch must not be able to put an image where a cluster can pull it.
+      - name: Build the notification worker image
+        uses: docker/build-push-action@v6
+        with:
+          context: skattjakt
+          file: skattjakt/Dockerfile
+          build-args: BINARY=skattjakt-notification-worker
+          tags: skattjakt/notification-worker:ci
+          load: true
+
       - name: Build the API image
         uses: docker/build-push-action@v6
         with:

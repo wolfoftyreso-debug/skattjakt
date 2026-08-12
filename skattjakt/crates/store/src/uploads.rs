@@ -29,6 +29,14 @@ pub const TICKET_LIFETIME: Duration = Duration::minutes(30);
 /// two paths to the same storage is how one of them becomes the way in.
 pub const MAX_DECLARED_BYTES: i64 = 32 * 1024 * 1024;
 
+/// What a ticket authorises, read back at completion.
+#[derive(Debug, Clone)]
+pub struct TicketDetails {
+    pub storage_key: String,
+    pub declared_name: String,
+    pub declared_type: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct UploadTicket {
     pub id: Uuid,
@@ -43,7 +51,17 @@ pub enum CompletionOutcome {
         document_version_id: DocumentVersionId,
     },
     /// The bytes did not match what the ticket declared.
-    Rejected { reason: &'static str },
+    ///
+    /// Carries both numbers. They are the sizes of the caller's own upload, so
+    /// disclosing them tells them nothing they did not already have — and
+    /// without them "the size does not match" is a message a client author has
+    /// to guess at. The commonest cause is counting characters rather than
+    /// bytes, which every Swedish document triggers.
+    Rejected {
+        reason: &'static str,
+        declared: i64,
+        observed: i64,
+    },
 }
 
 impl Tenant<'_> {
@@ -143,6 +161,8 @@ impl Tenant<'_> {
             self.reject_ticket(ticket_id, "not_found").await?;
             return Ok(CompletionOutcome::Rejected {
                 reason: "the upload ticket expired",
+                declared: row.get("declared_size"),
+                observed: observed_size,
             });
         }
 
@@ -154,6 +174,8 @@ impl Tenant<'_> {
             self.reject_ticket(ticket_id, "size_mismatch").await?;
             return Ok(CompletionOutcome::Rejected {
                 reason: "the uploaded file is not the size the ticket declared",
+                declared,
+                observed: observed_size,
             });
         }
 
@@ -186,16 +208,29 @@ impl Tenant<'_> {
         Ok(())
     }
 
-    /// The storage key a ticket authorises, if it is still valid.
-    pub async fn ticket_storage_key(&mut self, ticket_id: Uuid) -> StoreResult<Option<String>> {
+    /// What a still-valid ticket authorises: the key, and what the client said
+    /// it would send.
+    ///
+    /// The declared name and type come back with the key because the completion
+    /// needs them. Hardcoding a filename there would lose what the customer
+    /// called their document, which is the label they will look for in their own
+    /// list.
+    pub async fn ticket_for_completion(
+        &mut self,
+        ticket_id: Uuid,
+    ) -> StoreResult<Option<TicketDetails>> {
         let row = sqlx::query(
-            "SELECT storage_key FROM upload_tickets
+            "SELECT storage_key, declared_name, declared_type FROM upload_tickets
              WHERE id = $1 AND state = 'issued' AND expires_at > now()",
         )
         .bind(ticket_id)
         .fetch_optional(&mut *self.tx)
         .await?;
-        Ok(row.map(|r| r.get("storage_key")))
+        Ok(row.map(|r| TicketDetails {
+            storage_key: r.get("storage_key"),
+            declared_name: r.get("declared_name"),
+            declared_type: r.get("declared_type"),
+        }))
     }
 }
 

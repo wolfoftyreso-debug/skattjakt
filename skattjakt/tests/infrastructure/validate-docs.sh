@@ -142,6 +142,53 @@ else
     fail "the contract and the routes have drifted"
 fi
 
+# --- the contract has no duplicate keys ------------------------------------
+#
+# YAML permits a duplicate mapping key and silently keeps the last. A second
+# `Problem:` schema in this file shadowed the documented one for a while, so the
+# contract described an error body with a `code` field while consumers reading
+# the file saw one without. The parser will not tell you; this does.
+
+echo
+echo "the contract has no shadowed definitions"
+if python3 - <<'PYTHON'
+import sys
+
+import yaml
+
+
+class DuplicateKeyLoader(yaml.SafeLoader):
+    pass
+
+
+def no_duplicates(loader, node, deep=False):
+    seen = set()
+    for key_node, _ in node.value:
+        key = loader.construct_object(key_node, deep=deep)
+        if key in seen:
+            raise ValueError(f"duplicate key: {key}")
+        seen.add(key)
+    return yaml.SafeLoader.construct_mapping(loader, node, deep)
+
+
+DuplicateKeyLoader.add_constructor(
+    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, no_duplicates
+)
+
+try:
+    yaml.load(open("apps/api/openapi.yaml"), Loader=DuplicateKeyLoader)
+except ValueError as error:
+    print(f"        {error}")
+    sys.exit(1)
+
+print("        no key is defined twice")
+PYTHON
+then
+    pass "no definition in the contract shadows another"
+else
+    fail "the contract defines something twice"
+fi
+
 # --- the documents point at files that exist -------------------------------
 
 echo

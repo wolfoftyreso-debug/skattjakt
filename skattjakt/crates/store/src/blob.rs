@@ -28,6 +28,17 @@ pub trait BlobStore: Send + Sync + std::fmt::Debug {
     /// Writes bytes. Writing the same key twice with different bytes is a
     /// programming error, not an update: keys carry the content hash.
     async fn put(&self, key: &str, bytes: &[u8]) -> BlobResult<()>;
+
+    /// A URL a client may `PUT` to directly, when the backend can produce one.
+    ///
+    /// `None` for a backend that cannot sign — the filesystem store — so a
+    /// caller falls back to proxying rather than having to know which backend
+    /// it is talking to. A default implementation rather than a required
+    /// method, because "cannot presign" is the ordinary case for anything that
+    /// is not object storage.
+    fn presign_put(&self, _key: &str, _expires_in_secs: u64) -> Option<String> {
+        None
+    }
     async fn get(&self, key: &str) -> BlobResult<Vec<u8>>;
     async fn delete(&self, key: &str) -> BlobResult<()>;
     async fn exists(&self, key: &str) -> BlobResult<bool>;

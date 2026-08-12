@@ -13,6 +13,7 @@ resources:
   - minio.yaml
   - api.yaml
   - worker.yaml
+  - notification-worker.yaml
   - backup.yaml
   - backup-scripts.yaml
   - ingress.yaml

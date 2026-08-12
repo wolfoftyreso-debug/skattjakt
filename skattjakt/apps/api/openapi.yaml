@@ -456,6 +456,152 @@ paths:
         "403": { description: Your role may not manage members. }
         "409": { description: An account with that address already exists. }
 
+  /v1/documents/tickets:
+    post:
+      tags: [Documents]
+      summary: Ask for an upload ticket
+      description: |
+        The flow a phone uses. A 30 MB scanned annual report posted as JSON
+        crosses a mobile network, is buffered whole in an API pod, and any drop
+        in the last second means starting again.
+
+        ```
+        POST /v1/documents/tickets                → ticket_id + upload_url
+        PUT  <upload_url>                          → the bytes
+        POST /v1/documents/tickets/{id}/complete   → document_version_id
+        ```
+
+        `upload_method` is `direct` when object storage can issue a presigned
+        URL — send the bytes there with **no credential**, the URL is
+        self-contained — or `proxied` when it cannot, in which case
+        `upload_url` is a path on this API and needs the usual authorisation.
+        Client code is the same either way.
+
+        The proxied `POST /v1/documents` is unchanged and remains the right
+        shape for a browser posting a small text file.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [filename, mime_type, size]
+              properties:
+                filename: { type: string, maxLength: 400 }
+                mime_type:
+                  type: string
+                  enum: [application/pdf, text/plain, text/csv, image/jpeg, image/png]
+                  description: An allowlist. Anything else answers 415.
+                size:
+                  type: integer
+                  description: |
+                    **Bytes, not characters.** The distinction bites here: a
+                    Swedish document contains å, ä and ö, two bytes each in
+                    UTF-8, so a client counting characters declares a size that
+                    is always too small and every upload is refused. The
+                    mismatch error names both numbers.
+                kind: { type: string, default: annual_accounts }
+                accounts_state: { type: string, default: preliminary }
+      responses:
+        "201":
+          description: A ticket, valid for 30 minutes.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ticket_id: { type: string, format: uuid }
+                  document_id: { type: string, format: uuid }
+                  upload_url: { type: string }
+                  upload_method: { type: string, enum: [direct, proxied] }
+                  expires_at: { type: string, format: date-time }
+        "413": { description: Larger than the 32 MB ceiling. }
+        "415": { description: Not a supported document type. }
+        "429": { description: The tenant's upload quota is spent. }
+
+  /v1/documents/tickets/{id}/complete:
+    post:
+      tags: [Documents]
+      summary: Redeem a ticket
+      description: |
+        Reads what actually landed in storage and checks it against the ticket.
+        The size and hash come from storage, never from the client — asking the
+        client what it uploaded and believing the answer would make every check
+        decorative.
+
+        A ticket is single use. Unknown, expired, already-used and
+        belonging-to-another-tenant all answer 404.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "201":
+          description: The document version the upload became.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  document_version_id: { type: string, format: uuid }
+                  sha256: { type: string }
+                  byte_size: { type: integer }
+        "404": { description: No such ticket, or it is spent. }
+        "409": { description: The ticket exists but nothing was uploaded to it. }
+        "422": { description: What arrived is not what the ticket declared. }
+
+  /v1/documents/tickets/{id}/content:
+    put:
+      tags: [Documents]
+      summary: Upload through the API
+      description: |
+        The `proxied` path, for a deployment with no object storage to sign a
+        URL. The bytes go through the API — which is what the ticket flow
+        exists to avoid — so this is a single-node convenience, not the path a
+        phone should take against a real deployment.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        "204": { description: Stored. }
+        "404": { description: No such ticket, or it is spent. }
+        "413": { description: Larger than the 32 MB ceiling. }
+
+  /v1/notifications:
+    get:
+      tags: [Documents]
+      summary: In-app notifications
+      description: |
+        Delivery for the in-app channel *is* this endpoint: there is nothing to
+        transmit, so a client reads what the outbox holds.
+
+        Carries an identifier and a kind, never prose and never an amount — the
+        same rule as a push payload.
+      responses:
+        "200":
+          description: The most recent notifications, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  notifications:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string, format: uuid }
+                        kind: { type: string }
+                        subject_id: { type: string, format: uuid, nullable: true }
+
   /v1/companies:
     post:
       tags: [Companies]
@@ -763,13 +909,16 @@ components:
             - analysis_failed
             - analysis_is_not_finished
             - authentication_unavailable
+            - document_too_large
             - insufficient_permission
             - internal_error
             - invalid_credentials
             - invalid_cursor
+            - invalid_request
             - no_company
             - not_a_session
             - not_found
+            - nothing_was_uploaded
             - password_rejected
             - persistence_is_not_configured
             - provider_required
@@ -777,9 +926,12 @@ components:
             - storage_failure
             - the_job_queue_is_not_configured
             - the_session_cannot_be_refreshed
+            - the_upload_does_not_match_its_ticket
             - unauthorized
             - unknown_push_provider
             - unknown_role
+            - unknown_value
+            - unsupported_document_type
             - wrong_credential
         title: { type: string }
         detail:
@@ -860,13 +1012,6 @@ components:
           type: array
           description: Why the service is not ready. Empty when it is.
           items: { type: string }
-
-    Problem:
-      type: object
-      required: [title, detail]
-      properties:
-        title: { type: string, example: "invalid organisationsnummer" }
-        detail: { type: string }
 
     RuleSetSummary:
       type: object

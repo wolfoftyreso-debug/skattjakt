@@ -168,6 +168,74 @@ SHA="$(echo "$DOC" | jq "['sha256']")"
 [[ -n "$VERSION_ID" ]] || { echo "$DOC"; fail "document was not stored"; }
 echo "  version $VERSION_ID sha ${SHA:0:12}…"
 
+# --- 4b. the upload-ticket flow, which is how a phone uploads ---------------
+
+step "4b. upload ticket"
+TICKET="$(api POST /v1/documents/tickets "$TOKEN_A" \
+    '{"filename":"skannat-bokslut.txt","mime_type":"text/plain","size":42}')"
+TICKET_ID="$(echo "$TICKET" | jq "['ticket_id']")"
+UPLOAD_URL="$(echo "$TICKET" | jq "['upload_url']")"
+UPLOAD_METHOD="$(echo "$TICKET" | jq "['upload_method']")"
+[[ -n "$TICKET_ID" ]] || { echo "$TICKET"; fail "no ticket was issued"; }
+echo "  ticket $TICKET_ID via $UPLOAD_METHOD"
+
+TICKET_BODY='Nettoomsättning  1 000 000'
+if [[ "$UPLOAD_METHOD" == "direct" ]]; then
+    # Straight to object storage, with no credential — the presigned URL is
+    # self-contained. This is the path a phone takes.
+    CODE="$(curl -s -o /dev/null -w '%{http_code}' -X PUT --data-binary "$TICKET_BODY" "$UPLOAD_URL")"
+    [[ "$CODE" == "200" ]] || fail "the presigned upload was refused (HTTP $CODE)"
+else
+    CODE="$(curl -s -o /dev/null -w '%{http_code}' -X PUT \
+        -H "authorization: Bearer $TOKEN_A" --data-binary "$TICKET_BODY" \
+        "http://127.0.0.1:$APIPORT$UPLOAD_URL")"
+    [[ "$CODE" == "204" ]] || fail "the proxied upload was refused (HTTP $CODE)"
+fi
+
+# The declared size was 42 and the body is not 42 bytes, so completion must
+# refuse it: a ticket redeemable for more bytes than it declared is a ticket
+# with no size limit.
+MISMATCH="$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+    -H "authorization: Bearer $TOKEN_A" -H 'content-type: application/json' \
+    "http://127.0.0.1:$APIPORT/v1/documents/tickets/$TICKET_ID/complete" -d '{}')"
+[[ "$MISMATCH" == "422" ]] \
+    || fail "a size mismatch was accepted (HTTP $MISMATCH)"
+echo "  a size mismatch is refused"
+
+# A ticket is single-use, so the rejected one cannot be retried.
+AGAIN="$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+    -H "authorization: Bearer $TOKEN_A" -H 'content-type: application/json' \
+    "http://127.0.0.1:$APIPORT/v1/documents/tickets/$TICKET_ID/complete" -d '{}')"
+[[ "$AGAIN" == "404" ]] || fail "a used ticket was accepted again (HTTP $AGAIN)"
+echo "  a used ticket cannot be redeemed twice"
+
+# Now a correct one, end to end.
+# Bytes, not characters. `${#var}` counts characters, and "Nettoomsättning"
+# has an ä — so a character count is one short and the upload is refused. That
+# is the trap the API's error message now names explicitly.
+BODY_SIZE="$(printf '%s' "$TICKET_BODY" | wc -c)"
+TICKET2="$(api POST /v1/documents/tickets "$TOKEN_A" \
+    "{\"filename\":\"bokslut-via-ticket.txt\",\"mime_type\":\"text/plain\",\"size\":$BODY_SIZE}")"
+TICKET2_ID="$(echo "$TICKET2" | jq "['ticket_id']")"
+URL2="$(echo "$TICKET2" | jq "['upload_url']")"
+if [[ "$(echo "$TICKET2" | jq "['upload_method']")" == "direct" ]]; then
+    curl -s -o /dev/null -X PUT --data-binary "$TICKET_BODY" "$URL2"
+else
+    curl -s -o /dev/null -X PUT -H "authorization: Bearer $TOKEN_A" \
+        --data-binary "$TICKET_BODY" "http://127.0.0.1:$APIPORT$URL2"
+fi
+COMPLETED="$(api POST "/v1/documents/tickets/$TICKET2_ID/complete" "$TOKEN_A" '{}')"
+TICKET_VERSION="$(echo "$COMPLETED" | jq "['document_version_id']")"
+[[ -n "$TICKET_VERSION" ]] || { echo "$COMPLETED"; fail "the ticket did not produce a document"; }
+echo "  ticket upload produced document version $TICKET_VERSION"
+
+# Another tenant must not be able to redeem it.
+CROSS="$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+    -H "authorization: Bearer $TOKEN_B" -H 'content-type: application/json' \
+    "http://127.0.0.1:$APIPORT/v1/documents/tickets/$TICKET2_ID/complete" -d '{}')"
+[[ "$CROSS" == "404" ]] || fail "another tenant redeemed the ticket (HTTP $CROSS)"
+echo "  another tenant cannot redeem it"
+
 # --- 5. document ingestion --------------------------------------------------
 
 step "5. document ingestion"

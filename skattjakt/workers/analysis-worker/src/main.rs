@@ -136,7 +136,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Maintenance runs on its own timer so a long analysis does not stop lost
     // leases from being reaped.
-    let maintenance = spawn_maintenance(queue.clone());
+    let maintenance = spawn_maintenance(queue.clone(), store.clone());
 
     let shutdown = shutdown_signal();
     tokio::pin!(shutdown);
@@ -214,11 +214,17 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn spawn_maintenance(queue: Queue) -> tokio::task::JoinHandle<()> {
+fn spawn_maintenance(queue: Queue, store: Store) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let mut ticker = tokio::time::interval(MAINTENANCE_INTERVAL);
+        // Housekeeping runs far less often than the queue maintenance it rides
+        // on: an expired session row and an unredeemed upload ticket are not
+        // urgent, and sweeping them every fifteen seconds would be a pointless
+        // write against a table nobody is waiting on.
+        let mut ticks: u64 = 0;
         loop {
             ticker.tick().await;
+            ticks += 1;
 
             match queue.release_elapsed_backoffs().await {
                 Ok(n) if n > 0 => LogRecord::info("returned jobs to the queue after backoff")
@@ -228,6 +234,33 @@ fn spawn_maintenance(queue: Queue) -> tokio::task::JoinHandle<()> {
                 Err(error) => LogRecord::warn("could not release backoffs")
                     .internal("error", error.to_string())
                     .emit(),
+            }
+
+            // Roughly hourly at a fifteen-second tick.
+            if ticks % 240 == 0 {
+                match store.expire_upload_tickets().await {
+                    Ok(n) if n > 0 => LogRecord::info("marked upload tickets that were never used")
+                        .internal("tickets", n as i64)
+                        .emit(),
+                    Ok(_) => {}
+                    Err(error) => LogRecord::warn("could not expire upload tickets")
+                        .internal("error", error.to_string())
+                        .emit(),
+                }
+
+                // Retention, not tidiness: an expired session row records when
+                // someone was signed in and from roughly where, and it should
+                // not outlive its usefulness. Ninety days after the refresh
+                // token died is long enough to investigate an incident.
+                match store.purge_expired_sessions(90).await {
+                    Ok(n) if n > 0 => LogRecord::info("purged long-expired sessions")
+                        .internal("sessions", n as i64)
+                        .emit(),
+                    Ok(_) => {}
+                    Err(error) => LogRecord::warn("could not purge sessions")
+                        .internal("error", error.to_string())
+                        .emit(),
+                }
             }
 
             match queue.reap_expired_leases().await {

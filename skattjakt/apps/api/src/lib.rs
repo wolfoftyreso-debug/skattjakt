@@ -13,6 +13,7 @@ pub mod auth_routes;
 pub mod cookies;
 pub mod observe;
 pub mod routes;
+pub mod upload_routes;
 
 use std::sync::Arc;
 
@@ -239,6 +240,18 @@ pub fn router(state: AppState) -> Router {
             post(auth_routes::change_password),
         )
         .route("/v1/users", post(auth_routes::create_user))
+        // Direct-to-storage uploads. The proxied POST /v1/documents stays: it
+        // is the right shape for a browser posting a small text file.
+        .route("/v1/documents/tickets", post(upload_routes::issue_ticket))
+        .route(
+            "/v1/documents/tickets/{id}/complete",
+            post(upload_routes::complete_ticket),
+        )
+        .route(
+            "/v1/documents/tickets/{id}/content",
+            axum::routing::put(upload_routes::upload_content),
+        )
+        .route("/v1/notifications", get(upload_routes::list_notifications))
         .route("/v1/companies", post(routes::create_company))
         .route("/v1/companies/me", get(routes::get_company))
         .route("/v1/documents", post(routes::upload_document))

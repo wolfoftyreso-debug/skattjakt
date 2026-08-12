@@ -1,0 +1,110 @@
+# The notification delivery worker.
+#
+# This was built, tested against a real SMTP server, and had no Deployment —
+# so the outbox would have filled in production with nothing draining it, and
+# every check would have looked green. A binary without a workload is a binary
+# that does not run.
+#
+# A third Deployment rather than a second container in the analysis worker: a
+# notification is one SMTP session and an analysis is minutes of model latency,
+# and sharing a pod would put "your analysis is ready" behind somebody else's
+# four-minute run. Different work, different scaling, different blast radius.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: skattjakt-notification-worker
+  namespace: skattjakt
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: skattjakt-notification-worker
+  namespace: skattjakt
+  labels:
+    app.kubernetes.io/name: skattjakt-notification-worker
+    app.kubernetes.io/component: worker
+    app.kubernetes.io/part-of: skattjakt
+spec:
+  # One is enough, and more would not help: delivery is bounded by the relay,
+  # not by us. Claims use SKIP LOCKED, so raising this is safe when it is ever
+  # needed.
+  replicas: 1
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: skattjakt-notification-worker
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: skattjakt-notification-worker
+        app.kubernetes.io/component: worker
+        app.kubernetes.io/part-of: skattjakt
+    spec:
+      serviceAccountName: skattjakt-notification-worker
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: worker
+          image: skattjakt-notification-worker  # digest pinned by each overlay
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            privileged: false
+            capabilities:
+              drop: [ALL]
+          envFrom:
+            - configMapRef:
+                name: skattjakt-config
+            - secretRef:
+                name: skattjakt-secrets
+          resources:
+            # Small. It opens a database connection, an SMTP session, and
+            # renders a few hundred characters of Swedish.
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+      # Short. A delivery in flight is one SMTP session; if it is interrupted
+      # the outbox row stays claimed until its lease-free retry, which is the
+      # designed behaviour rather than a loss.
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: skattjakt-notification-worker
+  namespace: skattjakt
+spec:
+  # Zero, deliberately, and this is the one workload where that is right.
+  #
+  # `minAvailable: 1` on a single-replica Deployment blocks every voluntary
+  # eviction — a node drain never completes, and an operator learns to pass
+  # `--disable-eviction`, which is worse for everything else on the node. A
+  # notification that waits three minutes for a pod to come back is not an
+  # incident; a node that cannot be drained is.
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: skattjakt-notification-worker

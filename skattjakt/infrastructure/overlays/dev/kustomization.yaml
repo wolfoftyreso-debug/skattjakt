@@ -25,6 +25,9 @@ images:
   - name: skattjakt-analysis-worker
     newName: registry.internal/skattjakt/analysis-worker
     newTag: dev
+  - name: skattjakt-notification-worker
+    newName: registry.internal/skattjakt/notification-worker
+    newTag: dev
 
 patches:
   - path: config.yaml

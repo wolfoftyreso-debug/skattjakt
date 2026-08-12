@@ -256,13 +256,29 @@ check(images, "no images at all")
 for image in images:
     check(":latest" not in image, f"{image} is pinned to a moving tag")
 
+# Third-party images pinned to an immutable version tag. Everything *not* on
+# this list must carry a digest outside dev.
+#
+# The rule is written this way round deliberately. The first version checked
+# only images whose name started with our registry prefix, so a new workload
+# whose image had not been rewritten by the overlay yet — a bare name, no
+# registry, no digest — matched nothing and was skipped. An unrecognised image
+# is the most suspicious case, not the least, and a check that only inspects
+# what it already recognises is a check that passes the day it matters.
+PINNED_THIRD_PARTY = (
+    "postgres:16-alpine",
+    "quay.io/minio/minio:RELEASE.",
+    "quay.io/prometheuscommunity/postgres-exporter:v",
+)
+
 if env in ("staging", "prod"):
     for image in images:
-        if image.startswith("registry.internal/skattjakt/"):
-            check(
-                "@sha256:" in image,
-                f"{env} runs {image} by tag rather than by digest",
-            )
+        if any(image.startswith(known) for known in PINNED_THIRD_PARTY):
+            continue
+        check(
+            "@sha256:" in image,
+            f"{env} runs {image} without a digest",
+        )
 
 # --- secrets (section 30) --------------------------------------------------
 

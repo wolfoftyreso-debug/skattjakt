@@ -23,6 +23,9 @@ images:
   - name: skattjakt-analysis-worker
     newName: registry.internal/skattjakt/analysis-worker
     digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+  - name: skattjakt-notification-worker
+    newName: registry.internal/skattjakt/notification-worker
+    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
   - name: postgres
     newTag: 16-alpine
 

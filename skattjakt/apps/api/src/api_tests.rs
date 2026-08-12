@@ -653,15 +653,30 @@ async fn background_analyses_are_refused_without_a_queue() {
 /// hand, so a new `Problem` cannot be added without appearing here.
 #[test]
 fn the_error_codes_are_the_set_the_contract_promises() {
-    let sources = [
-        include_str!("lib.rs"),
-        include_str!("routes.rs"),
-        include_str!("auth_routes.rs"),
-    ];
+    // Every source file in the crate, read at test time.
+    //
+    // A hardcoded list was the first version, and it had exactly the hole this
+    // test exists to prevent: a new route file was not on the list, so its
+    // error codes were invisible and the contract "passed" while it had
+    // silently changed. A test that only inspects what it already knows about
+    // is a test that passes the day it matters.
+    let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut sources = Vec::new();
+    for entry in std::fs::read_dir(&directory).expect("the source directory is readable") {
+        let path = entry.expect("a readable entry").path();
+        if path.extension().and_then(|e| e.to_str()) == Some("rs") {
+            sources.push(std::fs::read_to_string(&path).expect("a readable source file"));
+        }
+    }
+    assert!(
+        sources.len() >= 5,
+        "only {} source files were read; the glob is broken",
+        sources.len()
+    );
 
     let mut found: Vec<String> = Vec::new();
-    for source in sources {
-        let mut rest = source;
+    for source in &sources {
+        let mut rest = source.as_str();
         while let Some(at) = rest.find("title: \"") {
             rest = &rest[at + 8..];
             if let Some(end) = rest.find('"') {
@@ -685,13 +700,16 @@ fn the_error_codes_are_the_set_the_contract_promises() {
         "analysis_failed",
         "analysis_is_not_finished",
         "authentication_unavailable",
+        "document_too_large",
         "insufficient_permission",
         "internal_error",
         "invalid_credentials",
         "invalid_cursor",
+        "invalid_request",
         "no_company",
         "not_a_session",
         "not_found",
+        "nothing_was_uploaded",
         "password_rejected",
         "persistence_is_not_configured",
         "provider_required",
@@ -699,9 +717,12 @@ fn the_error_codes_are_the_set_the_contract_promises() {
         "storage_failure",
         "the_job_queue_is_not_configured",
         "the_session_cannot_be_refreshed",
+        "the_upload_does_not_match_its_ticket",
         "unauthorized",
         "unknown_push_provider",
         "unknown_role",
+        "unknown_value",
+        "unsupported_document_type",
         "wrong_credential",
     ];
 
