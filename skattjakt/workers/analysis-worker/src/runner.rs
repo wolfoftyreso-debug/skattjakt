@@ -18,6 +18,7 @@ use skattjakt_gateway::{Budget, ModelGateway};
 use skattjakt_jobs::{Job, Queue};
 use skattjakt_pipeline::pipeline::StageObserver;
 use skattjakt_pipeline::{AnalysisInput, AnalysisPipeline, DocumentInput};
+use skattjakt_store::notifications::{NewNotification, NotificationKind};
 use skattjakt_store::{BlobStore, Store};
 use skattjakt_telemetry::{names, LabelSet, LogRecord, Registry, SpanContext, TraceContext};
 
@@ -252,6 +253,34 @@ impl Runner {
                     .complete_analysis(&result, &runs)
                     .await
                     .map_err(|_| RunFailure::transient("database_unavailable"))?;
+
+                // In the same transaction as the result. That is the whole
+                // point of an outbox: the notification becomes true exactly
+                // when the thing it describes does. Sending here instead would
+                // mean a rollback tells a customer about a result that does not
+                // exist; sending after the commit would lose it to a crash with
+                // no record that it was owed.
+                //
+                // The dedupe key is the analysis id, so a retried attempt after
+                // a lost lease produces one notification rather than one per
+                // attempt.
+                let notification = NewNotification {
+                    kind: NotificationKind::AnalysisCompleted,
+                    user_id: tenant.first_owner().await.unwrap_or(None),
+                    subject_id: Some(job.subject_id),
+                    subject_kind: Some("analysis"),
+                    dedupe_key: job.subject_id.to_string(),
+                    correlation_id: *job.correlation_id.as_uuid(),
+                };
+                if let Err(error) = tenant.enqueue_notification(notification).await {
+                    // Not fatal. The analysis succeeded and the customer can see
+                    // it; failing the job here would re-run a completed analysis
+                    // and charge for it again, to fix a missing email.
+                    LogRecord::warn("the completion notification could not be queued")
+                        .internal("error", error.to_string())
+                        .emit();
+                }
+
                 tenant
                     .commit()
                     .await

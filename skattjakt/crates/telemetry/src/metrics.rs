@@ -351,6 +351,11 @@ pub mod names {
     /// Refresh exchanges. A rise in `rejected` is what a stolen-token sweep
     /// looks like from the outside.
     pub const SESSION_REFRESHES: &str = "skattjakt_session_refreshes_total";
+    /// Notifications delivered, by channel and kind.
+    pub const NOTIFICATIONS_DELIVERED: &str = "skattjakt_notifications_delivered_total";
+    /// Notifications given up on. A rise in `permanent` is usually a relay
+    /// rejecting a whole domain, which no retry will fix.
+    pub const NOTIFICATIONS_FAILED: &str = "skattjakt_notifications_failed_total";
     pub const HTTP_DURATION: &str = "skattjakt_http_request_duration_ms";
     pub const HTTP_IN_FLIGHT: &str = "skattjakt_http_requests_in_flight";
     pub const RATE_LIMITED: &str = "skattjakt_rate_limited_total";
@@ -411,6 +416,14 @@ pub fn register_all(registry: &Registry) {
     registry.register_gauge(HTTP_IN_FLIGHT, "HTTP requests currently being handled.");
     registry.register_counter(RATE_LIMITED, "Requests rejected by the rate limiter.");
     registry.register_counter(SIGN_INS, "Sign-in attempts, by client kind and outcome.");
+    registry.register_counter(
+        NOTIFICATIONS_DELIVERED,
+        "Notifications delivered, by channel and kind.",
+    );
+    registry.register_counter(
+        NOTIFICATIONS_FAILED,
+        "Notifications given up on, by failure class.",
+    );
     registry.register_counter(
         SESSION_REFRESHES,
         "Refresh-token exchanges, by outcome. A rise in rejections is what a \

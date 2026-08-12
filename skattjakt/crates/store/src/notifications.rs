@@ -121,6 +121,25 @@ pub struct NewNotification {
     pub correlation_id: Uuid,
 }
 
+/// Where one notification goes.
+///
+/// Lives here rather than in `skattjakt-notify` because resolving it is a
+/// database question, and putting it in the sender crate would make the store
+/// depend on its own consumer.
+#[derive(Debug, Clone, Default)]
+pub struct Recipient {
+    pub email: Option<String>,
+    /// One entry per device with a live push token.
+    pub push_tokens: Vec<PushToken>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PushToken {
+    pub device_id: Uuid,
+    pub token: String,
+    pub provider: String,
+}
+
 /// A notification ready to deliver.
 #[derive(Debug, Clone)]
 pub struct PendingNotification {
@@ -233,9 +252,14 @@ impl Tenant<'_> {
         limit: i64,
     ) -> StoreResult<Vec<PendingNotification>> {
         let rows = sqlx::query(
+            // Scoped by company *and* user in the query, because this table is
+            // outside row-level security — see migration 0006. The company
+            // filter is not redundant with the user filter: a user belongs to
+            // several companies, and this session is acting in one of them.
             "SELECT id, company_id, user_id, kind, subject_id, channels, attempt, correlation_id
              FROM notifications
-             WHERE (user_id = $1 OR user_id IS NULL)
+             WHERE company_id = $3
+               AND (user_id = $1 OR user_id IS NULL)
                AND 'in_app' = ANY(channels)
                AND state <> 'suppressed'
              ORDER BY created_at DESC
@@ -243,6 +267,7 @@ impl Tenant<'_> {
         )
         .bind(user_id)
         .bind(limit.clamp(1, 200))
+        .bind(self.company_id().0)
         .fetch_all(&mut *self.tx)
         .await?;
 
@@ -324,6 +349,97 @@ impl crate::Store {
                  run_after = CASE
                      WHEN $3::text IS NULL THEN run_after
                      ELSE now() + make_interval(secs => 30 * power(2, least(attempt, 6))) END,
+                 last_error = $3,
+                 updated_at = now()
+             WHERE id = $1",
+        )
+        .bind(id)
+        .bind(delivered)
+        .bind(error)
+        .execute(self.pool())
+        .await?;
+        Ok(())
+    }
+}
+
+impl crate::Store {
+    /// Where one notification should go.
+    ///
+    /// Resolved at delivery time rather than stored on the row, so a customer
+    /// who changed their email address between the analysis finishing and the
+    /// notification going out is reached at the new one.
+    pub async fn recipient_for(
+        &self,
+        notification: &PendingNotification,
+    ) -> StoreResult<Recipient> {
+        let mut recipient = Recipient::default();
+
+        let Some(user_id) = notification.user_id else {
+            return Ok(recipient);
+        };
+
+        let row = sqlx::query("SELECT email FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_optional(self.pool())
+            .await?;
+        recipient.email = row.map(|r| r.get("email"));
+
+        // Only devices with a live token. A token the provider has told us is
+        // dead is skipped without deleting the device the customer can see.
+        let devices = sqlx::query(
+            "SELECT id, push_token, push_provider FROM devices
+             WHERE user_id = $1 AND push_token IS NOT NULL AND push_failed_at IS NULL",
+        )
+        .bind(user_id)
+        .fetch_all(self.pool())
+        .await?;
+
+        recipient.push_tokens = devices
+            .into_iter()
+            .filter_map(|r| {
+                Some(PushToken {
+                    device_id: r.get("id"),
+                    token: r.get::<Option<String>, _>("push_token")?,
+                    provider: r.get::<Option<String>, _>("push_provider")?,
+                })
+            })
+            .collect();
+
+        Ok(recipient)
+    }
+
+    /// Records a failure that will not be retried, keeping whatever *did* go
+    /// out.
+    ///
+    /// Separate from `record_delivery` because the two decide different things:
+    /// that one reschedules on error, and a permanent failure must not be
+    /// rescheduled — retrying a dead address until the attempt cap is how a
+    /// queue fills with work that cannot succeed.
+    ///
+    /// The delivered channels matter here and were dropped by the first version
+    /// of this, which is a defect worth naming: an email that reached the
+    /// customer and a push that could not be sent because no provider is
+    /// configured is a notification that *arrived*. Recording it as `failed`
+    /// with nothing delivered would tell an operator the customer was never
+    /// told, and would be false.
+    pub async fn exhaust_notification(
+        &self,
+        id: Uuid,
+        delivered: &[String],
+        error: &str,
+    ) -> StoreResult<()> {
+        sqlx::query(
+            "UPDATE notifications
+             SET delivered_channels = (
+                     SELECT coalesce(array_agg(DISTINCT c), '{}')
+                     FROM unnest(delivered_channels || $2::text[]) AS c
+                     WHERE c = ANY(channels)),
+                 -- Delivered when something reached the customer, even though a
+                 -- channel failed permanently. Failed only when nothing did.
+                 state = CASE
+                     WHEN cardinality($2::text[]) > 0 THEN 'delivered'
+                     ELSE 'failed' END,
+                 attempt = max_attempts,
                  last_error = $3,
                  updated_at = now()
              WHERE id = $1",

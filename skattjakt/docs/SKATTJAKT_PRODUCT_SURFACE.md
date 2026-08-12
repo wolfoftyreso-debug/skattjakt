@@ -41,7 +41,7 @@ duplicate platform, and the difference is where the seams are:
 | Secrets (§14) | No secret in git, not even a placeholder. `Secret` objects are referenced and never rendered | Point External Secrets or sealed-secrets at the same names |
 | Observability (§17) | Prometheus text on `/metrics`; W3C trace context minted and propagated | Scrape the endpoint; add an OTLP exporter |
 | Object storage (§21) | `BlobStore` trait with **both** a filesystem and an S3 implementation, selected by configuration | Point `SKATTJAKT_S3_*` at the platform's endpoint |
-| Push delivery (§22) | Outbox, device tokens, APNs/FCM/web-push provider slots | Implement the sender |
+| Push delivery (§22) | Outbox, device tokens, rendering, retry schedule and dispatch — all done. `PushSender` answers `NotConfigured` rather than pretending | Implement one transport; nothing else changes |
 | Model serving (§15) | `ModelProvider` trait behind `ModelGateway` | Point at the platform's inference endpoint |
 
 Nothing in that table is a stub that pretends to work (§31). Each is either
@@ -70,7 +70,7 @@ building it — not rewriting the core (§32, §36).
 | **Authorization** | ✓ | ✓ | ✓ 3 roles × 12 permissions | ✓ | ✓ |
 | **ID verification** | — | ✓ | — no provider reachable | — | — |
 | **File storage** | ✓ | ✓ | ✓ S3 + filesystem, presigned URLs | ✓ 7 live ops + full e2e on MinIO | ✓ |
-| **Notifications** | — | ✓ | ◐ outbox + preferences | ✓ policy tested | ◐ needs the sender |
+| **Notifications** | — | ✓ | ✓ outbox, email, in-app | ✓ 15 checks incl. a real SMTP server | ◐ push has no provider |
 | **Background jobs** | ✓ | ✓ | ✓ leases, retries, DLQ | ✓ failure 24/24 | ✓ |
 | **Observability** | ✓ | ✓ | ✓ metrics, logs, correlation | ✓ | ◐ no trace export |
 | **Security** | ✓ | ✓ | ✓ | ✓ security 39/39 | ✓ |
@@ -98,7 +98,7 @@ built later without a backend rewrite — is done:
 | Theft detection | ✓ rotation with reuse detection; the family is torn down |
 | A device identity that outlives a sign-out | ✓ `devices`, keyed on a client-generated install id |
 | Somewhere to put a push token | ✓ per device, with provider, and a dead-token marker |
-| To be told a result is ready without polling | ✓ notification outbox with per-kind channel defaults |
+| To be told a result is ready without polling | ✓ outbox, delivered by a worker; email works, push needs a transport |
 | To upload a large file over a poor network | ✓ upload tickets; the API never handles the bytes |
 | Multi-tenant switching without re-authenticating | ✓ `POST /v1/auth/switch-company`, verified against membership |
 | Per-client session policy | ✓ `x-skattjakt-client` selects it |
@@ -131,11 +131,12 @@ different columns for a reason.
 Verified in this environment, in this session:
 
 ```
-451 unit and integration tests          golden dataset  precision 1.000 recall 1.000
+465 unit and integration tests          golden dataset  precision 1.000 recall 1.000
  44 session checks (live API)            10 tenant isolation checks (real Postgres)
  39 security checks (live API)           24 failure-injection checks (real Postgres)
  20 end-to-end product steps              5 S3 checks against a real MinIO
- 20 end-to-end steps again, on S3        99 Kubernetes objects schema-valid
+ 20 end-to-end steps again, on S3        15 notification checks (real SMTP)
+ 99 Kubernetes objects schema-valid
   9 container image assertions          305 SBOM components, all checksummed
  17 documentation coupling checks
 ```
@@ -162,9 +163,12 @@ Not verified, and not claimed:
    verified against a real MinIO: seven live operations, presigned PUT and GET
    used by `curl` with no credential, and the whole 20-step product test on S3
    instead of the filesystem.
-2. The notification delivery worker. The outbox is written and nothing drains
-   it. **Now the top item.**
-3. The OTLP exporter. Context is propagated and goes nowhere.
+2. ~~The notification delivery worker.~~ **Done.** A third process, because a
+   notification behind a four-minute analysis defeats the point of sending it.
+   Email over hand-written SMTP, verified against a real Mailpit; the delivered
+   message is read back and checked for the figures it must not carry.
+3. The OTLP exporter. Context is propagated and goes nowhere. **Now the top
+   item.**
 4. Move the web interface onto sessions, and retire the company token for
    human access — keeping it for integrations.
 5. Wire the upload-ticket routes into the API. The store layer and the

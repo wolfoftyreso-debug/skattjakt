@@ -7,12 +7,14 @@ members = [
     "crates/model",
     "crates/gateway",
     "crates/identity",
+    "crates/notify",
     "crates/extract",
     "crates/pipeline",
     "crates/store",
     "crates/jobs",
     "apps/api",
     "workers/analysis-worker",
+    "workers/notification-worker",
 ]
 
 [workspace.package]
@@ -29,6 +31,7 @@ skattjakt-rules = { path = "crates/rules" }
 skattjakt-model = { path = "crates/model" }
 skattjakt-gateway = { path = "crates/gateway" }
 skattjakt-identity = { path = "crates/identity" }
+skattjakt-notify = { path = "crates/notify" }
 skattjakt-extract = { path = "crates/extract" }
 skattjakt-pipeline = { path = "crates/pipeline" }
 skattjakt-store = { path = "crates/store" }

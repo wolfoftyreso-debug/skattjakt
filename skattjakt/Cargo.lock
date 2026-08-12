@@ -1982,6 +1982,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "skattjakt-notification-worker"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "skattjakt-core",
+ "skattjakt-notify",
+ "skattjakt-store",
+ "skattjakt-telemetry",
+ "sqlx",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "skattjakt-notify"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "skattjakt-core",
+ "skattjakt-store",
+ "skattjakt-telemetry",
+ "thiserror",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "skattjakt-pipeline"
 version = "0.1.0"
 dependencies = [

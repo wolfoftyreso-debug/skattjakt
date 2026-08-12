@@ -116,6 +116,19 @@ Set all four or none. Half-configured is fatal at startup.
 | `SKATTJAKT_S3_REGION` | Defaults to `us-east-1`; MinIO ignores it, AWS does not |
 | `SKATTJAKT_S3_PATH_STYLE` | Defaults on. MinIO needs it; AWS buckets created after 2020 do not offer it |
 
+### Mail relay
+
+Optional. Without it, in-app notifications still work and email is skipped with
+a warning — the same judgement as a missing model provider.
+
+| Variable | Notes |
+|---|---|
+| `SKATTJAKT_SMTP_HOST` | Absent → email is not sent |
+| `SKATTJAKT_SMTP_PORT` | Defaults to 587 |
+| `SKATTJAKT_SMTP_FROM` | Defaults to `Skattjakt <ingen-svar@skattjakt.se>` |
+| `SKATTJAKT_SMTP_USERNAME` / `_PASSWORD` | Refused unless `STARTTLS` is on: `AUTH PLAIN` is base64, not encryption |
+| `SKATTJAKT_SMTP_STARTTLS` | Defaults on. **`STARTTLS` is not implemented** — use an in-cluster relay on a trusted network and set this to `0`, knowingly |
+
 ### Optional
 
 | Variable | Default | Notes |

@@ -843,3 +843,28 @@ impl From<CredentialError> for SignInError {
         SignInError::InvalidCredentials
     }
 }
+
+impl crate::Tenant<'_> {
+    /// The owner of this company, for notifications addressed to "the
+    /// business".
+    ///
+    /// A `Tenant` method rather than a `Store` one, and that is not stylistic:
+    /// `company_members` is under row-level security, so the same query on a
+    /// pool with no tenant set returns nothing at all — silently, which is how
+    /// the first version of this shipped a notification addressed to nobody.
+    ///
+    /// Owner rather than every member: a completed analysis is one event, and
+    /// emailing four people about it is how a product teaches its customers to
+    /// filter it away. Per-member delivery is a preference that can be added;
+    /// making it the default would be choosing noise.
+    pub async fn first_owner(&mut self) -> StoreResult<Option<Uuid>> {
+        let row = sqlx::query(
+            "SELECT user_id FROM company_members
+             WHERE role = 'owner' AND accepted_at IS NOT NULL
+             ORDER BY created_at LIMIT 1",
+        )
+        .fetch_optional(&mut *self.tx)
+        .await?;
+        Ok(row.map(|r| r.get("user_id")))
+    }
+}
