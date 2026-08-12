@@ -2064,10 +2064,12 @@ name = "skattjakt-telemetry"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "reqwest",
  "serde",
  "serde_json",
  "skattjakt-core",
  "thiserror",
+ "tokio",
  "tracing",
  "tracing-subscriber",
  "uuid",

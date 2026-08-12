@@ -143,7 +143,7 @@ jobs:
           ./tests/e2e/end-to-end.sh
 
   object-storage:
-    name: Object storage and notifications
+    name: Storage, notifications and traces
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -177,6 +177,14 @@ jobs:
       # An analysis finishes, the outbox row commits with it, the worker
       # delivers, and a real SMTP server receives a message — which is then read
       # back and checked for the figures it must not contain.
+      # Only a collector can prove an OTLP body is accepted, and only two
+      # processes can prove a trace survives a queue.
+      - name: Traces against a real OpenTelemetry collector
+        run: |
+          export PGBIN=$(ls -d /usr/lib/postgresql/*/bin | tail -1)
+          chmod -R a+rX .
+          ./tests/integration/tracing.sh
+
       - name: Notifications against a real SMTP server
         run: |
           export PGBIN=$(ls -d /usr/lib/postgresql/*/bin | tail -1)

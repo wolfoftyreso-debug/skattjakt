@@ -42,6 +42,7 @@ fn state() -> AppState {
         )),
         provider,
         password_verifier: Arc::new(skattjakt_identity::PasswordVerifier::new()),
+        spans: skattjakt_telemetry::otlp::SpanExporter::disabled(),
         config: PipelineConfig::default(),
         api_token: Some(TOKEN.to_string()),
         admin_token: None,

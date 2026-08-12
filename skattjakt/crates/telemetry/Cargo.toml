@@ -8,6 +8,8 @@ repository.workspace = true
 description = "Metrics, correlation ids and classification-aware logging for Skattjakt."
 
 [dependencies]
+tokio.workspace = true
+reqwest.workspace = true
 skattjakt-core.workspace = true
 
 thiserror.workspace = true

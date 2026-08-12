@@ -116,6 +116,14 @@ Set all four or none. Half-configured is fatal at startup.
 | `SKATTJAKT_S3_REGION` | Defaults to `us-east-1`; MinIO ignores it, AWS does not |
 | `SKATTJAKT_S3_PATH_STYLE` | Defaults on. MinIO needs it; AWS buckets created after 2020 do not offer it |
 
+### Tracing
+
+| Variable | Notes |
+|---|---|
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | e.g. `http://otel-collector.observability.svc:4318`. `/v1/traces` is appended if absent. Unset → no export, trace ids still in logs |
+| `OTEL_SERVICE_NAME` | Defaults to the binary's own name |
+| `SKATTJAKT_ENVIRONMENT` | Becomes `deployment.environment` on every span |
+
 ### Mail relay
 
 Optional. Without it, in-app notifications still work and email is skipped with
@@ -295,9 +303,9 @@ to work.
   `SKATTJAKT_S3_*`. A half-set S3 configuration is fatal at startup rather than
   falling back to a local disk that is neither backed up nor shared between
   replicas.
-- **Traces are propagated but not exported.** W3C trace context is parsed,
-  minted and carried across the queue, and span ids reach the log stream. There
-  is no OTLP exporter and no collector configured.
+- **Traces are exported over OTLP/HTTP** when `OTEL_EXPORTER_OTLP_ENDPOINT` is
+  set, and carried in the log stream regardless. JSON rather than protobuf: the
+  gRPC path needs a protobuf toolchain for no benefit at this volume.
 - **No signed upload URLs.** Uploads go through the API.
 - **No OCR.** Scanned PDFs extract nothing; the analysis reports that it could
   not read the document rather than analysing an empty fact set.

@@ -63,6 +63,7 @@ pub struct Runner {
     pub pipeline: Arc<AnalysisPipeline>,
     pub queue: Queue,
     pub metrics: Registry,
+    pub spans: skattjakt_telemetry::otlp::SpanExporter,
 }
 
 impl std::fmt::Debug for Runner {
@@ -85,6 +86,11 @@ impl Runner {
         let analysis_id = AnalysisId::from_uuid(job.subject_id);
         let trace = TraceContext::from_header_or_new(job.traceparent.as_deref());
         let span = trace.start_span("analysis.run");
+        // The trace came off the job row, which the API wrote. This span's
+        // parent is therefore the HTTP request that queued the work — which is
+        // the whole point of carrying the context across a queue, and the thing
+        // the integration test asserts.
+        let timing = skattjakt_telemetry::otlp::FinishedSpan::start(span);
         let started = std::time::Instant::now();
 
         span.annotate(LogRecord::info("analysis attempt started"))
@@ -110,6 +116,38 @@ impl Runner {
                 },
             ),
         );
+
+        // The span leaves the process. Attributes are a closed set — a job
+        // kind, an outcome, a failure kind — because a collector is shared and
+        // read by more people than the database is. The correlation id
+        // identifies the unit of work without identifying the customer, and the
+        // failure *kind* is used rather than its message: an extraction error
+        // can quote a document.
+        self.spans.record(
+            timing
+                .attribute("skattjakt.job_kind", "analysis")
+                .attribute(
+                    "skattjakt.outcome",
+                    match &outcome {
+                        Ok(()) => "succeeded",
+                        Err(f) if f.retryable => "retrying",
+                        Err(_) => "failed",
+                    },
+                )
+                .attribute(
+                    "skattjakt.error_kind",
+                    match &outcome {
+                        Ok(()) => "none",
+                        Err(f) => f.kind,
+                    },
+                )
+                .attribute("skattjakt.correlation_id", job.correlation_id.to_string())
+                .finish(match &outcome {
+                    Ok(()) => skattjakt_telemetry::otlp::SpanStatus::Ok,
+                    Err(_) => skattjakt_telemetry::otlp::SpanStatus::Error,
+                }),
+        );
+
         outcome
     }
 

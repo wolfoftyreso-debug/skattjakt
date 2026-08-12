@@ -59,6 +59,9 @@ pub struct AppState {
     /// Argon2id, constructed once. Building it per request would re-derive its
     /// parameters on every sign-in for no benefit.
     pub password_verifier: Arc<skattjakt_identity::PasswordVerifier>,
+    /// Where finished spans go. `disabled()` when no collector is configured,
+    /// rather than an `Option` a call site could forget to check.
+    pub spans: skattjakt_telemetry::otlp::SpanExporter,
     pub config: PipelineConfig,
     /// Static bearer token for the stateless surface. When `None` *and* no
     /// database is configured, the `/v1` routes are closed entirely rather
@@ -178,6 +181,16 @@ impl AppState {
             provider,
             gateway,
             password_verifier: Arc::new(skattjakt_identity::PasswordVerifier::new()),
+            spans: match skattjakt_telemetry::otlp::OtlpConfig::from_env("skattjakt-api") {
+                Some(config) => {
+                    let exporter = skattjakt_telemetry::otlp::SpanExporter::new(config);
+                    exporter.spawn_flush_loop();
+                    exporter
+                }
+                // No collector is a supported state: trace ids still reach the
+                // log stream, which is what the scheme did before.
+                None => skattjakt_telemetry::otlp::SpanExporter::disabled(),
+            },
             config: PipelineConfig::default(),
             api_token: std::env::var("SKATTJAKT_API_TOKEN")
                 .ok()

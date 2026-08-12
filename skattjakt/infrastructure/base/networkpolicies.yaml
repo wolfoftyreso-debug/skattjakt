@@ -63,6 +63,17 @@ spec:
       ports:
         - protocol: TCP
           port: 9000
+    # The trace collector. Spans leave the namespace; nothing else may.
+    #
+    # 4318 is OTLP over HTTP. The DNS rule below is what makes the service name
+    # resolvable — a NetworkPolicy that allows the connection and not the
+    # lookup fails in a way that reads like the collector being down.
+    - to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: observability }
+      ports:
+        - protocol: TCP
+          port: 4318
     # Deliberately no egress to the internet. The API does not call the model;
     # the worker does. Closing this here means an SSRF in an upload handler has
     # nowhere to go — the request cannot leave the namespace at all.
@@ -96,6 +107,17 @@ spec:
     matchLabels: { app.kubernetes.io/name: skattjakt-analysis-worker }
   policyTypes: [Egress]
   egress:
+    # The trace collector. Spans leave the namespace; nothing else may.
+    #
+    # 4318 is OTLP over HTTP. The DNS rule below is what makes the service name
+    # resolvable — a NetworkPolicy that allows the connection and not the
+    # lookup fails in a way that reads like the collector being down.
+    - to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: observability }
+      ports:
+        - protocol: TCP
+          port: 4318
     - to:
         - podSelector:
             matchLabels: { app.kubernetes.io/name: skattjakt-postgres }

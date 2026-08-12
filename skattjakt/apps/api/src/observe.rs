@@ -113,6 +113,17 @@ pub async fn observe(State(state): State<AppState>, request: Request, next: Next
             .and_then(|v| v.to_str().ok()),
     );
     let span = trace.start_span("http.request");
+    let timing = skattjakt_telemetry::otlp::FinishedSpan::start(span);
+
+    // Handed to the handler through the request extensions, so work the handler
+    // queues is parented to *this* span rather than to the client's.
+    //
+    // The difference is not cosmetic. Storing the inbound header on the job
+    // makes the worker a sibling of the request that queued it, so a trace
+    // shows two unrelated-looking spans instead of a request and the work it
+    // caused — which is the entire question a trace is opened to answer.
+    let mut request = request;
+    request.extensions_mut().insert(span);
 
     let in_flight = LabelSet::new().enumerated("route", route);
     state
@@ -166,6 +177,24 @@ pub async fn observe(State(state): State<AppState>, request: Request, next: Next
         .public("status", status.as_u16())
         .internal("duration_ms", elapsed);
     record.emit();
+
+    // The span leaves the process. Attributes are the same closed set as the
+    // metric labels — a templated route, a method, a status class — because a
+    // collector is shared, retained differently and read by more people than
+    // the database is. The correlation id identifies the unit of work without
+    // identifying the customer.
+    state.spans.record(
+        timing
+            .attribute("http.route", route)
+            .attribute("http.method", method)
+            .attribute("http.status_class", status_class(status))
+            .attribute("skattjakt.correlation_id", correlation.to_string())
+            .finish(if status.is_server_error() {
+                skattjakt_telemetry::otlp::SpanStatus::Error
+            } else {
+                skattjakt_telemetry::otlp::SpanStatus::Ok
+            }),
+    );
 
     response
 }

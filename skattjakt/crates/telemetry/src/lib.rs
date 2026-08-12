@@ -16,6 +16,7 @@
 
 pub mod logging;
 pub mod metrics;
+pub mod otlp;
 pub mod tracing_context;
 
 pub use logging::{CorrelationId, Level, LogRecord, CORRELATION_HEADER};

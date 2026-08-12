@@ -43,3 +43,10 @@ data:
   SKATTJAKT_MODEL_MAX_RETRIES: "3"
   SKATTJAKT_DB_MAX_CONNECTIONS: "10"
   SKATTJAKT_BLOB_ROOT: "/var/lib/skattjakt/blobs"
+
+  # Where finished spans go. Absent is a supported state: trace ids still reach
+  # the log stream, which is what the scheme did before an exporter existed.
+  #
+  # OTLP over HTTP with JSON, on 4318. The gRPC port is 4317 and would need a
+  # protobuf stack for no benefit at this volume — see crates/telemetry/src/otlp.rs.
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector.observability.svc.cluster.local:4318"

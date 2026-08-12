@@ -373,8 +373,10 @@ pub struct StartAnalysisRequest {
 pub async fn start_analysis(
     State(state): State<AppState>,
     headers: HeaderMap,
+    span: Option<axum::extract::Extension<skattjakt_telemetry::SpanContext>>,
     Json(request): Json<StartAnalysisRequest>,
 ) -> Result<Response, Problem> {
+    let span = span.map(|axum::extract::Extension(s)| s);
     let company_id = company_scope(
         &authorise(&state, &headers).await?,
         Permission::StartAnalysis,
@@ -463,10 +465,15 @@ pub async fn start_analysis(
             subject_id: analysis_id.0,
             idempotency_key,
             correlation_id: correlation,
-            traceparent: headers
-                .get(skattjakt_telemetry::TRACEPARENT_HEADER)
-                .and_then(|v| v.to_str().ok())
-                .map(str::to_string),
+            // This request's own span, not the inbound header — see the note
+            // in `observe.rs`. Falls back to the header when the middleware is
+            // not in the stack, which is only the case in a unit test.
+            traceparent: span.map(|s| s.traceparent()).or_else(|| {
+                headers
+                    .get(skattjakt_telemetry::TRACEPARENT_HEADER)
+                    .and_then(|v| v.to_str().ok())
+                    .map(str::to_string)
+            }),
             delay: None,
         })
         .await

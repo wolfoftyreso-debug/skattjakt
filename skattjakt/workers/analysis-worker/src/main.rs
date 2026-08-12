@@ -109,6 +109,16 @@ async fn main() -> anyhow::Result<()> {
 
     let queue = Queue::new(store.pool().clone(), metrics_registry.clone(), &worker_id);
 
+    let spans = match skattjakt_telemetry::otlp::OtlpConfig::from_env("skattjakt-analysis-worker") {
+        Some(config) => {
+            let exporter = skattjakt_telemetry::otlp::SpanExporter::new(config);
+            exporter.spawn_flush_loop();
+            LogRecord::info("trace export configured").emit();
+            exporter
+        }
+        None => skattjakt_telemetry::otlp::SpanExporter::disabled(),
+    };
+
     let runner = Arc::new(Runner {
         store: store.clone(),
         blobs,
@@ -116,6 +126,7 @@ async fn main() -> anyhow::Result<()> {
         pipeline,
         queue: queue.clone(),
         metrics: metrics_registry.clone(),
+        spans,
     });
 
     LogRecord::info("analysis worker started")
