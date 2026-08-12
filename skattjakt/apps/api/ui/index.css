@@ -1,0 +1,13 @@
+.step { display: none; }
+  .step.active { display: block; }
+
+  .counts { display: flex; gap: 1.5rem; flex-wrap: wrap; margin: 1rem 0 1.5rem; }
+  .counts div { font-size: .85rem; color: var(--muted); }
+  .counts strong { display: block; font-size: 1.7rem; color: var(--ink); font-weight: 600; }
+  .total { font-size: 1.5rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  ol.stages { list-style: none; padding: 0; margin: 1.5rem 0; }
+  ol.stages li { padding: .35rem 0 .35rem 1.7rem; position: relative; color: var(--muted); }
+  ol.stages li::before { content: "○"; position: absolute; left: 0; }
+  ol.stages li.done { color: var(--ink); }
+  ol.stages li.done::before { content: "●"; color: var(--accent); }

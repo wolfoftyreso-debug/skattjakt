@@ -439,14 +439,32 @@ async fn the_interface_is_served_and_carries_the_disclaimer() {
 
     assert!(html.contains("<html lang=\"sv\">"));
     // The disclaimer must be present even before an analysis has run.
-    assert!(html.contains("Skattjakt är ett analys- och upptäcktsverktyg"));
+    // In the markup, not in a script. This assertion used to pass only because
+    // the page carried its JavaScript inline, so the constant that set the text
+    // happened to be part of the HTML. Extracting the script for the
+    // Content-Security-Policy broke it and exposed the real problem: the
+    // disclaimer was only ever on screen if a script ran.
+    assert!(
+        html.contains("Skattjakt är ett analys- och upptäcktsverktyg"),
+        "the disclaimer must be in the document, not injected by script"
+    );
+    assert!(
+        !html.contains("<script>"),
+        "an inline script would need 'unsafe-inline' in the policy"
+    );
     // And the unreviewed-rule caveat must be on the first screen, not buried.
     assert!(html.contains("Regelverket är ännu inte granskat"));
-    // No bundler, no CDN: a strict environment must be able to serve this as-is.
-    assert!(
-        !html.contains("<script src="),
-        "the interface must not load remote scripts"
-    );
+    // No bundler, no CDN. The scripts the page loads are its own, served from
+    // this binary, which is what lets the policy be `script-src 'self'` with
+    // nothing else in it. This used to forbid `<script src=` outright, which
+    // was a proxy for "nothing remote" and stopped being one the moment the
+    // page legitimately loaded a local file.
+    for reference in ["src=\"http", "src=\"//", "href=\"http", "href=\"//"] {
+        assert!(
+            !html.contains(reference),
+            "the interface loads {reference}… from somewhere that is not this server"
+        );
+    }
     assert!(
         !html.contains("http://") && !html.contains("https://"),
         "the interface must not reference external hosts"
@@ -717,10 +735,12 @@ fn the_error_codes_are_the_set_the_contract_promises() {
         "rate_limited",
         "simulation_cancelled",
         "simulation_cannot_run",
+        "simulation_too_slow_to_answer_directly",
         "storage_failure",
         "the_job_queue_is_not_configured",
         "the_session_cannot_be_refreshed",
         "the_upload_does_not_match_its_ticket",
+        "too_many_simulations_at_once",
         "unauthorized",
         "unknown_push_provider",
         "unknown_role",

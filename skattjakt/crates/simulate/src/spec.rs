@@ -59,6 +59,13 @@ pub enum SpecError {
     },
     #[error("iterations must be between {min} and {max}, and is {given}")]
     Iterations { min: u32, max: u32, given: u32 },
+    #[error("{owner}: {field} is {length} characters, and at most {limit} are allowed")]
+    TooLong {
+        owner: String,
+        field: &'static str,
+        length: usize,
+        limit: usize,
+    },
 }
 
 /// The most variables one simulation may carry.
@@ -71,6 +78,19 @@ pub const MAX_INPUTS: usize = 64;
 /// The most outputs one simulation may carry. Each one retains its full sample
 /// vector for exact percentiles, so this bounds memory alongside `iterations`.
 pub const MAX_OUTPUTS: usize = 16;
+/// The longest a short label may be: a name, a unit.
+pub const MAX_LABEL: usize = 200;
+/// The longest a free-text field may be: a description, a source.
+pub const MAX_TEXT: usize = 2_000;
+/// The longest an output's expression may be.
+///
+/// Bounded because the tokeniser allocates proportionally to it, and because
+/// the API's 32 MB body limit is a bound on the request rather than on any one
+/// field inside it. Four thousand characters is roughly a page of arithmetic,
+/// which is far past the point where a model should have been split into
+/// several outputs.
+pub const MAX_EXPRESSION: usize = 4_000;
+
 /// The fewest iterations that produce a percentile worth reading. At 100 draws
 /// a P99 is the second-largest sample and means nothing.
 pub const MIN_ITERATIONS: u32 = 100;
@@ -301,6 +321,49 @@ impl CompiledSpec {
     pub fn slots(&self) -> usize {
         self.slots
     }
+
+    /// Roughly how much work one iteration of this model costs.
+    ///
+    /// One unit per input drawn — a tabular draw is a binary search, so its
+    /// cost is bounded and comparable to a normal deviate — plus the node count
+    /// of every expression. The caller uses it to decide whether a run belongs
+    /// inside an HTTP request, and the point of counting the model rather than
+    /// just its outputs is that a two-output model can be far more expensive
+    /// than a ten-output one.
+    pub fn cost_per_iteration(&self) -> usize {
+        self.spec.inputs.len()
+            + self
+                .expressions
+                .iter()
+                .map(|expression| expression.complexity())
+                .sum::<usize>()
+    }
+}
+
+/// Bounds a text field.
+///
+/// Every string in a specification is stored as written and shown on a screen,
+/// and none of them had a length of its own — only the request body did. A
+/// single 30 MB description would have been accepted, stored in a JSONB column
+/// and rendered into a page.
+fn check_length(
+    owner: &str,
+    field: &'static str,
+    value: &str,
+    limit: usize,
+) -> Result<(), SpecError> {
+    // Characters rather than bytes: the limit is about what a person typed, and
+    // a Swedish description would otherwise be cut short for containing ä.
+    let length = value.chars().count();
+    if length > limit {
+        return Err(SpecError::TooLong {
+            owner: owner.to_string(),
+            field,
+            length,
+            limit,
+        });
+    }
+    Ok(())
 }
 
 fn check_identifier(id: &str) -> Result<(), SpecError> {
@@ -366,8 +429,23 @@ impl SimulationSpec {
 
         let mut environment = Environment::new();
 
+        check_length("the simulation", "name", &self.name, MAX_LABEL)?;
+        if let Some(description) = &self.description {
+            check_length("the simulation", "description", description, MAX_TEXT)?;
+        }
+
         for (index, input) in self.inputs.iter().enumerate() {
             check_identifier(&input.id)?;
+            check_length(&input.id, "name", &input.name, MAX_LABEL)?;
+            if let Some(unit) = &input.unit {
+                check_length(&input.id, "unit", unit, MAX_LABEL)?;
+            }
+            if let Some(source) = &input.source {
+                check_length(&input.id, "source", source, MAX_TEXT)?;
+            }
+            if let Some(description) = &input.description {
+                check_length(&input.id, "description", description, MAX_TEXT)?;
+            }
             if environment.contains_key(&input.id) {
                 return Err(SpecError::DuplicateIdentifier {
                     id: input.id.clone(),
@@ -412,6 +490,14 @@ impl SimulationSpec {
         let mut expressions = Vec::with_capacity(self.outputs.len());
         for (index, output) in self.outputs.iter().enumerate() {
             check_identifier(&output.id)?;
+            check_length(&output.id, "name", &output.name, MAX_LABEL)?;
+            check_length(&output.id, "expression", &output.expression, MAX_EXPRESSION)?;
+            if let Some(unit) = &output.unit {
+                check_length(&output.id, "unit", unit, MAX_LABEL)?;
+            }
+            if let Some(description) = &output.description {
+                check_length(&output.id, "description", description, MAX_TEXT)?;
+            }
             if environment.contains_key(&output.id) {
                 return Err(SpecError::DuplicateIdentifier {
                     id: output.id.clone(),
@@ -547,6 +633,21 @@ mod tests {
     }
 
     #[test]
+    fn the_cost_of_a_model_follows_its_shape() {
+        let simple = spec().compile().unwrap();
+        let mut heavier = spec();
+        heavier.outputs[1].expression =
+            "if(revenue > costs, revenue * 0.206 - costs, max(costs - revenue, 0) * 1.5)".into();
+        let heavy = heavier.compile().unwrap();
+        assert!(
+            heavy.cost_per_iteration() > simple.cost_per_iteration(),
+            "{} against {}",
+            heavy.cost_per_iteration(),
+            simple.cost_per_iteration()
+        );
+    }
+
+    #[test]
     fn an_output_may_use_an_earlier_output() {
         spec().compile().expect("profit reads revenue");
     }
@@ -650,6 +751,43 @@ mod tests {
             broken.compile().unwrap_err(),
             SpecError::ImpossibleConstraint { .. }
         ));
+    }
+
+    #[test]
+    fn text_fields_are_bounded_and_the_message_names_them() {
+        let mut broken = spec();
+        broken.inputs[0].description = Some("x".repeat(MAX_TEXT + 1));
+        let error = broken.compile().unwrap_err();
+        assert!(error.to_string().contains("customers"), "{error}");
+        assert!(error.to_string().contains("description"), "{error}");
+
+        let mut broken = spec();
+        broken.outputs[0].expression = format!("customers + {}", "1 + ".repeat(2_000));
+        assert!(matches!(
+            broken.compile().unwrap_err(),
+            SpecError::TooLong {
+                field: "expression",
+                ..
+            }
+        ));
+
+        let mut broken = spec();
+        broken.name = "n".repeat(MAX_LABEL + 1);
+        assert!(matches!(
+            broken.compile().unwrap_err(),
+            SpecError::TooLong { .. }
+        ));
+    }
+
+    #[test]
+    fn a_length_is_counted_in_characters_rather_than_bytes() {
+        // "ä" is two bytes. A Swedish description at the limit must not be
+        // rejected for being written in Swedish.
+        let mut swedish = spec();
+        swedish.inputs[0].description = Some("ä".repeat(MAX_TEXT));
+        swedish
+            .compile()
+            .expect("a full-length Swedish description is allowed");
     }
 
     #[test]

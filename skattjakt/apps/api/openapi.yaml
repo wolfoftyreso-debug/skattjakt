@@ -822,6 +822,18 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Problem" }
+        "503":
+          description: |
+            Temporary, and the request itself is fine. Either the server is
+            already running as many simulations as it will answer directly
+            (`too_many_simulations_at_once`), or this one passed the deadline
+            for an inline run (`simulation_too_slow_to_answer_directly`).
+
+            In both cases the same model at a higher iteration count is queued
+            and runs in the background, which is the documented way out.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
         "501": { $ref: "#/components/responses/NoPersistence" }
       requestBody:
         content:

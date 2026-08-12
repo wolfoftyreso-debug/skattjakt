@@ -11,6 +11,7 @@
 
 pub mod auth_routes;
 pub mod cookies;
+pub mod headers;
 pub mod observe;
 pub mod routes;
 pub mod simulation_routes;
@@ -49,6 +50,10 @@ const SIMULATE_UI: &str = include_str!("../ui/simulate.html");
 /// them. Served from the binary rather than from disk: the interface loads
 /// nothing from anywhere else, which is what makes the CSP trivial.
 const APP_CSS: &str = include_str!("../ui/app.css");
+const INDEX_CSS: &str = include_str!("../ui/index.css");
+const INDEX_JS: &str = include_str!("../ui/index.js");
+const SIMULATE_CSS: &str = include_str!("../ui/simulate.css");
+const SIMULATE_JS: &str = include_str!("../ui/simulate.js");
 
 /// Uploads are bounded; an unbounded body is a denial-of-service surface and a
 /// very large prompt.
@@ -220,6 +225,10 @@ pub fn router(state: AppState) -> Router {
         .route("/", get(ui))
         .route("/simulations", get(simulate_ui))
         .route("/ui/app.css", get(app_css))
+        .route("/ui/index.css", get(index_css))
+        .route("/ui/index.js", get(index_js))
+        .route("/ui/simulate.css", get(simulate_css))
+        .route("/ui/simulate.js", get(simulate_js))
         .route("/favicon.svg", get(favicon))
         .route("/favicon.ico", get(favicon))
         .route("/health", get(health))
@@ -311,6 +320,9 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/opportunities/{id}", get(routes::get_opportunity))
         .route("/metrics", get(observe::metrics))
         .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
+        // Outermost, so it applies to everything including responses produced
+        // by the layers below it — a body-limit rejection is a response too.
+        .layer(axum::middleware::from_fn(headers::secure))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             observe::observe,
@@ -589,6 +601,37 @@ async fn simulate_ui() -> impl IntoResponse {
 
 async fn app_css() -> impl IntoResponse {
     ([(header::CONTENT_TYPE, "text/css; charset=utf-8")], APP_CSS)
+}
+
+async fn index_css() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "text/css; charset=utf-8")],
+        INDEX_CSS,
+    )
+}
+
+async fn simulate_css() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "text/css; charset=utf-8")],
+        SIMULATE_CSS,
+    )
+}
+
+// Served from the binary rather than from a bundler. There is no build step for
+// the interface, which is what lets the Content-Security-Policy say `'self'`
+// with nothing else in it — see `headers.rs`.
+async fn index_js() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
+        INDEX_JS,
+    )
+}
+
+async fn simulate_js() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
+        SIMULATE_JS,
+    )
 }
 
 /// An inline mark, so the browser does not request one that does not exist.

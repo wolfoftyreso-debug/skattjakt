@@ -50,14 +50,43 @@ use crate::{authorise, AppState, Problem};
 /// larger is queued.
 pub const INLINE_ITERATION_LIMIT: u32 = 50_000;
 
+/// The total work an inline run may ask for: iterations × cost per iteration.
+///
+/// Derived from `INLINE_ITERATION_LIMIT` at the cost of the reference model —
+/// eight inputs and three outputs, about thirty units — so the two limits mean
+/// the same thing and only one of them has to be reasoned about.
+pub const INLINE_WORK_LIMIT: u64 = INLINE_ITERATION_LIMIT as u64 * 30;
+
+/// How long an inline run may take before it is abandoned.
+///
+/// The backstop behind the cost model. The estimate below decides from the
+/// model's shape; this catches the case where the estimate was wrong, so that
+/// no request can hold a blocking thread for longer than this however the
+/// arithmetic surprises us.
+pub const INLINE_DEADLINE: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// How many inline runs may be in flight across the whole process.
+///
+/// A rate limit is per tenant and per hour; this is the guard a rate limit
+/// cannot be. Without it, enough tenants running at once consume the Tokio
+/// blocking pool and every request that needs it — including the readiness
+/// probe — stops being served. Four leaves the pool overwhelmingly free for the
+/// short blocking work the rest of the API does.
+const MAX_CONCURRENT_INLINE_RUNS: usize = 4;
+
+static INLINE_SLOTS: tokio::sync::Semaphore =
+    tokio::sync::Semaphore::const_new(MAX_CONCURRENT_INLINE_RUNS);
+
 /// Whether a run of this size belongs in the request or on the queue.
-pub fn execution_for(iterations: u32, outputs: usize) -> Execution {
-    // Outputs multiply the work per iteration, so the threshold falls as the
-    // model widens. A sixteen-output model at fifty thousand iterations is
-    // eight hundred thousand expression evaluations, which is no longer a
-    // request.
-    let weighted = u64::from(iterations) * outputs.max(1) as u64;
-    if weighted <= u64::from(INLINE_ITERATION_LIMIT) * 3 {
+///
+/// `cost` is the model's cost per iteration from `CompiledSpec`, not its output
+/// count. Counting outputs alone was wrong in the direction that matters: a
+/// two-output model with a branch in every expression can cost more per
+/// iteration than a ten-output model of products, and the cheap-looking one
+/// would have been answered inline.
+pub fn execution_for(iterations: u32, cost: usize) -> Execution {
+    let work = u64::from(iterations).saturating_mul(cost.max(1) as u64);
+    if iterations <= INLINE_ITERATION_LIMIT && work <= INLINE_WORK_LIMIT {
         Execution::Inline
     } else {
         Execution::Queued
@@ -130,6 +159,30 @@ pub struct RunQuery {
     pub run: Option<Uuid>,
 }
 
+/// Rate-limits the writes.
+///
+/// Creating a model and adding a version were the two endpoints with no limit
+/// at all: both write rows, both accept up to the body limit of text, and
+/// neither costs enough per call to be self-limiting. They share the run
+/// bucket, because a caller that has exhausted it has no use for more models.
+async fn limit_simulations(
+    state: &AppState,
+    tenant: &mut skattjakt_store::Tenant<'_>,
+) -> Result<(), Problem> {
+    let decision = tenant
+        .check_rate_limit(RateBucket::Simulation)
+        .await
+        .map_err(internal)?;
+    if !decision.allowed {
+        state.metrics.increment(
+            names::RATE_LIMITED,
+            LabelSet::new().enumerated("bucket", "simulation"),
+        );
+        return Err(Problem::rate_limited(decision.limit, decision.resets_at));
+    }
+    Ok(())
+}
+
 fn spec_error(error: impl std::fmt::Display) -> Problem {
     Problem {
         status: StatusCode::UNPROCESSABLE_ENTITY,
@@ -145,6 +198,17 @@ fn engine_error(error: skattjakt_simulate::EngineError) -> Problem {
             status: StatusCode::CONFLICT,
             title: "simulation cancelled".into(),
             detail: error.to_string(),
+        },
+        // The cost model thought this belonged inline and it did not. A 503
+        // rather than a 422: nothing about the request is wrong, and the same
+        // request at a higher iteration count would be queued and would work.
+        EngineError::DeadlineExceeded { .. } => Problem {
+            status: StatusCode::SERVICE_UNAVAILABLE,
+            title: "simulation too slow to answer directly".into(),
+            detail: format!(
+                "{error}. Kör den med fler iterationer så hanteras den i bakgrunden, \
+                 eller förenkla modellen."
+            ),
         },
         // Everything else is a specification the engine could not run, and the
         // message names the input, output or iteration that caused it. It is a
@@ -212,6 +276,7 @@ pub async fn create(
 
     let id = Uuid::new_v4();
     let mut tenant = store.tenant(company_id).await.map_err(internal)?;
+    limit_simulations(&state, &mut tenant).await?;
     tenant
         .create_simulation(id, &request.spec, scope.user_id(), request.note.as_deref())
         .await
@@ -259,6 +324,7 @@ pub async fn add_version(
     request.spec.compile().map_err(spec_error)?;
 
     let mut tenant = store.tenant(company_id).await.map_err(internal)?;
+    limit_simulations(&state, &mut tenant).await?;
     // Reading it first turns "no such simulation" into a 404 rather than into
     // an update that affects no rows and reports success.
     tenant.simulation(id).await.map_err(not_found)?;
@@ -410,7 +476,7 @@ pub async fn start(
     let config = RunConfig { iterations, seed };
     config.validate().map_err(spec_error)?;
 
-    let execution = execution_for(iterations, spec.outputs.len());
+    let execution = execution_for(iterations, compiled.cost_per_iteration());
     let run_id = Uuid::new_v4();
 
     tenant
@@ -454,9 +520,34 @@ pub async fn start(
 
     match execution {
         Execution::Inline => {
+            // One of a fixed number of slots, held for the length of the run.
+            // `try_acquire` rather than `acquire`: a caller that has to wait for
+            // a slot is better told to come back than left holding a connection
+            // while a queue of runs drains ahead of it.
+            let Ok(_slot) = INLINE_SLOTS.try_acquire() else {
+                state.metrics.increment(
+                    names::SIMULATIONS_FINISHED,
+                    LabelSet::new().enumerated("outcome", "rejected_busy"),
+                );
+                let mut tenant = store.tenant(company_id).await.map_err(internal)?;
+                tenant
+                    .fail_run(run_id, "för många samtidiga körningar")
+                    .await
+                    .map_err(internal)?;
+                tenant.commit().await.map_err(internal)?;
+                return Err(Problem {
+                    status: StatusCode::SERVICE_UNAVAILABLE,
+                    title: "too many simulations at once".into(),
+                    detail: "servern kör redan så många simuleringar den kan svara på \
+                             direkt. Försök igen om en stund, eller kör med fler \
+                             iterationer så hanteras körningen i bakgrunden."
+                        .into(),
+                });
+            };
+
             // `spawn_blocking`, because the engine is a few hundred million
             // floating-point operations with no yield point in them.
-            let control = RunControl::new();
+            let control = RunControl::with_deadline(INLINE_DEADLINE);
             let outcome = tokio::task::spawn_blocking(move || {
                 skattjakt_simulate::run(&compiled, config, &control)
             })
@@ -919,13 +1010,22 @@ mod tests {
 
     #[test]
     fn small_runs_answer_inline_and_large_ones_are_queued() {
-        assert_eq!(execution_for(1_000, 1), Execution::Inline);
-        assert_eq!(execution_for(50_000, 1), Execution::Inline);
+        // A cheap model at a small iteration count.
+        assert_eq!(execution_for(1_000, 10), Execution::Inline);
+        assert_eq!(execution_for(50_000, 10), Execution::Inline);
+        // Too many iterations, whatever the model costs.
         assert_eq!(execution_for(1_000_000, 1), Execution::Queued);
-        // The threshold falls as the model widens, because the work per
-        // iteration rises with it.
-        assert_eq!(execution_for(50_000, 3), Execution::Inline);
-        assert_eq!(execution_for(50_000, 16), Execution::Queued);
+        // Few enough iterations, but an expensive model. This is the case the
+        // old output-counting rule got wrong.
+        assert_eq!(execution_for(50_000, 200), Execution::Queued);
+    }
+
+    #[test]
+    fn the_iteration_ceiling_holds_even_for_a_trivial_model() {
+        // A one-input, one-constant model costs almost nothing per iteration.
+        // Without the iteration ceiling the work limit alone would let ten
+        // million of them run inside a request.
+        assert_eq!(execution_for(10_000_000, 1), Execution::Queued);
     }
 
     #[test]

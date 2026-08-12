@@ -17,6 +17,24 @@ use serde::{Deserialize, Serialize};
 
 use crate::rng::Rng;
 
+/// The most outcomes a tabular distribution may enumerate.
+///
+/// A bound rather than a preference, and it closes a denial of service that
+/// every other limit in this crate missed. `Discrete` and `Custom` are the only
+/// distributions whose *cost per draw* is chosen by the request rather than
+/// fixed by the mathematics. Before this bound, a 12.6 MB request body — well
+/// inside the API's 32 MB limit — carried a million outcomes, and a
+/// 50 000-iteration run over it took 55 seconds. That run is small enough to be
+/// answered inside the HTTP request, so it held a blocking thread for a minute
+/// while passing the iteration bound, the memory bound, the rate limit and the
+/// body limit.
+///
+/// A thousand is generous for what these distributions are for: a scenario
+/// variable with more than a thousand named outcomes is not a scenario
+/// variable, and a hand-drawn curve with more than a thousand points is a
+/// continuous distribution being typed in one point at a time.
+pub const MAX_CATEGORIES: usize = 1_000;
+
 /// Why a distribution's parameters were rejected.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum DistributionError {
@@ -409,6 +427,14 @@ impl Distribution {
                 if values.is_empty() {
                     return Err(DistributionError::Shape("values is empty".into()));
                 }
+                if values.len() > MAX_CATEGORIES {
+                    return Err(DistributionError::Shape(format!(
+                        "{} outcomes, and at most {MAX_CATEGORIES} are allowed; a variable \
+                         with more outcomes than that is a continuous quantity and should \
+                         be modelled as one",
+                        values.len()
+                    )));
+                }
                 if values.len() != weights.len() {
                     return Err(DistributionError::Shape(format!(
                         "{} values but {} weights",
@@ -442,6 +468,12 @@ impl Distribution {
                     return Err(DistributionError::Shape(
                         "a custom distribution needs at least two cumulative points".into(),
                     ));
+                }
+                if points.len() > MAX_CATEGORIES {
+                    return Err(DistributionError::Shape(format!(
+                        "{} points, and at most {MAX_CATEGORIES} are allowed",
+                        points.len()
+                    )));
                 }
                 let (first_value, first_p) = points[0];
                 let (last_value, last_p) = points[points.len() - 1];
@@ -602,12 +634,20 @@ impl Distribution {
         }
     }
 
-    /// Draws one sample.
+    /// Prepares this distribution for repeated sampling.
     ///
-    /// Assumes `validate` has already passed; the engine calls it once per
-    /// input before the first iteration rather than a million times inside the
-    /// loop.
-    pub fn sample(&self, rng: &mut Rng) -> f64 {
+    /// The only way to draw from a distribution. There is deliberately no
+    /// `Distribution::sample`: the tabular kinds need a cumulative table, and a
+    /// method that looked like a cheap draw while rebuilding that table on
+    /// every call is exactly the trap this crate was carrying.
+    pub fn sampler(&self) -> Sampler {
+        Sampler::new(self.clone())
+    }
+
+    /// Draws one sample, assuming any lookup table has already been built.
+    ///
+    /// Private: reached through `Sampler`, which owns the table.
+    fn draw(&self, rng: &mut Rng, cumulative: &[f64]) -> f64 {
         match self {
             Distribution::Normal { mean, std_dev } => mean + std_dev * rng.standard_normal(),
             Distribution::Lognormal {
@@ -652,36 +692,91 @@ impl Distribution {
                 }
             }
             Distribution::Binomial { trials, p } => sample_binomial(rng, *trials, *p),
-            Distribution::Discrete { values, weights } => {
-                let total: f64 = weights.iter().sum();
-                let mut target = rng.uniform01() * total;
-                for (value, weight) in values.iter().zip(weights) {
-                    target -= weight;
-                    if target <= 0.0 {
-                        return *value;
-                    }
-                }
-                // Only reachable through floating-point accumulation at the very
-                // top of the range.
-                values[values.len() - 1]
+            Distribution::Discrete { values, .. } => {
+                // Binary search over the prepared table rather than a scan over
+                // the weights. At the category bound that is ten comparisons
+                // instead of a thousand additions, and the difference is the
+                // difference between a bounded run and a held thread.
+                values[select(cumulative, rng.uniform01()).min(values.len() - 1)]
             }
             Distribution::Custom { points } => {
                 let u = rng.uniform01();
-                for window in points.windows(2) {
-                    let (v0, p0) = window[0];
-                    let (v1, p1) = window[1];
-                    if u <= p1 {
-                        let mass = p1 - p0;
-                        if mass <= 0.0 {
-                            return v1;
-                        }
-                        return v0 + (v1 - v0) * ((u - p0) / mass);
-                    }
+                // `cumulative` holds the points' own probabilities, so the
+                // search finds the segment `u` falls in without walking to it.
+                let upper = select(cumulative, u).clamp(1, points.len() - 1);
+                let (v0, p0) = points[upper - 1];
+                let (v1, p1) = points[upper];
+                let mass = p1 - p0;
+                if mass <= 0.0 {
+                    v1
+                } else {
+                    v0 + (v1 - v0) * ((u - p0) / mass)
                 }
-                points[points.len() - 1].0
             }
         }
     }
+}
+
+/// A distribution with whatever lookup table it needs already built.
+///
+/// The engine holds one of these per input for the length of a run, so the
+/// table is built once rather than once per draw. For the nine distributions
+/// with no table it is a thin wrapper and costs nothing.
+#[derive(Debug, Clone)]
+pub struct Sampler {
+    distribution: Distribution,
+    /// Cumulative probabilities, normalised to end at 1. Empty for the
+    /// distributions that need no table.
+    cumulative: Vec<f64>,
+}
+
+impl Sampler {
+    pub fn new(distribution: Distribution) -> Self {
+        let cumulative = match &distribution {
+            Distribution::Discrete { weights, .. } => {
+                let total: f64 = weights.iter().sum();
+                let mut running = 0.0;
+                weights
+                    .iter()
+                    .map(|weight| {
+                        running += weight;
+                        // Normalised here so the draw is a single uniform in
+                        // [0, 1) with no multiplication in the inner loop.
+                        if total > 0.0 {
+                            running / total
+                        } else {
+                            1.0
+                        }
+                    })
+                    .collect()
+            }
+            Distribution::Custom { points } => points.iter().map(|(_, p)| *p).collect(),
+            _ => Vec::new(),
+        };
+        Self {
+            distribution,
+            cumulative,
+        }
+    }
+
+    #[inline]
+    pub fn sample(&self, rng: &mut Rng) -> f64 {
+        self.distribution.draw(rng, &self.cumulative)
+    }
+
+    pub fn distribution(&self) -> &Distribution {
+        &self.distribution
+    }
+}
+
+/// The first index whose cumulative probability exceeds `u`.
+///
+/// `partition_point` is a binary search. Zero-weight outcomes repeat the
+/// previous cumulative value, and because the predicate is `<=` they are
+/// stepped over rather than selected — which is what a weight of zero means.
+#[inline]
+fn select(cumulative: &[f64], u: f64) -> usize {
+    cumulative.partition_point(|edge| *edge <= u)
 }
 
 /// `ln(Γ(x))` by the Lanczos approximation, `g = 7`, nine coefficients.
@@ -841,7 +936,8 @@ mod tests {
 
     fn empirical(distribution: &Distribution, n: usize, seed: u64) -> (f64, f64, f64, f64) {
         let mut rng = Rng::new(seed);
-        let samples: Vec<f64> = (0..n).map(|_| distribution.sample(&mut rng)).collect();
+        let sampler = distribution.sampler();
+        let samples: Vec<f64> = (0..n).map(|_| sampler.sample(&mut rng)).collect();
         let mean = samples.iter().sum::<f64>() / n as f64;
         let variance = samples.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / n as f64;
         let min = samples.iter().copied().fold(f64::INFINITY, f64::min);
@@ -971,8 +1067,9 @@ mod tests {
         for distribution in cases {
             distribution.validate().expect("valid");
             let mut rng = Rng::new(1);
+            let sampler = distribution.sampler();
             for _ in 0..50_000 {
-                let x = distribution.sample(&mut rng);
+                let x = sampler.sample(&mut rng);
                 assert!(x.is_finite(), "{} produced {x}", distribution.kind());
             }
         }
@@ -987,7 +1084,7 @@ mod tests {
         fixed.validate().expect("a certain input is a valid input");
         let mut rng = Rng::new(1);
         for _ in 0..1000 {
-            assert_eq!(fixed.sample(&mut rng), 42.0);
+            assert_eq!(fixed.sampler().sample(&mut rng), 42.0);
         }
     }
 
@@ -999,7 +1096,7 @@ mod tests {
         };
         fixed.validate().expect("valid");
         let mut rng = Rng::new(1);
-        assert_eq!(fixed.sample(&mut rng), 5.0);
+        assert_eq!(fixed.sampler().sample(&mut rng), 5.0);
     }
 
     #[test]
@@ -1011,7 +1108,7 @@ mod tests {
         };
         fixed.validate().expect("valid");
         let mut rng = Rng::new(1);
-        assert_eq!(fixed.sample(&mut rng), 3.0);
+        assert_eq!(fixed.sampler().sample(&mut rng), 3.0);
     }
 
     #[test]
@@ -1127,8 +1224,8 @@ mod tests {
         let never = Distribution::Bernoulli { p: 0.0 };
         let always = Distribution::Bernoulli { p: 1.0 };
         for _ in 0..1000 {
-            assert_eq!(never.sample(&mut rng), 0.0);
-            assert_eq!(always.sample(&mut rng), 1.0);
+            assert_eq!(never.sampler().sample(&mut rng), 0.0);
+            assert_eq!(always.sampler().sample(&mut rng), 1.0);
         }
     }
 
@@ -1139,8 +1236,9 @@ mod tests {
             weights: vec![1.0, 1.0, 1.0],
         };
         let mut rng = Rng::new(2);
+        let sampler = distribution.sampler();
         for _ in 0..10_000 {
-            let x = distribution.sample(&mut rng);
+            let x = sampler.sample(&mut rng);
             assert!(x == 1.0 || x == 7.0 || x == 9.0, "produced {x}");
         }
     }
@@ -1152,8 +1250,9 @@ mod tests {
             weights: vec![1.0, 0.0, 1.0],
         };
         let mut rng = Rng::new(3);
+        let sampler = distribution.sampler();
         for _ in 0..20_000 {
-            assert_ne!(distribution.sample(&mut rng), 2.0);
+            assert_ne!(sampler.sample(&mut rng), 2.0);
         }
     }
 
@@ -1165,11 +1264,9 @@ mod tests {
             points: vec![(0.0, 0.0), (100.0, 0.3), (400.0, 0.9), (500.0, 1.0)],
         };
         let mut rng = Rng::new(4);
+        let sampler = distribution.sampler();
         let n = 100_000;
-        let below = (0..n)
-            .filter(|_| distribution.sample(&mut rng) < 100.0)
-            .count() as f64
-            / n as f64;
+        let below = (0..n).filter(|_| sampler.sample(&mut rng) < 100.0).count() as f64 / n as f64;
         assert!((below - 0.3).abs() < 0.01, "share below 100 was {below}");
     }
 
@@ -1181,6 +1278,144 @@ mod tests {
         assert!(ln_gamma(1.0).abs() < 1e-10);
         assert!(ln_gamma(2.0).abs() < 1e-10);
         assert!((ln_gamma(100.0) - 359.134_205_369_575_4).abs() < 1e-8);
+    }
+
+    /// The bound that closes the denial of service.
+    #[test]
+    fn a_tabular_distribution_larger_than_the_bound_is_refused() {
+        let huge = Distribution::Discrete {
+            values: (0..MAX_CATEGORIES + 1).map(|i| i as f64).collect(),
+            weights: vec![1.0; MAX_CATEGORIES + 1],
+        };
+        let error = huge.validate().expect_err("this is a denial of service");
+        assert!(error.to_string().contains("at most"), "{error}");
+
+        let at_the_bound = Distribution::Discrete {
+            values: (0..MAX_CATEGORIES).map(|i| i as f64).collect(),
+            weights: vec![1.0; MAX_CATEGORIES],
+        };
+        at_the_bound
+            .validate()
+            .expect("the bound itself is allowed");
+
+        let many_points = Distribution::Custom {
+            points: (0..MAX_CATEGORIES + 1)
+                .map(|i| (i as f64, i as f64 / MAX_CATEGORIES as f64))
+                .collect(),
+        };
+        assert!(many_points.validate().is_err());
+    }
+
+    /// The other half of the fix: the cost of a draw must not follow the size
+    /// of the table.
+    ///
+    /// Timing in a test is usually a bad idea, and this one is written to be
+    /// robust to a slow machine: it compares the *ratio* between a table at the
+    /// bound and a table of three, and a linear scan would make that ratio
+    /// enormous rather than marginal. A regression to a scan fails this by two
+    /// orders of magnitude, not by a few per cent.
+    #[test]
+    fn the_cost_of_a_draw_does_not_follow_the_size_of_the_table() {
+        let draws = 200_000;
+        let time = |values: usize| {
+            let distribution = Distribution::Discrete {
+                values: (0..values).map(|i| i as f64).collect(),
+                weights: vec![1.0; values],
+            };
+            let sampler = distribution.sampler();
+            let mut rng = Rng::new(1);
+            let started = std::time::Instant::now();
+            let mut total = 0.0;
+            for _ in 0..draws {
+                total += sampler.sample(&mut rng);
+            }
+            assert!(total > 0.0);
+            started.elapsed().as_nanos().max(1)
+        };
+
+        let small = time(3);
+        let large = time(MAX_CATEGORIES);
+        assert!(
+            large < small * 20,
+            "a draw from {MAX_CATEGORIES} outcomes cost {large} ns against {small} ns \
+             from three; the table is being scanned rather than searched"
+        );
+    }
+
+    /// The table has to select exactly what a scan would have.
+    #[test]
+    fn the_table_selects_what_a_scan_would_have() {
+        let values = vec![10.0, 20.0, 30.0, 40.0, 50.0];
+        let weights = vec![3.0, 0.0, 1.0, 6.0, 2.0];
+        let distribution = Distribution::Discrete {
+            values: values.clone(),
+            weights: weights.clone(),
+        };
+        let sampler = distribution.sampler();
+
+        // The scan this replaced, kept here as the oracle.
+        let scan = |u: f64| -> f64 {
+            let total: f64 = weights.iter().sum();
+            let mut target = u * total;
+            for (value, weight) in values.iter().zip(&weights) {
+                target -= weight;
+                if target <= 0.0 {
+                    return *value;
+                }
+            }
+            values[values.len() - 1]
+        };
+
+        // A discrete draw consumes exactly one uniform, so two generators on
+        // the same seed feed the sampler and the oracle identical inputs.
+        let mut drawn = Rng::new(9);
+        let mut mirrored = Rng::new(9);
+        for _ in 0..50_000 {
+            let from_table = sampler.sample(&mut drawn);
+            let u = mirrored.uniform01();
+            assert_eq!(
+                from_table,
+                scan(u),
+                "the table and the scan disagreed at u = {u}"
+            );
+        }
+
+        // The boundaries, where the two deliberately differ.
+        //
+        // Weights [3, 0, 1, 6, 2] put the first outcome's mass on [0, 0.25).
+        // The scan tested `target <= 0`, which made that interval closed on the
+        // right and gave `u == 0.25` to the first outcome. The table uses the
+        // half-open convention, so `u == 0.25` belongs to the next outcome with
+        // any weight. Half-open is the correct one, and this is the only input
+        // on which the two disagree — a single value out of 2^53, so no
+        // statistic moves. It is still a change to what a seed produces, which
+        // is why ENGINE_VERSION was bumped for it.
+        let edges: Vec<f64> = {
+            let total: f64 = weights.iter().sum();
+            let mut running = 0.0;
+            weights
+                .iter()
+                .map(|w| {
+                    running += w;
+                    running / total
+                })
+                .collect()
+        };
+        let selected = |u: f64| {
+            values[edges
+                .partition_point(|edge| *edge <= u)
+                .min(values.len() - 1)]
+        };
+
+        assert_eq!(selected(0.0), 10.0, "the bottom of the range");
+        assert_eq!(selected(0.249_999), 10.0, "just inside the first outcome");
+        assert_eq!(selected(0.25), 30.0, "the edge belongs to the next outcome");
+        assert_eq!(selected(0.250_001), 30.0);
+        assert_eq!(selected(0.999_999), 50.0, "the top of the range");
+        // The zero-weight outcome is never reachable from any input.
+        for step in 0..10_000 {
+            assert_ne!(selected(f64::from(step) / 10_000.0), 20.0);
+        }
     }
 
     #[test]

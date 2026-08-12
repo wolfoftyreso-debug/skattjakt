@@ -61,9 +61,52 @@ page.on("response", (response) => {
 });
 
 try {
-  // --- signing in --------------------------------------------------------
-  await page.goto(`${base}/simulations`, { waitUntil: "networkidle" });
+  // --- the policy the browser is asked to enforce ------------------------
+  const landing = await page.goto(`${base}/simulations`, { waitUntil: "networkidle" });
   check("the page loads", await page.title() === "Skattjakt — simulering");
+
+  const responseHeaders = landing.headers();
+  const policy = responseHeaders["content-security-policy"] || "";
+  check("the page carries a Content-Security-Policy", policy.length > 0);
+  check("which denies everything by default", policy.includes("default-src 'none'"));
+  check("and allows script only from this origin",
+    policy.includes("script-src 'self'"), policy);
+  check("with no unsafe-inline anywhere — an injected <script> cannot run",
+    !policy.includes("unsafe-inline"), policy);
+  check("no unsafe-eval either", !policy.includes("unsafe-eval"), policy);
+  check("and the page may not be framed", policy.includes("frame-ancestors 'none'"));
+  for (const [name, expected] of [
+    ["x-content-type-options", "nosniff"],
+    ["referrer-policy", "no-referrer"],
+    ["x-frame-options", "DENY"],
+    ["cross-origin-opener-policy", "same-origin"],
+  ]) {
+    check(`${name} is ${expected}`, responseHeaders[name] === expected,
+      `got ${responseHeaders[name]}`);
+  }
+  check("permissions-policy switches off the device APIs",
+    (responseHeaders["permissions-policy"] || "").includes("camera=()"));
+
+  // The policy has to hold for the API too, not only for the page: a browser
+  // navigated straight to an endpoint renders whatever it is given.
+  const apiResponse = await page.request.get(`${base}/health`);
+  const apiPolicy = apiResponse.headers()["content-security-policy"] || "";
+  check("API responses carry a policy of their own",
+    apiPolicy.includes("default-src 'none'") && apiPolicy.includes("sandbox"), apiPolicy);
+  check("and nosniff, so a JSON body cannot be rendered as HTML",
+    apiResponse.headers()["x-content-type-options"] === "nosniff");
+
+  // The decisive one: an injected inline script must not execute. This is what
+  // every directive above is for, tested by doing the thing rather than by
+  // reading the header.
+  const executed = await page.evaluate(() => {
+    window.__injected = false;
+    const script = document.createElement("script");
+    script.textContent = "window.__injected = true;";
+    document.body.appendChild(script);
+    return window.__injected;
+  });
+  check("an injected inline script does not execute", executed === false);
 
   await page.waitForSelector("#signin:not(.hidden)", { timeout: 10_000 });
   ok("an unauthenticated visitor is shown the sign-in form and no data");
@@ -79,8 +122,8 @@ try {
   // script, and for an anonymous first visit the honest answer is 401. Anything
   // after this point is a real failure, so the list is cleared here rather than
   // filtered later — a filter would also hide a second, genuine 401.
-  check("the anonymous session probe is the only thing that failed so far",
-    consoleErrors.length <= 1 && consoleErrors.every((e) => e.includes("401")),
+  check("nothing failed except the anonymous probe and the refused injection",
+    consoleErrors.every((e) => e.includes("401") || e.includes("Content Security Policy")),
     consoleErrors.join(" | "));
   consoleErrors.length = 0;
 
@@ -219,15 +262,18 @@ try {
   check("and the button asks for a re-run", buttonText.includes("Kör om"), buttonText);
 
   await page.click("#run");
-  await page.waitForFunction(
-    (previous) => {
-      const dd = document.querySelector("#figures .figure dd");
-      return dd && !dd.textContent.startsWith(previous);
-    },
-    firstMedian,
-    { timeout: 60_000 },
-  );
-  ok("re-running produces a different result from the changed inputs");
+  // Polled from here rather than with `waitForFunction`, which Playwright
+  // implements by evaluating a string in the page — and the page's
+  // Content-Security-Policy has no `unsafe-eval`, so it is refused. The policy
+  // working is the point; the test adapts to it.
+  let changed = false;
+  for (let attempt = 0; attempt < 120 && !changed; attempt++) {
+    const current = await page.evaluate(
+      () => document.querySelector("#figures .figure dd")?.textContent ?? "");
+    changed = Boolean(current) && !current.startsWith(firstMedian);
+    if (!changed) await page.waitForTimeout(500);
+  }
+  check("re-running produces a different result from the changed inputs", changed);
   check("the stale warning clears", await page.locator("#stale.hidden").count() === 1);
   check("and the edit was stored as a new model version",
     apiCalls.some((c) => c.path.endsWith("/versions") && c.status === 201));

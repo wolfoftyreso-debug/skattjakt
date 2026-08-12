@@ -90,3 +90,18 @@
   footer details summary { color: var(--muted); }
   .hint { color: var(--muted); font-size: .82rem; margin-top: 1rem; }
   .hidden { display: none; }
+
+
+/* Utility classes, and the reason they exist rather than `style="..."`.
+ *
+ * The Content-Security-Policy is `style-src 'self'` with no `unsafe-inline`,
+ * which blocks inline style attributes as well as inline <style> blocks. There
+ * were fourteen of them across the two pages, every one a margin. Naming them
+ * costs four lines and buys a policy with no exception in it — and an exception
+ * made for styling is one a reviewer has to reason about later. */
+.flush { margin: 0; }
+.gap-s { margin-top: .6rem; }
+.gap-m { margin-top: .7rem; }
+.gap-l { margin-top: .8rem; }
+.gap-xl { margin-top: .9rem; }
+.below { margin-bottom: 1.5rem; }

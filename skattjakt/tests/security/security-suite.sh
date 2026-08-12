@@ -426,6 +426,87 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+echo
+echo "the headers a browser is asked to enforce"
+# ---------------------------------------------------------------------------
+#
+# These are controls the server can only *ask* for, and a browser that is not
+# asked does the permissive thing. They were absent entirely until the
+# hardening pass, on an API that serves two HTML pages.
+
+page_headers="$(curl -sS -D - -o /dev/null "$BASE/simulations")"
+api_headers="$(curl -sS -D - -o /dev/null "$BASE/health")"
+
+page_policy="$(grep -i '^content-security-policy:' <<<"$page_headers" | tr -d '\r')"
+if [[ -n "$page_policy" ]]; then
+    pass "the interface carries a Content-Security-Policy"
+else
+    fail "the interface has no Content-Security-Policy"
+fi
+
+for directive in "default-src 'none'" "script-src 'self'" "style-src 'self'" \
+                 "frame-ancestors 'none'" "form-action 'none'" "base-uri 'none'"; do
+    if grep -qF "$directive" <<<"$page_policy"; then
+        pass "  $directive"
+    else
+        fail "  the policy is missing $directive"
+    fi
+done
+
+# The one that decides whether the policy stops an injected script or merely
+# describes an intention.
+if grep -qE "unsafe-inline|unsafe-eval" <<<"$page_policy"; then
+    fail "the policy allows inline or evaluated script, which is what it exists to stop"
+else
+    pass "no unsafe-inline and no unsafe-eval: an injected <script> cannot run"
+fi
+
+if grep -qiE '^content-security-policy:.*default-src .none.' <<<"$api_headers" \
+   && grep -qi 'sandbox' <<<"$api_headers"; then
+    pass "API responses carry a policy of their own"
+else
+    fail "API responses carry no Content-Security-Policy"
+fi
+
+check_header() {
+    local name="$1" expected="$2" headers="$3"
+    local value
+    value="$(grep -i "^$name:" <<<"$headers" | cut -d' ' -f2- | tr -d '\r')"
+    if [[ "$value" == "$expected" ]]; then
+        pass "$name: $expected"
+    else
+        fail "$name is '$value', expected '$expected'"
+    fi
+}
+check_header "x-content-type-options" "nosniff" "$api_headers"
+check_header "referrer-policy" "no-referrer" "$api_headers"
+check_header "x-frame-options" "DENY" "$page_headers"
+check_header "cross-origin-opener-policy" "same-origin" "$page_headers"
+check_header "cross-origin-resource-policy" "same-origin" "$api_headers"
+
+if grep -qi '^permissions-policy:.*camera=()' <<<"$api_headers"; then
+    pass "permissions-policy switches off the device APIs"
+else
+    fail "permissions-policy does not switch off the device APIs"
+fi
+
+# Sent unconditionally. RFC 6797 requires a browser to ignore it over a
+# non-secure transport, so it pins nothing here — and in production the API
+# speaks plain HTTP to a TLS-terminating ingress, so any condition on the API's
+# own transport would answer the wrong question and could leave the header off
+# where it matters.
+if grep -qi '^strict-transport-security:.*max-age=31536000' <<<"$api_headers"; then
+    pass "strict-transport-security is set to a year with subdomains"
+else
+    fail "HSTS is missing or shorter than a year"
+fi
+if grep -qi '^strict-transport-security:.*preload' <<<"$api_headers"; then
+    fail "HSTS asks to be preloaded, which is an operator's decision"
+else
+    pass "and does not ask to be preloaded"
+fi
+
+# ---------------------------------------------------------------------------
 
 echo
 echo "passed $passed, failed $failed"

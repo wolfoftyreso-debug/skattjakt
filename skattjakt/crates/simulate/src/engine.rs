@@ -44,7 +44,22 @@ use crate::stats::Statistics;
 /// draw. A stored run records the version that produced it, so a result from an
 /// older engine is marked as unreproducible on this one rather than silently
 /// recomputed into different figures.
-pub const ENGINE_VERSION: &str = "1.0.0";
+///
+/// ## 1.1.0
+///
+/// Discrete and custom distributions select by binary search over a prepared
+/// cumulative table instead of by scanning their weights. The change was made
+/// to close a denial of service — a scan makes the cost of a draw follow the
+/// size of the table, and a request could choose that size — and it moves the
+/// result for exactly one input value per outcome boundary: the scan gave
+/// `u == edge` to the outcome below it, the table gives it to the outcome
+/// above, which is the standard half-open convention.
+///
+/// One value out of 2^53 per draw. No statistic moves, and no run anyone has
+/// looked at will differ. It is still a change to what a seed produces, and the
+/// rule above says a change to what a seed produces bumps the version — a rule
+/// that is only worth having if it is applied when the difference is tiny.
+pub const ENGINE_VERSION: &str = "1.1.0";
 
 /// Iterations between progress reports and cancellation checks.
 const BATCH: u32 = 4_096;
@@ -102,6 +117,15 @@ pub enum EngineError {
     },
     #[error("the run was cancelled after {completed} of {total} iterations")]
     Cancelled { completed: u32, total: u32 },
+    #[error(
+        "the run passed its {limit_ms} ms deadline after {completed} of {total} iterations; \
+         it is too slow to answer inside a request and belongs on the queue"
+    )]
+    DeadlineExceeded {
+        completed: u32,
+        total: u32,
+        limit_ms: u64,
+    },
 }
 
 /// How a caller watches and stops a run.
@@ -113,11 +137,32 @@ pub enum EngineError {
 pub struct RunControl {
     cancelled: AtomicBool,
     completed: AtomicU32,
+    /// How long the run may take before it is abandoned. `None` for a queued
+    /// run, which is allowed to take as long as its work honestly takes.
+    deadline: Option<std::time::Duration>,
 }
 
 impl RunControl {
     pub fn new() -> Arc<Self> {
         Arc::new(Self::default())
+    }
+
+    /// A run that must finish within a wall-clock budget.
+    ///
+    /// The backstop for a run answered inside an HTTP request. The cost model
+    /// decides *before* a run whether it belongs inline, and it decides from
+    /// the model's shape — which is an estimate. This is what catches the case
+    /// the estimate got wrong, so that no request can hold a blocking thread
+    /// for longer than the budget however the arithmetic surprises us.
+    pub fn with_deadline(limit: std::time::Duration) -> Arc<Self> {
+        Arc::new(Self {
+            deadline: Some(limit),
+            ..Self::default()
+        })
+    }
+
+    pub fn deadline(&self) -> Option<std::time::Duration> {
+        self.deadline
     }
 
     /// Asks the run to stop at the end of the current batch.
@@ -215,6 +260,15 @@ pub fn run(
         .map(|input| Rng::for_stream(config.seed, &input.id))
         .collect();
 
+    // One prepared sampler per input, built here rather than inside the loop.
+    // For the tabular distributions this is where the cumulative table comes
+    // from; building it per draw was a linear scan per iteration, which is how
+    // a small request bought a very long run.
+    let samplers: Vec<_> = inputs
+        .iter()
+        .map(|input| input.distribution.sampler())
+        .collect();
+
     let mut output_samples: Vec<Vec<f64>> = outputs
         .iter()
         .map(|_| Vec::with_capacity(iterations as usize))
@@ -236,7 +290,8 @@ pub fn run(
         while iteration < batch_end {
             for (index, input) in inputs.iter().enumerate() {
                 let rng = &mut generators[index];
-                let mut sample = input.distribution.sample(rng);
+                let sampler = &samplers[index];
+                let mut sample = sampler.sample(rng);
 
                 if let Some(constraints) = input.constraints {
                     match constraints.mode {
@@ -251,7 +306,7 @@ pub fn run(
                                         attempts,
                                     });
                                 }
-                                sample = input.distribution.sample(rng);
+                                sample = sampler.sample(rng);
                             }
                             quality.constraint_resamples += u64::from(attempts);
                         }
@@ -296,6 +351,15 @@ pub fn run(
                 completed: iteration,
                 total: iterations,
             });
+        }
+        if let Some(limit) = control.deadline() {
+            if started.elapsed() > limit && iteration < iterations {
+                return Err(EngineError::DeadlineExceeded {
+                    completed: iteration,
+                    total: iterations,
+                    limit_ms: limit.as_millis() as u64,
+                });
+            }
         }
     }
 
@@ -729,6 +793,48 @@ mod tests {
         )
         .unwrap();
         assert_eq!(control.completed(), 20_000);
+    }
+
+    #[test]
+    fn a_run_that_overruns_its_deadline_is_abandoned_rather_than_finished() {
+        let spec = business_model();
+        let compiled = spec.compile().unwrap();
+        // A deadline of zero: the first batch is already past it.
+        let control = RunControl::with_deadline(std::time::Duration::from_millis(0));
+        let error = run(
+            &compiled,
+            RunConfig {
+                iterations: 1_000_000,
+                seed: 1,
+            },
+            &control,
+        )
+        .unwrap_err();
+        match error {
+            EngineError::DeadlineExceeded {
+                completed, total, ..
+            } => {
+                assert_eq!(total, 1_000_000);
+                assert!(completed < total);
+            }
+            other => panic!("expected a deadline failure, got {other}"),
+        }
+    }
+
+    #[test]
+    fn a_run_inside_its_deadline_is_unaffected() {
+        let compiled = business_model().compile().unwrap();
+        let control = RunControl::with_deadline(std::time::Duration::from_secs(60));
+        let outcome = run(
+            &compiled,
+            RunConfig {
+                iterations: 5_000,
+                seed: 1,
+            },
+            &control,
+        )
+        .expect("a small run finishes well inside a minute");
+        assert_eq!(outcome.iterations, 5_000);
     }
 
     #[test]

@@ -418,7 +418,111 @@ current one, so the run history stays honest about what produced what.
 
 ---
 
-## 13. What is not built
+## 13. Hardening
+
+Written after the layer was built, from an attempt to break it rather than from
+a checklist.
+
+### The denial of service that every other limit missed
+
+`Discrete` and `Custom` are the only distributions whose **cost per draw is
+chosen by the request** rather than fixed by the mathematics: both were sampled
+by scanning their outcomes. A 12.6 MB request body — well inside the API's
+32 MB limit — carried a million outcomes, and a 50 000-iteration run over it
+took **55 seconds**. That run is small enough to be answered inside the HTTP
+request, so it held a blocking thread for a minute while passing the iteration
+bound, the memory bound, the rate limit and the body limit.
+
+Three changes, because the class needed closing from both ends:
+
+| | |
+|---|---|
+| **The input** | `MAX_CATEGORIES = 1 000`. A scenario variable with more than a thousand named outcomes is not a scenario variable |
+| **The draw** | A cumulative table built once per run and searched by bisection. At the bound that is ten comparisons instead of a thousand additions — measured at 38 ms for a million draws, against roughly ten seconds before |
+| **The decision** | `execution_for` now weighs the model's **cost per iteration** — inputs plus expression node counts — not its output count. A two-output model with a branch in every expression can cost more per iteration than a ten-output model of products, and the cheap-looking one was being answered inline |
+
+The bisection changed one input value per outcome boundary: the scan gave
+`u == edge` to the outcome below it, bisection gives it to the outcome above,
+which is the standard half-open convention and the correct one. One value out of
+2^53 per draw, so no statistic moves — and `ENGINE_VERSION` was bumped to 1.1.0
+for it anyway. A rule that a change to what a seed produces bumps the version is
+only worth having if it is applied when the difference is negligible.
+
+### Two backstops behind the estimate
+
+The cost model decides from the model's shape, which is an estimate.
+
+- **A five-second deadline** on any run answered inside a request. Exceeding it
+  abandons the run with a 503 that says to raise the iteration count so it
+  queues. No request can hold a blocking thread for longer, however the
+  arithmetic surprises us.
+- **Four concurrent inline runs**, process-wide. A rate limit is per tenant and
+  per hour; this is the guard a rate limit cannot be. Without it, enough tenants
+  running at once consume the Tokio blocking pool and every request that needs
+  it — including the readiness probe — stops being served.
+
+### The other bounds
+
+Every text field is bounded: 200 characters for a name or unit, 2 000 for a
+description or source, 4 000 for an expression. None of them had a length of
+its own before — only the request body did, so a single 30 MB description would
+have been accepted, stored in a JSONB column and rendered into a page. Lengths
+are counted in characters rather than bytes, so a Swedish description is not cut
+short for containing `ä`.
+
+Creating a model and adding a version were the two endpoints with **no rate
+limit at all**: both write rows and neither costs enough per call to be
+self-limiting. They now share the run bucket.
+
+### The browser side
+
+The API serves two HTML pages and set **no security headers whatsoever**. It now
+sends a policy with no exception in it:
+
+```
+default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:;
+font-src 'self'; connect-src 'self'; form-action 'none'; frame-ancestors 'none';
+base-uri 'none'; object-src 'none'
+```
+
+`script-src 'self'` with no `'unsafe-inline'` is the directive that stops an
+injected `<script>` from executing, and it was unreachable while both pages
+carried their script inline — an injected script is inline too, so allowing
+inline would have allowed the attack. The scripts moved into files. Fourteen
+inline `style="…"` attributes became four utility classes, and the one length
+that genuinely comes from data — a bar width in the tornado chart — is set
+through the CSSOM, which the policy does not govern.
+
+Verified by doing rather than by reading: the browser suite injects a
+`<script>` into the live page and asserts it does not run. It also caught the
+policy working against the test harness itself, since Playwright's
+`waitForFunction` evaluates a string.
+
+Non-page responses get `default-src 'none'; sandbox` — a browser navigated
+directly at an endpoint renders whatever it is given — plus `nosniff`,
+`no-referrer`, `frame-ancestors`, `Permissions-Policy` with the device APIs
+switched off, cross-origin isolation, and a year of HSTS.
+
+**One thing this pass corrected in itself.** HSTS was first gated on the
+development switch that disables `Secure` cookies. That was wrong twice over:
+RFC 6797 requires a browser to ignore the header over a non-secure transport,
+so it pins nothing on a loopback server — and in production the API speaks plain
+HTTP to a TLS-terminating ingress, so a condition on its own transport answers
+the wrong question and could leave the header off where it matters. It is sent
+unconditionally.
+
+### What extracting the scripts exposed
+
+The disclaimer on the main page was set from a constant **in the page's own
+JavaScript**. A test asserted it was in the served HTML and passed only because
+the script was inline. Moving the script into a file broke the test and revealed
+the real problem: a page whose script failed to load showed an empty paragraph
+where a required disclaimer belongs. The text is now in the markup, and the
+script only replaces it with the server's wording once a result arrives.
+
+---
+
+## 14. What is not built
 
 - **Correlated inputs.** Every input is independent. Correlated inputs would
   need a copula or a Cholesky factor on a correlation matrix, and — more

@@ -60,7 +60,7 @@ pub mod spec;
 pub mod stats;
 
 pub use convergence::{Checkpoint, Convergence};
-pub use distribution::{Distribution, DistributionError, Moments};
+pub use distribution::{Distribution, DistributionError, Moments, Sampler, MAX_CATEGORIES};
 pub use engine::{
     run, EngineError, Quality, RunControl, RunOutcome, DISCLAIMER, ENGINE_VERSION,
     MAX_SAMPLE_CELLS, SENSITIVITY_SAMPLE,

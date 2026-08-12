@@ -125,7 +125,11 @@ routed = set(re.findall(r'\.route\(\s*"([^"]+)"', source))
 # list is explicit rather than a prefix rule: a new `/v1/...` route that nobody
 # documented must fail this check, and a pattern loose enough to excuse a page
 # would eventually excuse an endpoint.
-routed -= {"/", "/simulations", "/ui/app.css", "/favicon.svg", "/favicon.ico"}
+routed -= {
+    "/", "/simulations", "/favicon.svg", "/favicon.ico",
+    "/ui/app.css", "/ui/index.css", "/ui/index.js",
+    "/ui/simulate.css", "/ui/simulate.js",
+}
 
 undocumented = sorted(routed - documented)
 unserved = sorted(documented - routed)

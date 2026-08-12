@@ -428,8 +428,17 @@ Two independent limiters, protecting different things:
   would multiply every quota by the replica count.
 
 Quotas are per bucket, because the operations cost wildly different amounts: 20
-analyses/hour, 100 uploads/hour, 600 reads/minute. One limit across all three
-would either allow an analysis storm or break the UI's two-second polling.
+analyses/hour, 100 uploads/hour, 120 simulations/hour, 600 reads/minute. One
+limit across all four would either allow an analysis storm or break the UI's
+two-second polling.
+
+**A rate limit is not a concurrency limit, and two of the findings in §16 came
+from confusing them.** A limit that is per tenant and per hour says nothing
+about how many requests are in flight at this instant across every tenant.
+Simulations answered inside a request therefore hold one of four process-wide
+slots, and a run that overruns five seconds is abandoned. Without both, enough
+tenants running at once consume the Tokio blocking pool and every request that
+needs it — including the readiness probe — stops being served.
 
 Cost control is per analysis, not per month. A monthly cap is discovered on the
 28th, when it has already been paid; a per-analysis cap stops the one run that
@@ -441,7 +450,83 @@ its failures would have no ceiling at all.
 
 ---
 
-## 15. What is not covered
+## 15. The browser's own controls
+
+**Enforced by:** `apps/api/src/headers.rs`.
+**Proved by:** `tests/security/security-suite.sh` §8, `tests/e2e/simulation-ui.sh`.
+
+The API serves two HTML pages and, until the hardening pass, sent no policy at
+all. These are controls only the browser can apply and only the server can ask
+for; a browser that is not asked does the permissive thing.
+
+```
+default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:;
+font-src 'self'; connect-src 'self'; form-action 'none'; frame-ancestors 'none';
+base-uri 'none'; object-src 'none'
+```
+
+The directive that matters is `script-src 'self'` **with no `'unsafe-inline'`**:
+it is what stops an injected `<script>` from executing, and it was unreachable
+while both pages carried their own script inline — an injected script is inline
+too, so allowing inline would have allowed the attack. The scripts moved into
+files. Fourteen inline `style="…"` attributes became utility classes.
+
+Non-page responses get `default-src 'none'; sandbox`, because a browser
+navigated directly at an endpoint renders whatever it is handed.
+
+| Header | Value | Against |
+|---|---|---|
+| `X-Content-Type-Options` | `nosniff` | A JSON body holding customer text being sniffed as HTML |
+| `Referrer-Policy` | `no-referrer` | Company, analysis and simulation identifiers leaving in a `Referer` |
+| `X-Frame-Options` | `DENY` | Clickjacking on browsers that predate `frame-ancestors` |
+| `Permissions-Policy` | device APIs off | Anything on the page asking for a camera, a location or a payment handler |
+| `Cross-Origin-Opener-Policy` | `same-origin` | A window that opened this page reaching into it |
+| `Strict-Transport-Security` | one year, subdomains, no preload | Downgrade to plain HTTP |
+
+HSTS is sent unconditionally. Gating it on the development switch that disables
+`Secure` cookies was the first attempt and was wrong twice: RFC 6797 requires a
+browser to ignore the header over a non-secure transport, so it pins nothing on
+a loopback server — and in production the API speaks plain HTTP to a
+TLS-terminating ingress, so a condition on the API's own transport answers the
+wrong question and could leave the header off where it matters. `preload` is
+deliberately absent: it is a submission to a list baked into browsers, slow to
+undo, and an operator's decision rather than a header's.
+
+The proof is by doing rather than by reading — the browser suite injects a
+`<script>` into the live page and asserts it does not execute.
+
+---
+
+## 16. Denial of service through the cost of a request
+
+**Enforced by:** `crates/simulate/src/distribution.rs`, `apps/api/src/simulation_routes.rs`.
+**Proved by:** `crates/simulate` unit tests, `tests/integration/simulations.sh`.
+
+Every limit in the system bounded the *size* of a request. None bounded the
+*work* it bought, and the Monte Carlo layer made the gap exploitable.
+
+`Discrete` and `Custom` are the only distributions whose cost per draw is chosen
+by the request rather than fixed by the mathematics: both were sampled by
+scanning their outcomes. A 12.6 MB body — inside the 32 MB limit — carried a
+million outcomes, and a 50 000-iteration run over it took **55 seconds**. That
+run is small enough to be answered inside the HTTP request, so it held a
+blocking thread for a minute while satisfying the iteration bound, the memory
+bound, the rate limit and the body limit.
+
+Closed from three directions: a bound on how many outcomes a distribution may
+enumerate, a cumulative table searched by bisection so the cost of a draw stops
+following the size of the table, and a routing decision that weighs the model's
+cost per iteration rather than counting its outputs. `SKATTJAKT_SIMULATION.md`
+§13 has the detail.
+
+**The general lesson, recorded because it generalises past this feature:** a
+limit on bytes is not a limit on work. Any endpoint that accepts a structure
+whose *shape* determines how long the server will spend needs a bound on the
+shape, not only on the payload.
+
+---
+
+## 17. What is not covered
 
 Stated rather than implied:
 

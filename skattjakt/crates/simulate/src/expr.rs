@@ -201,6 +201,24 @@ impl Expression {
         &self.source
     }
 
+    /// How many operations one evaluation costs, near enough.
+    ///
+    /// Used by the caller to decide whether a run belongs inside a request. A
+    /// count of nodes rather than of characters: `a*b` and
+    /// `if(a>0, exp(b)/c, 0)` are the same length and not the same work.
+    pub fn complexity(&self) -> usize {
+        fn count(node: &Node) -> usize {
+            1 + match node {
+                Node::Constant(_) | Node::Slot(_) => 0,
+                Node::Negate(inner) | Node::Not(inner) => count(inner),
+                Node::Binary(_, left, right) => count(left) + count(right),
+                Node::Call(_, arguments) => arguments.iter().map(count).sum(),
+                Node::Conditional(condition, a, b) => count(condition) + count(a) + count(b),
+            }
+        }
+        count(&self.root)
+    }
+
     /// Evaluates against one iteration's values.
     #[inline]
     pub fn evaluate(&self, values: &[f64]) -> f64 {
@@ -823,6 +841,23 @@ mod tests {
         let source = format!("{}1{}", "(".repeat(200), ")".repeat(200));
         let error = Expression::compile(&source, &environment(&[])).unwrap_err();
         assert!(matches!(error, ExprError::TooDeep { .. }));
+    }
+
+    #[test]
+    fn complexity_counts_work_rather_than_characters() {
+        let environment = environment(&["a", "b", "c"]);
+        let simple = Expression::compile("a * b", &environment).unwrap();
+        let branching = Expression::compile("if(a > 0, exp(b) / c, 0)", &environment).unwrap();
+        assert!(
+            branching.complexity() > simple.complexity() * 2,
+            "{} against {}",
+            branching.complexity(),
+            simple.complexity()
+        );
+        assert_eq!(
+            Expression::compile("1", &environment).unwrap().complexity(),
+            1
+        );
     }
 
     #[test]
