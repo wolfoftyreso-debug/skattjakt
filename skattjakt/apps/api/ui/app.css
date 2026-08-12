@@ -89,6 +89,9 @@
   summary { cursor: pointer; font-size: .85rem; color: var(--accent); }
   details ul { margin: .5rem 0 0; padding-left: 1.1rem; font-size: .85rem; color: var(--muted); }
   details li { margin-bottom: .3rem; }
+  .citations { margin: .25rem 0 .4rem; padding-left: 1.1rem; list-style: circle; }
+  .citations li { margin-bottom: .2rem; }
+  .citations a { color: var(--accent); }
   code { font-size: .8rem; }
 
   .notice { border-left: 3px solid var(--warn); background: var(--warn-soft); padding: .8rem 1rem; border-radius: 0 8px 8px 0; margin-bottom: 1rem; font-size: .9rem; }

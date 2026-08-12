@@ -251,6 +251,43 @@ async function analyse() {
   }
 }
 
+// How far each cited authority has been checked. A reader shown "30 kap. 5 §"
+// beside a figure reasonably assumes somebody opened it, so the citation says
+// whether anybody did rather than leaving the flattering reading available.
+const SOURCE_STATES = {
+  verified: { label: "kontrollerad", warn: false },
+  mismatch: { label: "källan motsäger regeln", warn: true },
+  unreachable: { label: "kunde inte hämtas", warn: true },
+  unretrieved: { label: "ej kontrollerad", warn: true },
+};
+
+// Only http(s), because a citation URL is rendered as a link and a rule set is
+// data: `javascript:` in that field would otherwise be a script the CSP never
+// sees.
+function safeUrl(url) {
+  try {
+    const parsed = new URL(url, window.location.origin);
+    return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.href : null;
+  } catch {
+    return null;
+  }
+}
+
+function citationList(rule) {
+  const citations = rule.citations || [];
+  if (!citations.length) return rule.source ? ` — ${escape(rule.source)}` : "";
+  return `<ul class="citations">${citations.map(c => {
+    const state = SOURCE_STATES[c.state] || SOURCE_STATES.unretrieved;
+    const url = safeUrl(c.url || "");
+    const reference = url
+      ? `<a href="${escape(url)}" target="_blank" rel="noopener noreferrer">${escape(c.reference)}</a>`
+      : escape(c.reference);
+    const when = c.retrieved_at ? ` ${escape(String(c.retrieved_at).slice(0, 10))}` : "";
+    return `<li>${reference} <span class="tag${state.warn ? " warn" : ""}">${
+      escape(state.label)}${when}</span></li>`;
+  }).join("")}</ul>`;
+}
+
 function card(o) {
   const values = (o.evidence || []).filter(e => e.type === "document_value");
   const rules = (o.evidence || []).filter(e => e.type === "rule");
@@ -286,7 +323,7 @@ function card(o) {
         ${values.map(v => `<li>${escape(v.kind)}: <strong>${kr(v.value)}</strong>${
           v.page ? ` — sida ${v.page}` : ""}${
           v.excerpt ? `<br><code>${escape(v.excerpt)}</code>` : ""}</li>`).join("")}
-        ${rules.map(r => `<li>${escape(r.title)} — ${escape(r.source)}</li>`).join("")}
+        ${rules.map(r => `<li>${escape(r.title)}${citationList(r)}</li>`).join("")}
         ${assumptions.map(a => `<li>Antagande: ${escape(a.statement)}</li>`).join("")}
       </ul>
     </details>` : ""}

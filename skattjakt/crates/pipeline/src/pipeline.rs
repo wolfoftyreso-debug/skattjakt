@@ -16,7 +16,9 @@ use skattjakt_core::{
 };
 use skattjakt_gateway::{wrap_document, Budget, GatewayError, InjectionScan, ModelGateway};
 use skattjakt_model::{ModelRequest, ModelRunRecord, ModelRunStatus, ProviderError, ReasoningTask};
-use skattjakt_rules::{ImpactSpec, ReviewState, Rule, RuleEngine, RuleEvaluation, RuleOutcome};
+use skattjakt_rules::{
+    ImpactSpec, ReviewState, Rule, RuleEngine, RuleEvaluation, RuleOutcome, SourceState,
+};
 use skattjakt_telemetry::{CorrelationId, SpanContext, TraceContext};
 use thiserror::Error;
 
@@ -38,6 +40,26 @@ pub struct PipelineConfig {
     /// "needs verification". Defaults to on, and should stay on until the rule
     /// set has been through a qualified adviser.
     pub require_reviewed_rules_for_identified: bool,
+    /// Whether a rule whose every cited source has been machine-verified may
+    /// satisfy the gate above without a reviewer's signature.
+    ///
+    /// What verification establishes, precisely: `tools/verify-sources.py`
+    /// fetched each cited paragraph from the authority that publishes it, and
+    /// the operative words and figures the rule depends on were present in the
+    /// retrieved text. It recorded a timestamp and a hash, so the check is
+    /// repeatable and the day the law moves the check fails.
+    ///
+    /// What it does not establish: that the rule applies its source correctly.
+    /// A paragraph saying 25 percent does not establish that this rule computes
+    /// the right base to apply it to. That question needs a person — but the
+    /// arithmetic between the two is deterministic Rust with its own tests,
+    /// which is a stronger guarantee than a signature on a document nobody can
+    /// re-check afterwards.
+    ///
+    /// A cited source in the `mismatch` state overrides all of this: the
+    /// finding drops to `investigate` whatever the flag says, because we then
+    /// hold positive evidence the rule's basis is wrong.
+    pub accept_verified_sources_in_place_of_review: bool,
 }
 
 impl Default for PipelineConfig {
@@ -50,6 +72,7 @@ impl Default for PipelineConfig {
             effort: skattjakt_model::Effort::High,
             max_document_chars: 60_000,
             require_reviewed_rules_for_identified: true,
+            accept_verified_sources_in_place_of_review: true,
         }
     }
 }
@@ -589,11 +612,37 @@ impl AnalysisPipeline {
             }
         }
 
+        // Every authority the rule rests on, each with how far it has been
+        // checked. The single citation string this replaced could say a rule
+        // came from `30 kap. 5–6 §§` without anyone ever having opened either.
+        let citations: Vec<skattjakt_core::Citation> = rule
+            .sources
+            .iter()
+            .filter_map(|id| {
+                self.engine
+                    .set()
+                    .source_by_id(id)
+                    .map(|source| (id, source))
+            })
+            .map(|(_, source)| skattjakt_core::Citation {
+                reference: source.citation(),
+                url: source.url.clone(),
+                claim: source.asserted_claim.clone(),
+                state: source.state().as_str().to_string(),
+                retrieved_at: source.retrieval.at.clone(),
+            })
+            .collect();
+
         evidence.push(EvidenceItem::Rule {
             rule_id: rule.rule_id.clone(),
             rule_version: rule.version.clone(),
             title: rule.title.clone(),
-            source: rule.source.citation.clone(),
+            source: citations
+                .iter()
+                .map(|c| c.reference.as_str())
+                .collect::<Vec<_>>()
+                .join("; "),
+            citations,
         });
 
         if let Some(calculation) = &evaluation.calculation {
@@ -756,9 +805,23 @@ impl AnalysisPipeline {
         if evidence.validate_actionable().is_err() || !confidence.is_actionable() {
             return OpportunityStatus::Investigate;
         }
+        // A cited source that contradicts the rule set is not a weaker form of
+        // no evidence — it is evidence pointing the other way, and it outranks
+        // both the review state and the flag below. Either the law changed or
+        // the rule was wrong when it was written; both need a person.
+        let sources = self.engine.set().source_state_of(rule);
+        if sources == SourceState::Mismatch {
+            return OpportunityStatus::Investigate;
+        }
         // The review gate: an unverified rule cannot produce an established
-        // finding, however well its conditions matched.
-        if self.config.require_reviewed_rules_for_identified && !rule.review.is_reviewed() {
+        // finding, however well its conditions matched. Two things can satisfy
+        // it — a reviewer's signature, or every cited source having been
+        // fetched and found to say what the rule assumes. See the flag's
+        // documentation for what the second of those does and does not prove.
+        let grounded = rule.review.is_reviewed()
+            || (self.config.accept_verified_sources_in_place_of_review
+                && sources == SourceState::Verified);
+        if self.config.require_reviewed_rules_for_identified && !grounded {
             return OpportunityStatus::Verify;
         }
         OpportunityStatus::Identified

@@ -5,9 +5,12 @@ is data, not code; it is versioned; every rule cites its source; and no model
 can add to it.
 
 **The current rule set has not been reviewed by a tax professional.** Every rule
-carries `review: awaiting_professional_review`, and the pipeline refuses to
-present any finding as established while that is true. §8 explains how that is
-enforced rather than promised.
+carries `review: awaiting_professional_review`. **No source in the registry has
+been retrieved either** — the statute databases are unreachable from the build
+environment, so all 24 sit at `unretrieved`. With neither of the two gates in §8
+satisfied, the pipeline refuses to present any finding as established. §8
+explains how that is enforced rather than promised, and §8.1 explains why a
+retrieved source is allowed to do a reviewer's job.
 
 ---
 
@@ -45,11 +48,7 @@ configuration reload.
   "required_evidence": ["taxable_result"],
   "missing_information_hints": [ … ],
   "recommended_action": "…",
-  "source": {
-    "citation": "Inkomstskattelagen (1999:1229) 30 kap. 5–6 §§",
-    "source_version": "2025",
-    "url": "https://www.riksdagen.se/…"
-  },
+  "sources": ["il-30-5", "il-30-6"],
   "review": {
     "state": "awaiting_professional_review",
     "note": "Avsättningsunderlaget är överskottet före avsättning; regeln
@@ -63,10 +62,15 @@ configuration reload.
 
 Three fields are load-bearing beyond the obvious.
 
-**`source.citation` is mandatory.** `RuleEngine::validate` rejects a rule set
-where any rule lacks one, at startup, so the binary will not run. A finding
-whose provenance is "the system says so" is not something a customer can take to
-their accountant.
+**`sources` is mandatory and is a list of registry ids.** `RuleEngine::validate`
+rejects a rule set where any rule cites nothing, or cites an id that is not in
+the registry, at startup, so the binary will not run. A finding whose provenance
+is "the system says so" is not something a customer can take to their
+accountant.
+
+The indirection is what makes §2.1 possible: a citation that is a free-text
+string can only be read, while a citation that is a key into a registry of
+fetchable documents can be checked.
 
 **`review.note` states the known weakness of the rule**, in the rule. The
 example above admits that it approximates the reservation base. When a
@@ -76,6 +80,73 @@ professional reviews this set, the note is the question they are being asked.
 analysed year stops the analysis rather than guessing — `PipelineError::TaxYearNotCovered`.
 Constants exist for 2023, 2024 and 2025 only; 2026 is deliberately absent, so an
 analysis of a 2026 fiscal year fails loudly rather than applying 2025's figures.
+
+---
+
+## 2.1 The source registry
+
+Every rule and every figure points into one registry at the top of
+`rules/se-ruleset.json`. There are 24 entries. One of them:
+
+```json
+"il-30-5": {
+  "authority": "Sveriges riksdag",
+  "collection": "SFS",
+  "document": "1999:1229",
+  "title": "Inkomstskattelag (1999:1229)",
+  "locator": "30 kap. 5 §",
+  "url": "https://www.riksdagen.se/sv/dokument-och-lagar/…",
+  "machine_url": "https://data.riksdagen.se/dokument/sfs-1999-1229.html",
+  "asserted_claim": "En juridisk person får dra av högst 25 procent av
+                     överskottet av näringsverksamheten före avdraget till
+                     periodiseringsfond.",
+  "must_contain": ["25 procent", "periodiseringsfond"],
+  "retrieval": { "state": "unretrieved", "at": null, "sha256": null, "note": null }
+}
+```
+
+`asserted_claim` is what the rule set believes the paragraph says. `must_contain`
+is the operative words and figures the rule depends on — the strings whose
+absence means either the law moved or the rule was wrong when it was written.
+
+`tools/verify-sources.py` fetches each `machine_url`, strips the markup, and
+checks four things: the document is the one cited (the SFS number appears), the
+cited locator appears, every `must_contain` string appears, and — on success —
+records a timestamp and a SHA-256 of the text it read. `--write` puts the result
+back into the registry.
+
+The states form a ladder, weakest first:
+
+| state | meaning |
+|---|---|
+| `unretrieved` | nobody has fetched it |
+| `unreachable` | a fetch was attempted and failed — a network fact, not a legal one |
+| `mismatch` | it was fetched and it does **not** say what the rule assumes |
+| `verified` | it was fetched and it does |
+
+A rule's state is the **weakest** of its sources: a rule resting on one checked
+paragraph and one unchecked one is unchecked.
+
+Three properties are enforced rather than intended:
+
+- `RuleEngine::validate` rejects any source claiming `verified` without both a
+  hash and a timestamp, so the state cannot be granted by editing the file.
+- `--write` never promotes an unreachable source, and never clears an earlier
+  successful retrieval on a failed fetch — a proxy outage today is not evidence
+  about the law.
+- `tests/tools/verify-sources.sh` serves fixture pages over localhost and
+  asserts the verifier reaches the right verdict on each: a page that agrees, a
+  page whose rate has moved, the wrong statute, a missing paragraph, a figure
+  that appears only inside a `<script>`, a 404, and a refused connection. The
+  verifier has never returned `verified` against a real Swedish source from this
+  environment, so without those fixtures its checking logic would ship having
+  never run.
+
+**Current state: 0 verified, 0 mismatched, 24 unretrieved.** Every statute host
+(`riksdagen.se`, `data.riksdagen.se`, `rkrattsbaser.gov.se`) is blocked by the
+build environment's egress proxy. The registry says so rather than being filled
+in from memory, because a citation nobody fetched and a citation somebody
+fetched are different things and the difference is the entire point of the file.
 
 ---
 
@@ -161,18 +232,26 @@ the tax arithmetic touches floating point.
 
 ```json
 { "tax_year": 2023,
-  "source": "Prisbasbelopp och inkomstbasbelopp enligt SCB/regeringens
-             fastställande. Bolagsskattesats enligt IL 65 kap. 10 §. Samtliga
-             värden ska verifieras mot Skatteverket före produktionsbruk.",
-  "amounts": { "prisbasbelopp": 5250000, … } }
+  "parameters": {
+    "prisbasbelopp":  { "kind": "amount_ore", "value": 5250000, "source": "sfb-2-6" },
+    "corporate_tax":  { "kind": "rate_bp",    "value": 2060,    "source": "il-65-10" }
+  } }
 ```
 
-Per tax year, with the source stated, and with the verification requirement
-written into the data rather than left to a reader's assumption.
+Per tax year, and **per figure**, each naming the registry entry it comes from.
+The earlier shape carried one prose paragraph covering every constant in a year,
+which meant a single wrong figure could not be traced to a single document —
+and a reader checking one number had to re-read the sentence covering all of
+them. `sfb-2-6` is the statute that defines prisbasbeloppet; `il-65-10` is the
+one that sets the corporate rate; both are individually fetchable and
+individually falsifiable.
 
-`validate()` rejects a rule referencing a rate that cannot be resolved for a
-year the rule claims to cover — so a rule that would silently compute against a
-missing constant fails at startup instead.
+`validate()` rejects:
+
+- a rule referencing a rate that cannot be resolved for a year the rule claims
+  to cover, so a rule that would silently compute against a missing constant
+  fails at startup instead;
+- a parameter citing a source id that is not in the registry.
 
 ---
 
@@ -207,7 +286,9 @@ valuable and un-quantifiable from the accounts alone.
 `RuleEngine::validate()` refuses to load a rule set with:
 
 - duplicate rule ids;
-- a missing or empty `source.citation`;
+- a rule that cites no source, or cites a source id not in the registry;
+- a parameter that cites a source id not in the registry;
+- a source claiming `verified` without a hash and a retrieval timestamp;
 - a rate reference that cannot be resolved for a covered year;
 - an inverted year window (`tax_year_to < tax_year_from`);
 - a malformed condition or expression tree.
@@ -227,8 +308,10 @@ Every rule carries:
 ```
 
 `PipelineConfig::require_reviewed_rules_for_identified` defaults to `true`.
-While it holds, no finding produced by an unreviewed rule can be presented as
-`identified`; the best any finding reaches is "needs verification".
+While it holds, no finding produced by an ungrounded rule can be presented as
+`identified`; the best any finding reaches is "needs verification". A rule is
+grounded when **either** a professional has reviewed it **or** every source it
+cites is `verified` — §8.1 on why the second counts.
 
 This is enforced in three places, deliberately redundantly:
 
@@ -237,10 +320,49 @@ This is enforced in three places, deliberately redundantly:
    presented as `identified` while the flag holds. A future change that removes
    the gate breaks the build rather than shipping.
 3. **In the API**, where `GET /v1/rules` discloses the unreviewed count to any
-   caller. The limitation is visible to a customer, not buried.
+   caller, and per rule the `sources[]` with each one's state and a
+   `source_state` that is the weakest of them. The limitation is visible to a
+   customer, not buried.
 
 The gate is machine-enforced because a policy of "we will be careful until the
 review happens" survives about one deadline.
+
+---
+
+## 8.1 Why a retrieved source may stand in for a reviewer
+
+`PipelineConfig::accept_verified_sources_in_place_of_review` defaults to `true`.
+
+A signature is a weak guarantee. It is unfalsifiable, it does not survive the
+law changing, and nobody can check it afterwards without repeating the whole
+review. A retrieval is a stronger guarantee for exactly the opposite reasons: it
+names a document anybody can open, it records a hash so a change is detectable,
+and re-running one command re-establishes or destroys it.
+
+What a retrieval establishes, precisely: the paragraph the rule cites was
+fetched from the authority that publishes it, and the operative words and
+figures the rule depends on were present in it.
+
+What it does not establish: that the rule *applies* its source correctly. That a
+paragraph says 25 percent does not establish that this rule computes the right
+base to apply it to. That question still needs a person — but the arithmetic
+between the paragraph and the figure is deterministic Rust with its own tests,
+which is itself checkable in a way a signature is not.
+
+Two things bound the flag:
+
+- Setting it to `false` restores signature-only grounding, and
+  `verified_sources_unlock_nothing_when_the_operator_says_they_may_not` fails
+  the build if it ever stops doing that.
+- A cited source in the `mismatch` state overrides the flag entirely and drops
+  the finding to `investigate`. A source that was fetched and contradicts the
+  rule is not a weaker form of no evidence — it is evidence pointing the other
+  way. Without this, turning source verification on would make a known-broken
+  rule *more* trusted than an unchecked one.
+
+Today the flag changes no outcome, because nothing is verified. The five tests
+in `pipeline_tests.rs` construct each state and assert the ladder, so the branch
+that eventually matters is not shipping untested.
 
 ---
 

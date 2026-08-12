@@ -86,6 +86,22 @@ pub struct CitedRule {
     pub rule_id: String,
     pub title: String,
     pub source: String,
+    /// How far the weakest of this rule's sources has been checked.
+    ///
+    /// In the report on purpose. A reader shown `30 kap. 5 §` beside a figure
+    /// reasonably assumes somebody opened it; the honest version of that line
+    /// says whether anybody did.
+    pub source_state: String,
+}
+
+/// The Swedish the report prints for a retrieval state.
+fn source_state_label(state: &str) -> &'static str {
+    match state {
+        "verified" => "källa kontrollerad",
+        "mismatch" => "källan motsäger regeln",
+        "unreachable" => "källan kunde inte hämtas",
+        _ => "källa ej kontrollerad",
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -238,12 +254,27 @@ fn highlight(opportunity: &skattjakt_core::Opportunity) -> Highlight {
                 rule_id,
                 title,
                 source,
+                citations,
                 ..
             } => {
+                // The weakest citation, for the same reason the engine takes
+                // the weakest: a rule half-checked is not half-trustworthy.
+                let weakest = citations
+                    .iter()
+                    .map(|c| match c.state.as_str() {
+                        "unretrieved" => (0, "unretrieved"),
+                        "unreachable" => (1, "unreachable"),
+                        "mismatch" => (2, "mismatch"),
+                        _ => (3, "verified"),
+                    })
+                    .min_by_key(|(rank, _)| *rank)
+                    .map(|(_, name)| name)
+                    .unwrap_or("unretrieved");
                 rules.push(CitedRule {
                     rule_id: rule_id.clone(),
                     title: title.clone(),
                     source: source.clone(),
+                    source_state: weakest.to_string(),
                 });
             }
             _ => {}
@@ -343,7 +374,12 @@ pub fn to_markdown(report: &Report) -> String {
         if !item.rules.is_empty() {
             out.push_str("- Regler:\n");
             for rule in &item.rules {
-                out.push_str(&format!("  - {} — {}\n", rule.title, rule.source));
+                out.push_str(&format!(
+                    "  - {} — {} ({})\n",
+                    rule.title,
+                    rule.source,
+                    source_state_label(&rule.source_state)
+                ));
             }
         }
         if !item.missing_information.is_empty() {
@@ -393,7 +429,12 @@ pub fn to_markdown(report: &Report) -> String {
         s.evidence.rules_cited.len()
     ));
     for rule in &s.evidence.rules_cited {
-        out.push_str(&format!("- {} — {}\n", rule.title, rule.source));
+        out.push_str(&format!(
+            "- {} — {} ({})\n",
+            rule.title,
+            rule.source,
+            source_state_label(&rule.source_state)
+        ));
     }
     if !s.evidence.assumptions.is_empty() {
         out.push_str("\nAntaganden:\n");

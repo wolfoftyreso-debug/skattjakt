@@ -311,6 +311,23 @@ for o in items:
         types = [e["type"] for e in o["evidence"]]
         assert "document_value" in types, f"{o['title']} has no document value"
         assert "rule" in types, f"{o['title']} cites no rule"
+        # Every rule the customer is shown names the paragraphs it rests on and
+        # says how far each has been checked. A citation with no state reads as
+        # "somebody looked this up", which is the one thing it must not imply
+        # while every source in the registry is still unretrieved.
+        for item in o["evidence"]:
+            if item["type"] != "rule":
+                continue
+            citations = item.get("citations") or []
+            assert citations, f"{o['title']} rests on a rule with no citations"
+            for c in citations:
+                assert c["reference"].strip(), "a citation has no reference"
+                assert c["claim"].strip(), "a citation states no claim"
+                assert c["state"] in {"unretrieved", "unreachable", "mismatch", "verified"}, \
+                    f"unknown citation state {c['state']}"
+                if c["state"] in {"unretrieved", "unreachable"}:
+                    assert not c.get("retrieved_at"), \
+                        "an unfetched citation carries a retrieval timestamp"
     if o["impact"]["low"] != o["impact"]["high"]:
         assert o["impact"]["low"] < o["impact"]["high"]
 assert body["disclaimer"].startswith("Skattjakt är ett analys- och upptäcktsverktyg")
@@ -335,6 +352,9 @@ for key in ["summary", "start_here", "opportunities", "warnings", "missing_infor
 assert r["disclaimer"], "report has no disclaimer"
 assert s["economic_potential"]["total"]["high"] >= s["economic_potential"]["total"]["low"]
 assert s["evidence"]["rules_cited"], "report cites no rules"
+for rule in s["evidence"]["rules_cited"]:
+    assert rule["source_state"] in {"unretrieved", "unreachable", "mismatch", "verified"}, \
+        f"{rule['title']} reports source state {rule['source_state']}"
 print(f"  all nine sections; potential {s['economic_potential']['display']}")
 PY
 
@@ -343,6 +363,10 @@ for heading in "# Din Skattjakt" "## 1. Sammanfattning" "## 9. Begränsningar"; 
     echo "$MARKDOWN" | grep -qF "$heading" || fail "markdown report is missing '$heading'"
 done
 echo "$MARKDOWN" | grep -q "Skattjakt är ett analys- och upptäcktsverktyg" || fail "markdown report has no disclaimer"
+# The version a customer prints and hands to their accountant has to carry the
+# same caveat the JSON does, or the caveat only exists where nobody reads it.
+echo "$MARKDOWN" | grep -q "källa ej kontrollerad" \
+    || fail "the markdown report does not say its sources are unchecked"
 echo "  markdown export renders"
 
 # --- 17. audit trail --------------------------------------------------------

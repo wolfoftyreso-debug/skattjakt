@@ -32,7 +32,7 @@ pub use confidence::{
     UnitInterval,
 };
 pub use error::{CoreError, CoreResult};
-pub use evidence::{CalculationInput, EvidenceChain, EvidenceItem};
+pub use evidence::{CalculationInput, Citation, EvidenceChain, EvidenceItem};
 pub use evidence_graph::{EdgeKind, EvidenceGraph, NodeId};
 pub use fact::{Contradiction, FactKind, FactSet, FinancialFact};
 pub use ids::*;

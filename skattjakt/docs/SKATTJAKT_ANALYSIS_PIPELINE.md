@@ -233,13 +233,27 @@ actionable regardless of how the other five factors scored. The bands are
 
 ## 9. Stage 8 — The review gate
 
-While the rule set carries `review: awaiting_professional_review`,
-`require_reviewed_rules_for_identified` caps every finding below `identified`.
-The best any finding can be called is "needs verification".
+`require_reviewed_rules_for_identified` caps every finding below `identified`
+unless the rule is *grounded*, which it is in one of two ways:
+
+- a professional reviewed it (`review: reviewed { reviewer, date }`), or
+- every source it cites has been fetched and found to say what the rule assumes
+  (`source_state: verified`), which
+  `accept_verified_sources_in_place_of_review` allows by default.
+
+Today neither holds for any rule: all 14 carry
+`review: awaiting_professional_review` and all 24 sources are `unretrieved`. The
+best any finding can be called is "needs verification".
+
+One state overrides both: a cited source in `mismatch` — fetched, and it
+contradicts the rule — drops the finding to `investigate` regardless of the
+flags. Evidence pointing the wrong way is not a weaker form of no evidence.
 
 This is machine-enforced, not a policy: the golden dataset fails the build if
-anything is ever presented as `identified` while the flag holds, and
-`GET /v1/rules` discloses the unreviewed count to any caller.
+anything is ever presented as `identified` while nothing is grounded, and
+`GET /v1/rules` discloses the unreviewed count and each rule's `source_state` to
+any caller. `SKATTJAKT_RULE_ENGINE.md` §8.1 argues why a retrieval is allowed to
+carry the weight a signature otherwise would.
 
 ---
 

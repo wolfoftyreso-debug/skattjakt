@@ -12,6 +12,26 @@ use crate::fact::FactKind;
 use crate::ids::{CalculationId, DocumentId, DocumentVersionId, FinancialFactId, ModelRunId};
 use crate::money::Money;
 
+/// One authority a rule rests on, as it appears in a report.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Citation {
+    /// `Inkomstskattelag (1999:1229) 30 kap. 5 §`.
+    pub reference: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    /// What the rule assumes this authority says.
+    pub claim: String,
+    /// `unretrieved`, `unreachable`, `mismatch` or `verified`.
+    ///
+    /// Carried into the report on purpose. A reader told a finding rests on
+    /// `30 kap. 5 §` learns nothing about whether anyone has read that
+    /// paragraph; a reader told it rests on one that has never been retrieved
+    /// learns exactly what the finding is worth.
+    pub state: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retrieved_at: Option<String>,
+}
+
 /// One link in the chain from a stored document to a stated conclusion.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -34,6 +54,15 @@ pub enum EvidenceItem {
         title: String,
         /// Where the rule comes from, e.g. a Skatteverket page or a statute.
         source: String,
+        /// Each authority the rule rests on, and how far it has been checked.
+        ///
+        /// A list rather than the single sentence this used to be, and carrying
+        /// the state rather than only the citation. A reader who is told a
+        /// finding rests on `30 kap. 5 §` learns nothing about whether anybody
+        /// has read that paragraph; a reader told it rests on a paragraph that
+        /// has never been retrieved learns exactly what the finding is worth.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        citations: Vec<Citation>,
     },
     /// A deterministic computation, with its inputs, so it can be re-run.
     Calculation {
@@ -193,6 +222,7 @@ mod tests {
 
     fn rule() -> EvidenceItem {
         EvidenceItem::Rule {
+            citations: Vec::new(),
             rule_id: "se.periodiseringsfond.avsattning".to_string(),
             rule_version: "2025.1".to_string(),
             title: "Periodiseringsfond".to_string(),
@@ -267,5 +297,32 @@ mod tests {
             .with(item)
             .with(rule());
         assert_eq!(chain.document_versions().len(), 1);
+    }
+
+    #[test]
+    fn evidence_stored_before_citations_existed_still_loads() {
+        // Analyses are stored as JSON. `citations` was added to a variant that
+        // customers already have rows of, so every one of those rows lacks the
+        // field. Without `serde(default)` this deserialises to an error and the
+        // customer's history becomes unreadable — the failure would appear as
+        // an old analysis that simply will not open, months after the deploy
+        // that caused it.
+        let stored = r#"{
+            "type": "rule",
+            "rule_id": "se.tax.periodiseringsfond.outnyttjat_utrymme",
+            "rule_version": "2025.1",
+            "title": "Periodiseringsfond",
+            "source": "Inkomstskattelagen (1999:1229) 30 kap. 5–6 §§"
+        }"#;
+        let item: EvidenceItem = serde_json::from_str(stored).expect("old evidence must load");
+        match &item {
+            EvidenceItem::Rule { citations, .. } => assert!(citations.is_empty()),
+            other => panic!("wrong variant: {other:?}"),
+        }
+
+        // And re-serialising must not invent an empty list where the reader
+        // would otherwise correctly see "nothing was recorded".
+        let round_tripped = serde_json::to_string(&item).unwrap();
+        assert!(!round_tripped.contains("citations"), "{round_tripped}");
     }
 }

@@ -389,12 +389,11 @@ mod tests {
     }
 
     fn constants() -> TaxYearConstants {
-        let mut c = TaxYearConstants {
+        TaxYearConstants {
             tax_year: 2025,
             ..Default::default()
-        };
-        c.rates_bp.insert("corporate_tax".into(), 2060);
-        c
+        }
+        .with_rate("corporate_tax", 2060, "il-65-10")
     }
 
     #[test]

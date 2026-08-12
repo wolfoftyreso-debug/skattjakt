@@ -232,12 +232,45 @@ That is the same omission, one layer down, as the one that gave this worker no
 Deployment at all — the workload was added, the route to the database was not.
 Checking one side of a policy is how a policy set looks complete and is not.
 
-### 5.4 Totals
+### 5.4 What the rules actually rest on
+
+The rule set was drafted by a language model. Until this session the only thing
+between those 14 rules and a customer was a line in a document saying nobody
+qualified had checked them, and a plan to eventually get a signature.
+
+A signature is a weak guarantee: unfalsifiable, unchecked by anyone afterwards,
+and worthless the moment the law moves. So every rule and every constant was
+re-cited against a registry of 24 primary sources — statute paragraphs, each
+with the claim the rule makes of it and the operative strings that claim depends
+on — and `tools/verify-sources.py` fetches them and checks the text still says
+it.
+
+**None of them could be fetched.** `riksdagen.se`, `data.riksdagen.se` and
+`rkrattsbaser.gov.se` are all blocked by this environment's egress proxy; the
+verifier reports `0 verified, 0 contradicted, 24 unreachable` and the registry
+records `unretrieved`. Writing the statute text from memory and marking it
+verified was available and was not done: it would have turned every downstream
+check green while making all of them meaningless.
+
+What *was* verified is the machinery, against pages whose contents we control:
+`tests/tools/verify-sources.sh` serves fixtures over localhost and asserts the
+verifier's verdict on a page that agrees, a page whose rate has moved, the wrong
+statute, a missing paragraph, a figure present only inside a `<script>`, a 404
+and a refused connection — plus that `--write` never invents a `verified` state
+and never erases an earlier retrieval on a network failure. 24 checks. Without
+those, the verifier's checking logic would ship having never once run.
+
+The gate consumes the result: `identified` now requires a review **or** every
+cited source verified, and a `mismatch` forces `investigate` regardless. Five
+pipeline tests construct each state and assert the ladder, because the branch
+that eventually matters is the one no current data exercises.
+
+### 5.5 Totals
 
 Verified in this environment, in this session:
 
 ```
-483 unit and integration tests          golden dataset  precision 1.000 recall 1.000
+624 unit and integration tests          golden dataset  precision 1.000 recall 1.000
  61 session checks (live API)            10 tenant isolation checks (real Postgres)
  39 security checks (live API)           24 failure-injection checks (real Postgres)
  20 end-to-end product steps              5 S3 checks against a real MinIO
@@ -247,7 +280,9 @@ Verified in this environment, in this session:
     and upgrade-with-data from every       verified with 7 violations
     earlier version
   9 container image assertions          305 SBOM components, all checksummed
- 18 documentation coupling checks
+ 20 documentation coupling checks        24 source-verifier checks against
+ 41 NetworkPolicy semantic checks           localhost fixture pages
+    per environment
 ```
 
 Not verified, and not claimed:
@@ -265,6 +300,12 @@ Not verified, and not claimed:
   scripts themselves are no longer untested: §5.2.
 - Trivy, cosign signing, SLSA provenance against a registry.
 - Any mobile client, because none was built.
+- **That the 14 rules state Swedish tax law correctly.** They are cited to 24
+  primary sources, and not one of those sources has been retrieved: the statute
+  hosts are unreachable from here (§5.4). The verifier is tested and the gate
+  consumes its verdict, so the day the sources *can* be fetched this becomes a
+  command rather than a project — but today the rules rest on a language
+  model's drafting, and the product says so at every layer that can say it.
 
 ---
 

@@ -31,6 +31,32 @@ discloses the count.
 finding needs to know its provenance at the point they read it, and a machine
 check is the only kind that cannot be forgotten during a release.
 
+**Revisited: the gate had one key and the key was a signature.** Option 3 as
+built made an adviser's review the only way past the gate, which left the
+product's correctness waiting on a person who had not been hired and whose
+eventual signature nobody could re-check. So the rules and every constant were
+re-cited against a registry of 24 primary sources — statute paragraphs at
+`riksdagen.se`, Skatteverket's published positions — each carrying the claim the
+rule makes of it and the operative strings that claim depends on.
+`tools/verify-sources.py` fetches them and checks. `verified` now satisfies the
+gate alongside `reviewed`; `mismatch` overrides both and forces `investigate`.
+
+This is strictly more falsifiable than what it supplements. A signature cannot
+be re-checked without repeating the review and says nothing once the law
+changes; a retrieval is one command and a recorded hash, and the day
+`30 kap. 5 §` stops saying 25 percent the check goes red on its own.
+
+It does not replace the review, and the documents do not claim it does: a
+retrieval establishes that the paragraph says what the rule assumes, not that
+the rule computes the right base to apply it to.
+
+**Status.** 0 of 24 sources retrieved. Every statute host is blocked by this
+environment's egress proxy, so the machinery is proven against localhost
+fixtures (`tests/tools/verify-sources.sh`, 24 checks) and has never returned
+`verified` for a real Swedish source. The registry says `unretrieved` rather
+than being filled in from a language model's memory of the statute, which would
+have made every downstream check meaningless while looking green.
+
 **Trade-off.** Every finding currently reads as "needs verification", which
 undersells the ones that are in fact solid. That is the right direction to be
 wrong in. Flipping a rule to `reviewed` after a real review immediately lifts

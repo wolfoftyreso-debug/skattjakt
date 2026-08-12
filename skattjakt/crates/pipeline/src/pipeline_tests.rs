@@ -150,6 +150,194 @@ async fn an_unreviewed_rule_can_never_reach_identified() {
     }
 }
 
+/// The embedded rule set with every source's retrieval record replaced.
+///
+/// The shipped file has all 24 sources `unretrieved` — the statute databases
+/// are unreachable from this build environment — so the states below can only
+/// be reached by constructing them. That is the point: the gate has to be
+/// exercised in every state it can be in, not only the one today happens to
+/// produce, or the branch that eventually matters ships untested.
+fn engine_with_all_sources(state: skattjakt_rules::SourceState) -> Arc<RuleEngine> {
+    let mut set = RuleEngine::load_embedded().unwrap().set().clone();
+    for source in set.sources.values_mut() {
+        source.retrieval = skattjakt_rules::Retrieval {
+            state,
+            at: Some("2026-08-12T00:00:00+00:00".into()),
+            sha256: match state {
+                skattjakt_rules::SourceState::Verified => Some("a".repeat(64)),
+                _ => None,
+            },
+            note: None,
+        };
+    }
+    Arc::new(RuleEngine::new(set).unwrap())
+}
+
+fn pipeline_with(engine: Arc<RuleEngine>, config: PipelineConfig) -> AnalysisPipeline {
+    AnalysisPipeline::new(
+        engine,
+        Arc::new(skattjakt_gateway::ModelGateway::for_testing(Arc::new(
+            silent_provider(),
+        ))),
+        config,
+    )
+}
+
+#[tokio::test]
+async fn a_rule_whose_sources_were_all_verified_can_reach_identified() {
+    // What the source registry is for. The rules are still unreviewed — no
+    // adviser has signed anything — but every paragraph they cite has been
+    // fetched from the authority that publishes it and found to contain the
+    // words and figures the rule depends on. That is a check anybody can
+    // repeat, which a signature is not.
+    let (result, _) = pipeline_with(
+        engine_with_all_sources(skattjakt_rules::SourceState::Verified),
+        PipelineConfig::default(),
+    )
+    .run(&input(vec![document(INCOME_STATEMENT)]), &SilentObserver)
+    .await
+    .unwrap();
+
+    assert!(
+        result
+            .opportunities
+            .iter()
+            .any(|o| o.status == OpportunityStatus::Identified),
+        "verified sources unlocked nothing"
+    );
+}
+
+#[tokio::test]
+async fn verified_sources_unlock_nothing_when_the_operator_says_they_may_not() {
+    // The flag exists so an operator who wants a human signature and nothing
+    // else can have one. If setting it changed no outcome it would be a comment
+    // rather than a control.
+    let config = PipelineConfig {
+        accept_verified_sources_in_place_of_review: false,
+        ..PipelineConfig::default()
+    };
+    let (result, _) = pipeline_with(
+        engine_with_all_sources(skattjakt_rules::SourceState::Verified),
+        config,
+    )
+    .run(&input(vec![document(INCOME_STATEMENT)]), &SilentObserver)
+    .await
+    .unwrap();
+
+    for opportunity in &result.opportunities {
+        assert_ne!(
+            opportunity.status,
+            OpportunityStatus::Identified,
+            "{} was established without either a review or the flag",
+            opportunity.title
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_source_that_contradicts_the_rule_set_drops_the_finding_to_investigate() {
+    // A mismatch means the verifier fetched the paragraph and it did not say
+    // what the rule assumes: the law moved, or the rule was wrong when written.
+    // This must outrank the flag above — otherwise turning source verification
+    // on would make a known-broken rule *more* trusted than an unchecked one.
+    let config = PipelineConfig {
+        accept_verified_sources_in_place_of_review: true,
+        ..PipelineConfig::default()
+    };
+    let (result, _) = pipeline_with(
+        engine_with_all_sources(skattjakt_rules::SourceState::Mismatch),
+        config,
+    )
+    .run(&input(vec![document(INCOME_STATEMENT)]), &SilentObserver)
+    .await
+    .unwrap();
+
+    assert!(!result.opportunities.is_empty());
+    for opportunity in &result.opportunities {
+        assert!(
+            matches!(
+                opportunity.status,
+                OpportunityStatus::Investigate
+                    | OpportunityStatus::Warning
+                    | OpportunityStatus::Rejected
+            ),
+            "{} survived a source that contradicts it, as {:?}",
+            opportunity.title,
+            opportunity.status
+        );
+    }
+}
+
+#[tokio::test]
+async fn an_unreachable_source_is_treated_as_unchecked_not_as_checked() {
+    // The failure mode this guards: a proxy or an outage makes every fetch
+    // fail, and a verifier that recorded "we tried" as a state adjacent to
+    // success would quietly promote the whole rule set on a bad network day.
+    for state in [
+        skattjakt_rules::SourceState::Unretrieved,
+        skattjakt_rules::SourceState::Unreachable,
+    ] {
+        let (result, _) = pipeline_with(engine_with_all_sources(state), PipelineConfig::default())
+            .run(&input(vec![document(INCOME_STATEMENT)]), &SilentObserver)
+            .await
+            .unwrap();
+
+        for opportunity in &result.opportunities {
+            assert_ne!(
+                opportunity.status,
+                OpportunityStatus::Identified,
+                "{} was established on a source in state {state:?}",
+                opportunity.title
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn every_finding_carries_the_citations_its_rule_rests_on() {
+    // The evidence chain has to name the authorities and how far each was
+    // checked, or a reader has no way to tell a fetched paragraph from a
+    // plausible-looking reference.
+    let (result, _) = pipeline(silent_provider())
+        .run(&input(vec![document(INCOME_STATEMENT)]), &SilentObserver)
+        .await
+        .unwrap();
+
+    assert!(!result.opportunities.is_empty());
+    for opportunity in &result.opportunities {
+        let rules: Vec<&Vec<skattjakt_core::Citation>> = opportunity
+            .evidence
+            .items()
+            .iter()
+            .filter_map(|item| match item {
+                skattjakt_core::EvidenceItem::Rule { citations, .. } => Some(citations),
+                _ => None,
+            })
+            .collect();
+        assert!(!rules.is_empty(), "{} cites no rule", opportunity.title);
+        for citations in rules {
+            assert!(
+                !citations.is_empty(),
+                "{} rests on a rule with no citations",
+                opportunity.title
+            );
+            for citation in citations {
+                assert!(!citation.reference.is_empty());
+                assert!(citation
+                    .url
+                    .as_deref()
+                    .is_some_and(|u| u.starts_with("http")));
+                assert!(!citation.claim.is_empty());
+                // Nothing shipped has been retrieved, and the record says so
+                // rather than leaving the field blank and letting a reader
+                // assume the better answer.
+                assert_eq!(citation.state, "unretrieved");
+                assert!(citation.retrieved_at.is_none());
+            }
+        }
+    }
+}
+
 #[tokio::test]
 async fn every_presented_finding_carries_a_document_value_and_a_rule() {
     let (result, _) = pipeline(silent_provider())

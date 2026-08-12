@@ -347,9 +347,54 @@ async fn the_rule_listing_discloses_which_rules_are_unreviewed() {
         rules.len()
     );
     for rule in rules {
+        let sources = rule["sources"].as_array().unwrap();
         assert!(
-            !rule["source"].as_str().unwrap().is_empty(),
-            "every rule cites a source"
+            !sources.is_empty(),
+            "{} cites no source",
+            rule["rule_id"].as_str().unwrap()
+        );
+        for source in sources {
+            for field in ["id", "reference", "authority", "url", "claim"] {
+                assert!(
+                    !source[field].as_str().unwrap_or_default().is_empty(),
+                    "a source of {} has no {field}",
+                    rule["rule_id"].as_str().unwrap()
+                );
+            }
+            // The state is what a caller decides how much to trust the rule on,
+            // so it has to be a state the caller can interpret rather than a
+            // free-form string, and `verified` has to carry the retrieval that
+            // earned it — a state without a timestamp is a claim, not a check.
+            let state = source["state"].as_str().unwrap();
+            assert!(
+                ["unretrieved", "unreachable", "mismatch", "verified"].contains(&state),
+                "unknown source state {state}"
+            );
+            if state == "verified" {
+                assert!(
+                    source["retrieved_at"].is_string(),
+                    "a source claims verified with no retrieval behind it"
+                );
+            }
+        }
+        // The rule's own state is the weakest of its sources: a rule resting on
+        // one checked paragraph and one unchecked one is unchecked.
+        let weakest = sources
+            .iter()
+            .map(|s| match s["state"].as_str().unwrap() {
+                "unretrieved" => 0,
+                "unreachable" => 1,
+                "mismatch" => 2,
+                _ => 3,
+            })
+            .min()
+            .unwrap();
+        let named = ["unretrieved", "unreachable", "mismatch", "verified"][weakest];
+        assert_eq!(
+            rule["source_state"],
+            named,
+            "{} reports a source state stronger than its sources",
+            rule["rule_id"].as_str().unwrap()
         );
         assert_eq!(rule["reviewed"], false);
     }

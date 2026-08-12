@@ -671,7 +671,22 @@ async fn rules(State(state): State<AppState>, headers: HeaderMap) -> Result<Resp
                 "category": rule.category,
                 "tax_year_from": rule.tax_year_from,
                 "tax_year_to": rule.tax_year_to,
-                "source": rule.source.citation,
+                // Every authority, each with how far it has been checked.
+                // A caller can now ask "which of these rules rest on something
+                // somebody has actually read", which was not a question this
+                // endpoint could answer.
+                "sources": rule.sources.iter().filter_map(|id| {
+                    state.engine.set().source_by_id(id).map(|source| json!({
+                        "id": id,
+                        "reference": source.citation(),
+                        "authority": source.authority,
+                        "url": source.url,
+                        "claim": source.asserted_claim,
+                        "state": source.state().as_str(),
+                        "retrieved_at": source.retrieval.at,
+                    }))
+                }).collect::<Vec<_>>(),
+                "source_state": state.engine.set().source_state_of(rule).as_str(),
                 "reviewed": reviewed,
                 "review_note": note,
             })

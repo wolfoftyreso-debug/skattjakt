@@ -18,10 +18,10 @@ pub mod rule;
 
 pub use condition::{CmpOp, Condition, EvalContext, ProfileFlag, ProfileNumber, Truth};
 pub use engine::{context, RuleEngine, RuleSet, RuleSetError};
-pub use expr::{EvalError, Expr, TaxYearConstants};
+pub use expr::{EvalError, Expr, Parameter, ParameterKind, TaxYearConstants};
 pub use rule::{
-    CalculationInputRecord, CalculationRecord, Exception, ImpactSpec, ReviewState, Rule,
-    RuleEvaluation, RuleOutcome, RuleSource,
+    CalculationInputRecord, CalculationRecord, Exception, ImpactSpec, Retrieval, ReviewState, Rule,
+    RuleEvaluation, RuleOutcome, RuleSource, Source, SourceState,
 };
 
 #[cfg(test)]
@@ -36,19 +36,69 @@ mod embedded_tests {
     }
 
     #[test]
-    fn every_shipped_rule_cites_a_source() {
+    fn every_shipped_rule_cites_a_source_that_exists() {
         let engine = RuleEngine::load_embedded().unwrap();
+        let set = engine.set();
         for rule in engine.rules() {
+            assert!(!rule.sources.is_empty(), "{} cites nothing", rule.rule_id);
+            for id in &rule.sources {
+                let source = set
+                    .source_by_id(id)
+                    .unwrap_or_else(|| panic!("{} cites the unknown source {id}", rule.rule_id));
+                assert!(!source.locator.trim().is_empty(), "{id} has no locator");
+                assert!(
+                    !source.asserted_claim.trim().is_empty(),
+                    "{id} states no claim, so a retrieval has nothing to check"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn every_shipped_figure_cites_a_source_that_exists() {
+        // The change that matters more than the rule citations: twelve numbers
+        // per year used to share one sentence describing where all of them
+        // came from. These are the values the arithmetic multiplies by.
+        let engine = RuleEngine::load_embedded().unwrap();
+        let set = engine.set();
+        for constants in &set.constants {
             assert!(
-                !rule.source.citation.trim().is_empty(),
-                "{} has no citation",
-                rule.rule_id
+                !constants.parameters.is_empty(),
+                "{} has no parameters",
+                constants.tax_year
             );
-            assert!(
-                !rule.source.source_version.trim().is_empty(),
-                "{} has no source version",
-                rule.rule_id
-            );
+            for (name, parameter) in &constants.parameters {
+                assert!(
+                    set.source_by_id(&parameter.source).is_some(),
+                    "the {} parameter {name} cites the unknown source {}",
+                    constants.tax_year,
+                    parameter.source
+                );
+            }
+        }
+    }
+
+    /// The invariant that makes the whole registry worth having.
+    #[test]
+    fn nothing_in_the_shipped_set_claims_to_be_verified() {
+        // Not a permanent property — it is what a retrieval is supposed to
+        // change. It holds today because no source has ever been fetched, and
+        // asserting it here means the day one is, this test fails and somebody
+        // has to look at what changed rather than at a green build.
+        let engine = RuleEngine::load_embedded().unwrap();
+        for (id, source) in &engine.set().sources {
+            match source.state() {
+                SourceState::Verified => panic!(
+                    "{id} claims to be verified. If tools/verify-sources.py actually \
+                     retrieved it, update this test and the documents that say the rule \
+                     set is unsourced — deliberately, together."
+                ),
+                SourceState::Mismatch => panic!(
+                    "{id} was retrieved and contradicted the rule set: {:?}",
+                    source.retrieval.note
+                ),
+                SourceState::Unretrieved | SourceState::Unreachable => {}
+            }
         }
     }
 

@@ -20,25 +20,87 @@ use thiserror::Error;
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct TaxYearConstants {
     pub tax_year: i32,
-    /// Amounts in öre, keyed by name.
+    /// Every figure the rules use for this year, each with its own citation.
+    ///
+    /// This used to be two untyped maps plus one free-text sentence describing
+    /// where *all* of them came from. Twelve numbers with a dozen different
+    /// origins — a tax rate from the Income Tax Act, a base amount fixed
+    /// annually by the government, a VAT treatment from a Skatteverket
+    /// position — shared one sentence, so "where does 20.6 % come from" had no
+    /// answer distinct from "where does prisbasbeloppet come from". A number
+    /// whose provenance cannot be stated on its own is a number nobody can
+    /// check, and these numbers are what the arithmetic actually multiplies by.
     #[serde(default)]
-    pub amounts: BTreeMap<String, i64>,
-    /// Rates in basis points (1 bp = 0.01 %), keyed by name.
-    #[serde(default)]
-    pub rates_bp: BTreeMap<String, i64>,
-    /// Free-text note on where the figures come from and what still needs
-    /// checking. Surfaced rather than hidden.
-    #[serde(default)]
+    pub parameters: BTreeMap<String, Parameter>,
+}
+
+/// One figure, and where it comes from.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Parameter {
+    pub kind: ParameterKind,
+    /// Öre for an amount, basis points for a rate. Integers throughout: a rate
+    /// of 20.6 % is 2060 bp, so no percentage is ever a float.
+    pub value: i64,
+    /// A key into the rule set's source registry.
     pub source: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ParameterKind {
+    AmountOre,
+    RateBp,
 }
 
 impl TaxYearConstants {
     pub fn amount(&self, name: &str) -> Option<Money> {
-        self.amounts.get(name).copied().map(Money::from_ore)
+        self.parameters
+            .get(name)
+            .filter(|p| p.kind == ParameterKind::AmountOre)
+            .map(|p| Money::from_ore(p.value))
     }
 
     pub fn rate_bp(&self, name: &str) -> Option<i64> {
-        self.rates_bp.get(name).copied()
+        self.parameters
+            .get(name)
+            .filter(|p| p.kind == ParameterKind::RateBp)
+            .map(|p| p.value)
+    }
+
+    /// Which source a figure comes from. The question that could not be asked
+    /// before.
+    pub fn source_of(&self, name: &str) -> Option<&str> {
+        self.parameters.get(name).map(|p| p.source.as_str())
+    }
+
+    /// Records a rate and the source it comes from.
+    ///
+    /// The source is a required argument rather than an optional one, in
+    /// fixtures as much as in the rule set. A constructor that let a figure in
+    /// without saying where it came from is how the untraceable numbers got
+    /// there in the first place.
+    pub fn with_rate(mut self, name: &str, basis_points: i64, source: &str) -> Self {
+        self.parameters.insert(
+            name.to_string(),
+            Parameter {
+                kind: ParameterKind::RateBp,
+                value: basis_points,
+                source: source.to_string(),
+            },
+        );
+        self
+    }
+
+    pub fn with_amount(mut self, name: &str, ore: i64, source: &str) -> Self {
+        self.parameters.insert(
+            name.to_string(),
+            Parameter {
+                kind: ParameterKind::AmountOre,
+                value: ore,
+                source: source.to_string(),
+            },
+        );
+        self
     }
 }
 
@@ -228,13 +290,12 @@ mod tests {
     };
 
     fn constants() -> TaxYearConstants {
-        let mut c = TaxYearConstants {
+        TaxYearConstants {
             tax_year: 2025,
             ..Default::default()
-        };
-        c.amounts.insert("prisbasbelopp".into(), 5_880_000); // 58 800 kr
-        c.rates_bp.insert("corporate_tax".into(), 2060); // 20.6 %
-        c
+        }
+        .with_amount("prisbasbelopp", 5_880_000, "sfb-2-6") // 58 800 kr
+        .with_rate("corporate_tax", 2060, "il-65-10") // 20.6 %
     }
 
     fn facts(pairs: &[(FactKind, i64)]) -> FactSet {

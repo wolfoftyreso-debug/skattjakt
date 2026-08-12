@@ -275,6 +275,82 @@ else
     fail "the documents disagree with the rule set's review state"
 fi
 
+# --- the source registry matches what the documents claim ------------------
+#
+# The review gate above is now satisfiable a second way: every cited source
+# verified. So the documents' claim about retrieval state is load-bearing in
+# the same way the review claim is, and needs the same tie to the data.
+#
+# This also catches the drift the review check cannot: a rule or a figure that
+# cites an id nobody put in the registry. `RuleEngine::validate` rejects that at
+# startup, but the docs quote a source count, and a count that stops matching is
+# how a document starts describing a system that no longer exists.
+
+echo
+echo "the source registry"
+if python3 - <<'PYTHON'
+import json
+import re
+import sys
+
+data = json.load(open("rules/se-ruleset.json"))
+registry = data["sources"]
+rules = data["rules"]
+
+problems = []
+
+cited = {s for rule in rules for s in rule.get("sources", [])}
+for constants in data["constants"]:
+    cited |= {p["source"] for p in constants["parameters"].values()}
+unknown = cited - set(registry)
+if unknown:
+    problems.append(f"cited but not in the registry: {sorted(unknown)}")
+orphaned = set(registry) - cited
+if orphaned:
+    problems.append(f"in the registry but cited by nothing: {sorted(orphaned)}")
+
+for rule in rules:
+    if not rule.get("sources"):
+        problems.append(f"{rule['rule_id']} cites no source")
+
+states = {key: source["retrieval"]["state"] for key, source in registry.items()}
+for key, state in states.items():
+    if state == "verified":
+        record = registry[key]["retrieval"]
+        if not record.get("sha256") or not record.get("at"):
+            problems.append(f"{key} claims verified without a hash and a timestamp")
+
+# Collapsed, because the document is hard-wrapped and a claim that happens to
+# straddle a line break is the same claim.
+docs = re.sub(r"\s+", " ", open("docs/SKATTJAKT_RULE_ENGINE.md").read())
+distinct = set(states.values())
+count = len(registry)
+
+# The headline claim in the document, and the number beside it.
+claims_none_retrieved = "No source in the registry has been retrieved" in docs
+if distinct == {"unretrieved"}:
+    if not claims_none_retrieved:
+        problems.append("nothing has been retrieved but the documents no longer say so")
+    if f"all {count} sit at `unretrieved`" not in docs:
+        problems.append(f"the documents do not state the registry's size as {count}")
+    if f"0 verified, 0 mismatched, {count} unretrieved" not in docs:
+        problems.append("the documents' current-state line does not match the registry")
+elif claims_none_retrieved:
+    problems.append(f"sources now carry {sorted(distinct)}, but the documents say none were retrieved")
+
+if problems:
+    for problem in problems:
+        print(f"        {problem}")
+    sys.exit(1)
+
+print(f"        {count} sources, all cited, states {sorted(distinct)}, and the documents agree")
+PYTHON
+then
+    pass "the documents agree with the source registry"
+else
+    fail "the documents disagree with the source registry"
+fi
+
 echo
 echo "passed $passed, failed $failed"
 [[ "$failed" -eq 0 ]] || exit 1

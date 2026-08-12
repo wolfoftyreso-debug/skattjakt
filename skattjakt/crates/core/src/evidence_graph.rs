@@ -337,6 +337,7 @@ mod tests {
             excerpt: None,
         });
         chain.push(EvidenceItem::Rule {
+            citations: Vec::new(),
             rule_id: "se.test.rule".into(),
             rule_version: rule_version.into(),
             title: "t".into(),

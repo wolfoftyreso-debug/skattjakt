@@ -25,6 +25,129 @@ pub struct RuleSource {
     pub url: Option<String>,
 }
 
+/// How far a citation has been checked against the thing it cites.
+///
+/// The distinction this enum exists to make: naming a source and having read
+/// it are different, and only the second is evidence. Every rule in this set
+/// cited a statute from the day it was written; not one of those citations had
+/// been fetched, so "cited" meant only that somebody had typed a chapter and a
+/// paragraph.
+///
+/// `Verified` is granted **only** by `tools/verify-sources.py`, which fetches
+/// the document and records a hash of what it read. The rule set is rejected at
+/// load if anything claims `Verified` without one, so the state cannot be
+/// awarded by editing a file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SourceState {
+    /// Cited, never fetched. The citation is a claim about where to look.
+    Unretrieved,
+    /// The fetch failed. Says nothing about the law, only about the network.
+    Unreachable,
+    /// Fetched, and it did **not** say what the rule assumed. The loudest of
+    /// the four: either the law moved or the rule was wrong when written.
+    Mismatch,
+    /// Fetched, and the document, the paragraph and the operative figures were
+    /// all found in it.
+    Verified,
+}
+
+impl SourceState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SourceState::Unretrieved => "unretrieved",
+            SourceState::Unreachable => "unreachable",
+            SourceState::Mismatch => "mismatch",
+            SourceState::Verified => "verified",
+        }
+    }
+}
+
+/// What a retrieval recorded.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Retrieval {
+    #[serde(default = "unretrieved")]
+    pub state: SourceState,
+    /// When the document was read.
+    #[serde(default)]
+    pub at: Option<String>,
+    /// SHA-256 of the text that was read, so a later retrieval can tell that
+    /// the source changed rather than only that it still verifies.
+    #[serde(default)]
+    pub sha256: Option<String>,
+    #[serde(default)]
+    pub note: Option<String>,
+}
+
+fn unretrieved() -> SourceState {
+    SourceState::Unretrieved
+}
+
+/// One citable authority: a paragraph of statute, or a published position.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Source {
+    pub authority: String,
+    pub collection: String,
+    /// The identifier within the collection — an SFS number, for instance.
+    pub document: String,
+    pub title: String,
+    /// Which part of it: `30 kap. 5 §`.
+    pub locator: String,
+    #[serde(default)]
+    pub url: Option<String>,
+    /// A machine-readable rendering of the same document, where one exists.
+    #[serde(default)]
+    pub machine_url: Option<String>,
+    /// What the rule set assumes this source says. An assertion to be tested,
+    /// never a quotation: nothing here was copied from the source, because
+    /// nothing here has read it.
+    pub asserted_claim: String,
+    /// The operative words and figures a retrieval must find. This is what
+    /// turns "the paragraph exists" into "the paragraph still says 25 per
+    /// cent" — the second is what the arithmetic depends on.
+    #[serde(default)]
+    pub must_contain: Vec<String>,
+    #[serde(default = "default_retrieval")]
+    pub retrieval: Retrieval,
+}
+
+fn default_retrieval() -> Retrieval {
+    Retrieval {
+        state: SourceState::Unretrieved,
+        at: None,
+        sha256: None,
+        note: None,
+    }
+}
+
+impl Source {
+    /// A source for a fixture: cited, never retrieved, which is the state
+    /// every real source in the shipped set is also in.
+    pub fn fixture(title: &str, locator: &str, claim: &str) -> Self {
+        Self {
+            authority: "fixture".into(),
+            collection: "fixture".into(),
+            document: "0000:0".into(),
+            title: title.into(),
+            locator: locator.into(),
+            url: None,
+            machine_url: None,
+            asserted_claim: claim.into(),
+            must_contain: Vec::new(),
+            retrieval: default_retrieval(),
+        }
+    }
+
+    pub fn state(&self) -> SourceState {
+        self.retrieval.state
+    }
+
+    /// A citation as a person would write it.
+    pub fn citation(&self) -> String {
+        format!("{} {}", self.title, self.locator)
+    }
+}
+
 /// Whether a qualified person has checked this rule against the current law.
 ///
 /// This exists because the rule set in this repository was drafted by a
@@ -134,7 +257,14 @@ pub struct Rule {
     /// The next step, written as a question to put to the accountant.
     pub recommended_action: String,
 
-    pub source: RuleSource,
+    /// Keys into the rule set's source registry.
+    ///
+    /// A list rather than one citation, because a rule usually rests on more
+    /// than one paragraph and the weakest of them is what bounds the whole
+    /// rule. Previously this was a single sentence naming several paragraphs,
+    /// which could not be checked one at a time and so was never checked.
+    #[serde(default)]
+    pub sources: Vec<String>,
     pub review: ReviewState,
 
     pub effort: InvestigationEffort,
@@ -259,11 +389,7 @@ mod tests {
             required_evidence: vec![],
             missing_information_hints: vec![],
             recommended_action: "a".into(),
-            source: RuleSource {
-                citation: "c".into(),
-                source_version: "v".into(),
-                url: None,
-            },
+            sources: vec!["il-30-5".into()],
             review: ReviewState::AwaitingProfessionalReview {
                 note: String::new(),
             },

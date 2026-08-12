@@ -14,6 +14,7 @@ use crate::condition::{EvalContext, Truth};
 use crate::expr::{EvalError, Expr, TaxYearConstants};
 use crate::rule::{
     CalculationInputRecord, CalculationRecord, ImpactSpec, Rule, RuleEvaluation, RuleOutcome,
+    Source, SourceState,
 };
 
 /// A versioned set of rules plus the per-year constants they reference.
@@ -24,7 +25,35 @@ pub struct RuleSet {
     pub jurisdiction: String,
     #[serde(default)]
     pub constants: Vec<TaxYearConstants>,
+    /// Every authority the rules and the figures cite, keyed by id.
+    #[serde(default)]
+    pub sources: BTreeMap<String, Source>,
     pub rules: Vec<Rule>,
+}
+
+impl RuleSet {
+    pub fn source_by_id(&self, id: &str) -> Option<&Source> {
+        self.sources.get(id)
+    }
+
+    /// The weakest state among a rule's sources.
+    ///
+    /// The weakest rather than the best, and rather than an average: a rule
+    /// resting on two paragraphs is only as checked as the less checked of
+    /// them, and reporting the stronger one would describe the rule as better
+    /// established than it is.
+    pub fn source_state_of(&self, rule: &Rule) -> SourceState {
+        rule.sources
+            .iter()
+            .map(|id| {
+                self.sources
+                    .get(id)
+                    .map(Source::state)
+                    .unwrap_or(SourceState::Unretrieved)
+            })
+            .min()
+            .unwrap_or(SourceState::Unretrieved)
+    }
 }
 
 #[derive(Debug, Error)]
@@ -95,6 +124,11 @@ impl RuleEngine {
     /// Structural problems that make the set unsafe to run: duplicate ids,
     /// names that do not resolve, impossible year windows. Checked at load so a
     /// broken rule never reaches an analysis.
+    /// The rule set this engine was built from, including its source registry.
+    pub fn set(&self) -> &RuleSet {
+        &self.set
+    }
+
     pub fn validate(&self) -> Vec<String> {
         let mut problems = Vec::new();
         let mut seen: BTreeMap<&str, usize> = BTreeMap::new();
@@ -125,11 +159,19 @@ impl RuleEngine {
                 ));
             }
 
-            if rule.source.citation.trim().is_empty() {
+            if rule.sources.is_empty() {
                 problems.push(format!(
-                    "{}: a rule must carry a source citation",
+                    "{}: a rule must cite at least one source",
                     rule.rule_id
                 ));
+            }
+            for id in &rule.sources {
+                if !self.set.sources.contains_key(id) {
+                    problems.push(format!(
+                        "{}: cites the source {id:?}, which is not in the registry",
+                        rule.rule_id
+                    ));
+                }
             }
 
             // Every year the rule claims to cover must have constants that
@@ -158,6 +200,50 @@ impl RuleEngine {
         for (id, count) in seen {
             if count > 1 {
                 problems.push(format!("duplicate rule_id `{id}` appears {count} times"));
+            }
+        }
+
+        // --- the source registry -------------------------------------------
+        //
+        // The invariant that makes `verified` mean something: it is granted by
+        // a retrieval that recorded a hash of what it read, and by nothing
+        // else. Without this, the state is a word in a file — and a word in a
+        // file is exactly the kind of assurance this registry exists to
+        // replace.
+        for (id, source) in &self.set.sources {
+            if source.state() == SourceState::Verified {
+                if source.retrieval.sha256.as_deref().unwrap_or("").is_empty() {
+                    problems.push(format!(
+                        "source `{id}` claims to be verified with no hash of what was read; \
+                         only tools/verify-sources.py may grant that state"
+                    ));
+                }
+                if source.retrieval.at.as_deref().unwrap_or("").is_empty() {
+                    problems.push(format!(
+                        "source `{id}` claims to be verified with no retrieval timestamp"
+                    ));
+                }
+            }
+            if source.asserted_claim.trim().is_empty() {
+                problems.push(format!(
+                    "source `{id}` states no claim, so a retrieval has nothing to check"
+                ));
+            }
+            if source.locator.trim().is_empty() {
+                problems.push(format!("source `{id}` has no locator"));
+            }
+        }
+
+        // Every figure the rules multiply by must name where it comes from.
+        for constants in &self.set.constants {
+            for (name, parameter) in &constants.parameters {
+                if !self.set.sources.contains_key(&parameter.source) {
+                    problems.push(format!(
+                        "the {} parameter `{name}` cites the source `{}`, which is not in \
+                         the registry",
+                        constants.tax_year, parameter.source
+                    ));
+                }
             }
         }
 
@@ -406,7 +492,7 @@ pub fn context<'a>(
 mod tests {
     use super::*;
     use crate::condition::{CmpOp, Condition};
-    use crate::rule::{Exception, ReviewState, RuleSource};
+    use crate::rule::{Exception, Retrieval, ReviewState};
     use skattjakt_core::document::AccountsState;
     use skattjakt_core::{
         CompanyId, CompanyProfile, DocumentVersionId, FactSet, FinancialFact, FinancialFactId,
@@ -415,13 +501,41 @@ mod tests {
     };
 
     fn constants(year: i32) -> TaxYearConstants {
-        let mut c = TaxYearConstants {
+        TaxYearConstants {
             tax_year: year,
             ..Default::default()
-        };
-        c.rates_bp.insert("corporate_tax".into(), 2060);
-        c.amounts.insert("prisbasbelopp".into(), 5_880_000);
-        c
+        }
+        .with_rate("corporate_tax", 2060, "il-65-10")
+        .with_amount("prisbasbelopp", 5_880_000, "sfb-2-6")
+    }
+
+    /// The registry the fixtures cite. Every id used above appears here, for
+    /// the same reason the real set is validated: a citation to nothing is
+    /// what this whole change exists to make impossible.
+    fn sources() -> BTreeMap<String, Source> {
+        [
+            (
+                "il-65-10",
+                "Inkomstskattelag (1999:1229)",
+                "65 kap. 10 §",
+                "Statlig inkomstskatt för juridiska personer är 20,6 procent.",
+            ),
+            (
+                "il-30-5",
+                "Inkomstskattelag (1999:1229)",
+                "30 kap. 5 §",
+                "Avdrag för avsättning till periodiseringsfond med högst 25 procent.",
+            ),
+            (
+                "sfb-2-6",
+                "Socialförsäkringsbalk (2010:110)",
+                "2 kap. 6 §",
+                "Prisbasbeloppet fastställs av regeringen.",
+            ),
+        ]
+        .into_iter()
+        .map(|(id, title, locator, claim)| (id.to_string(), Source::fixture(title, locator, claim)))
+        .collect()
     }
 
     fn profile() -> CompanyProfile {
@@ -492,11 +606,7 @@ mod tests {
             required_evidence: vec![FactKind::TaxableResult],
             missing_information_hints: vec![],
             recommended_action: "Fråga redovisningskonsulten.".into(),
-            source: RuleSource {
-                citation: "IL 30 kap.".into(),
-                source_version: "2025".into(),
-                url: None,
-            },
+            sources: vec!["il-30-5".into()],
             review: ReviewState::AwaitingProfessionalReview {
                 note: String::new(),
             },
@@ -512,6 +622,7 @@ mod tests {
             version: "test.1".into(),
             jurisdiction: "SE".into(),
             constants: vec![constants(2025)],
+            sources: sources(),
             rules,
         })
         .expect("test rule set should be valid")
@@ -677,6 +788,7 @@ mod tests {
             version: "v".into(),
             jurisdiction: "SE".into(),
             constants: vec![constants(2025)],
+            sources: sources(),
             rules: vec![test_rule(), test_rule()],
         })
         .unwrap_err();
@@ -686,15 +798,94 @@ mod tests {
     #[test]
     fn a_rule_without_a_citation_is_rejected_at_load() {
         let mut rule = test_rule();
-        rule.source.citation = "  ".into();
+        rule.sources.clear();
         let err = RuleEngine::new(RuleSet {
             version: "v".into(),
             jurisdiction: "SE".into(),
             constants: vec![constants(2025)],
+            sources: sources(),
             rules: vec![rule],
         })
         .unwrap_err();
-        assert!(err.to_string().contains("source citation"));
+        assert!(err.to_string().contains("cite at least one source"));
+    }
+
+    #[test]
+    fn a_rule_citing_a_source_that_does_not_exist_is_rejected_at_load() {
+        // The failure the old free-text citation could not have: a string
+        // naming a paragraph was always "valid", whatever it named.
+        let mut rule = test_rule();
+        rule.sources = vec!["il-99-99".into()];
+        let err = RuleEngine::new(RuleSet {
+            version: "v".into(),
+            jurisdiction: "SE".into(),
+            constants: vec![constants(2025)],
+            sources: sources(),
+            rules: vec![rule],
+        })
+        .unwrap_err();
+        assert!(err.to_string().contains("not in the registry"), "{err}");
+    }
+
+    /// The invariant the whole registry rests on.
+    #[test]
+    fn a_source_cannot_claim_to_be_verified_without_a_retrieval() {
+        let mut registry = sources();
+        let forged = registry.get_mut("il-30-5").unwrap();
+        forged.retrieval.state = SourceState::Verified;
+
+        let err = RuleEngine::new(RuleSet {
+            version: "v".into(),
+            jurisdiction: "SE".into(),
+            constants: vec![constants(2025)],
+            sources: registry,
+            rules: vec![test_rule()],
+        })
+        .unwrap_err();
+        assert!(
+            err.to_string().contains("no hash of what was read"),
+            "editing a file must not be able to grant the verified state: {err}"
+        );
+    }
+
+    #[test]
+    fn a_parameter_citing_an_unknown_source_is_rejected_at_load() {
+        // Every figure the arithmetic multiplies by has to name where it came
+        // from, and the name has to resolve.
+        let constants = constants(2025).with_rate("invented", 1234, "does-not-exist");
+        let err = RuleEngine::new(RuleSet {
+            version: "v".into(),
+            jurisdiction: "SE".into(),
+            constants: vec![constants],
+            sources: sources(),
+            rules: vec![test_rule()],
+        })
+        .unwrap_err();
+        assert!(err.to_string().contains("not in the registry"), "{err}");
+    }
+
+    #[test]
+    fn a_rules_source_state_is_the_weakest_of_its_sources() {
+        let mut registry = sources();
+        registry.get_mut("il-30-5").unwrap().retrieval = Retrieval {
+            state: SourceState::Verified,
+            at: Some("2026-08-12T00:00:00+00:00".into()),
+            sha256: Some("a".repeat(64)),
+            note: None,
+        };
+        let mut rule = test_rule();
+        rule.sources = vec!["il-30-5".into(), "il-65-10".into()];
+
+        let set = RuleSet {
+            version: "v".into(),
+            jurisdiction: "SE".into(),
+            constants: vec![constants(2025)],
+            sources: registry,
+            rules: vec![rule.clone()],
+        };
+        // One verified, one never retrieved: the rule is as checked as the
+        // less checked of them, not as the better one.
+        assert_eq!(set.source_state_of(&rule), SourceState::Unretrieved);
     }
 
     #[test]
@@ -713,6 +904,7 @@ mod tests {
             version: "v".into(),
             jurisdiction: "SE".into(),
             constants: vec![constants(2025)],
+            sources: sources(),
             rules: vec![rule],
         })
         .unwrap_err();
@@ -728,6 +920,7 @@ mod tests {
             version: "v".into(),
             jurisdiction: "SE".into(),
             constants: vec![constants(2025)],
+            sources: sources(),
             rules: vec![rule],
         })
         .unwrap_err();
