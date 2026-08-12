@@ -99,6 +99,7 @@
   .error { border-left-color: #b3452f; }
   footer { border-top: 1px solid var(--border); margin-top: 3rem; padding-top: 1.2rem; font-size: .78rem; color: var(--muted); }
   footer details summary { color: var(--muted); }
+  .hint { color: var(--muted); font-size: .82rem; margin-top: 1rem; }
   .hidden { display: none; }
 </style>
 </head>
@@ -118,12 +119,22 @@
     redovisningskonsult innan du agerar på något av det.
   </div>
 
-  <label for="token">API-token</label>
-  <input id="token" type="password" autocomplete="off" placeholder="Bearer-token för /v1">
+  <label for="email">E-postadress</label>
+  <input id="email" type="email" autocomplete="username" placeholder="du@ditt-bolag.se">
+
+  <label for="password">Lösenord</label>
+  <input id="password" type="password" autocomplete="current-password">
+
+  <p id="signin-error" class="notice error" hidden></p>
 
   <div class="actions">
-    <button onclick="go('company')">Börja Skattjakten</button>
+    <button id="signin-button" onclick="signIn()">Logga in</button>
   </div>
+
+  <p class="hint">
+    Din session ligger i en cookie som skript inte kan läsa, och den upphör
+    automatiskt. Du loggas ut från alla enheter om du byter lösenord.
+  </p>
 </section>
 
 <!-- FÖRETAG -->
@@ -293,6 +304,133 @@ function go(id) {
 }
 
 const el = id => document.getElementById(id);
+
+/* The headers every call carries.
+ *
+ * There is no token here, deliberately. The session lives in an HttpOnly
+ * cookie the browser attaches on its own and this script cannot read — so an
+ * XSS on this page cannot steal a credential and use it later from elsewhere.
+ *
+ * `x-skattjakt-client` is not decoration. The server refuses to honour the
+ * cookie without it, which is what stops another site causing an authenticated
+ * request: a cross-origin request cannot set a custom header without a CORS
+ * preflight this API never grants. */
+function authHeaders() {
+  return {
+    "content-type": "application/json",
+    "x-skattjakt-client": "web",
+  };
+}
+
+async function signIn() {
+  const button = el("signin-button");
+  const error = el("signin-error");
+  error.hidden = true;
+  button.disabled = true;
+  button.textContent = "Loggar in…";
+
+  try {
+    const response = await fetch("/v1/auth/sign-in", {
+      method: "POST",
+      headers: authHeaders(),
+      /* `same-origin` is the default, and stating it is the point: the cookie
+       * the server sets must be accepted, and a future change to `omit` would
+       * break sign-in in a way that reads like a server fault. */
+      credentials: "same-origin",
+      body: JSON.stringify({
+        email: el("email").value.trim(),
+        password: el("password").value,
+        install_id: installId(),
+        device_name: "Webbläsare",
+      }),
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      /* Branch on `code`, never on `detail`: `detail` is prose written for a
+       * person and will be translated. */
+      error.textContent = payload.code === "account_temporarily_locked"
+        ? "För många misslyckade försök. Försök igen om en stund."
+        : "Fel e-postadress eller lösenord.";
+      error.hidden = false;
+      return;
+    }
+
+    /* The password is not kept anywhere, not even in the field. */
+    el("password").value = "";
+    go("company");
+  } catch (e) {
+    error.textContent = "Kunde inte nå tjänsten.";
+    error.hidden = false;
+  } finally {
+    button.disabled = false;
+    button.textContent = "Logga in";
+  }
+}
+
+/* A stable identifier for this browser installation, so signing in again does
+ * not add a second row to the customer's device list. Not a security boundary:
+ * it is client-supplied and scoped to the user by the server. */
+function installId() {
+  let id = localStorage.getItem("skattjakt.install_id");
+  if (!id) {
+    id = crypto.randomUUID();
+    localStorage.setItem("skattjakt.install_id", id);
+  }
+  return id;
+}
+
+/* One refresh at a time.
+ *
+ * Five concurrent 401s must not become five refreshes: the server rotates on
+ * each, so four of them would look like a replayed token and the whole session
+ * family would be revoked — signing the customer out for being on a slow
+ * connection. */
+let refreshInFlight = null;
+
+async function refreshSession() {
+  if (!refreshInFlight) {
+    refreshInFlight = fetch("/v1/auth/refresh", {
+      method: "POST",
+      headers: authHeaders(),
+      credentials: "same-origin",
+    }).finally(() => { refreshInFlight = null; });
+  }
+  return refreshInFlight;
+}
+
+/* A fetch that refreshes once on a 401 and gives up after that.
+ *
+ * Once, not in a loop: if the refresh itself fails the session is gone, and
+ * retrying would spin against a server that has already said no. */
+async function authedFetch(path, options = {}) {
+  const request = () => fetch(path, {
+    ...options,
+    headers: { ...authHeaders(), ...(options.headers ?? {}) },
+    credentials: "same-origin",
+  });
+
+  let response = await request();
+  if (response.status === 401) {
+    const refreshed = await refreshSession();
+    if (refreshed.ok) {
+      response = await request();
+    } else {
+      go("start");
+      return response;
+    }
+  }
+  return response;
+}
+
+async function signOut() {
+  await fetch("/v1/auth/sign-out", {
+    method: "POST",
+    headers: authHeaders(),
+    credentials: "same-origin",
+  }).catch(() => {});
+  go("start");
+}
 const tri = id => { const v = el(id).value; return v === "" ? null : v === "true"; };
 
 /** Öre to Swedish kronor, grouped. Money crosses the wire as an integer. */
@@ -371,12 +509,8 @@ async function analyse() {
   }, 260);
 
   try {
-    const response = await fetch("/v1/analyses", {
+    const response = await authedFetch("/v1/analyses", {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "authorization": `Bearer ${el("token").value}`,
-      },
       body: JSON.stringify(body),
     });
     clearInterval(ticker);

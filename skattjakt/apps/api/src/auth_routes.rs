@@ -48,17 +48,55 @@ fn client_kind(headers: &HeaderMap) -> ClientKind {
         .unwrap_or(ClientKind::Web)
 }
 
-fn session_body(issued: &IssuedSession) -> serde_json::Value {
-    json!({
-        "access_token": issued.access_token.expose(),
-        "token_type": "Bearer",
+/// The response body for an issued session.
+///
+/// **A web client is not given its tokens.** They go into `HttpOnly` cookies
+/// instead, and the body says so. Returning them as well would defeat the
+/// point: the reason for the cookie is that script cannot read the credential,
+/// and a copy in the JSON is a copy script can read and store.
+///
+/// A native client gets the tokens in the body, because it has the Keychain or
+/// the Keystore — a better place than a cookie jar — and a native client
+/// handling `Set-Cookie` is a native client reimplementing a browser.
+fn session_body(issued: &IssuedSession, client: ClientKind) -> serde_json::Value {
+    let mut body = json!({
         "expires_at": issued.access_expires_at,
-        "refresh_token": issued.refresh_token.expose(),
         "refresh_expires_at": issued.refresh_expires_at,
         "company_id": issued.company_id,
         "role": issued.role.as_str(),
         "device_id": issued.device_id,
-    })
+    });
+
+    if client == ClientKind::Web {
+        body["auth"] = json!("cookie");
+    } else {
+        body["auth"] = json!("bearer");
+        body["token_type"] = json!("Bearer");
+        body["access_token"] = json!(issued.access_token.expose());
+        body["refresh_token"] = json!(issued.refresh_token.expose());
+    }
+    body
+}
+
+/// Builds the response, attaching cookies for a web client.
+fn session_response(
+    issued: &IssuedSession,
+    client: ClientKind,
+    status: StatusCode,
+) -> Result<Response, Problem> {
+    let mut response = (status, Json(session_body(issued, client))).into_response();
+    if client == ClientKind::Web {
+        crate::cookies::apply(
+            response.headers_mut(),
+            crate::cookies::issue(
+                issued.access_token.expose(),
+                issued.access_expires_at,
+                issued.refresh_token.expose(),
+                issued.refresh_expires_at,
+            ),
+        );
+    }
+    Ok(response)
 }
 
 #[derive(Debug, Deserialize)]
@@ -118,7 +156,7 @@ pub async fn sign_in(
                     .enumerated("client", client.as_str())
                     .enumerated("outcome", "succeeded"),
             );
-            Ok((StatusCode::CREATED, Json(session_body(&issued))).into_response())
+            session_response(&issued, client, StatusCode::CREATED)
         }
         Err(SignInError::Locked { until }) => {
             state.metrics.increment(
@@ -182,12 +220,38 @@ pub struct RefreshRequest {
 pub async fn refresh(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(request): Json<RefreshRequest>,
+    body: Option<Json<RefreshRequest>>,
 ) -> Result<Response, Problem> {
     let store = crate::routes::store(&state)?;
 
+    // How the answer is delivered follows how the token *arrived*, not a
+    // header. `client_kind` defaults to web when the header is absent, and a
+    // native client that forgot to send it would be handed cookies it cannot
+    // use — a failure that looks like the refresh being broken. Presenting the
+    // token in the body is a statement that the caller can hold it.
+    let from_cookie = crate::cookies::refresh_token(&headers);
+    let client = if from_cookie.is_some() {
+        ClientKind::Web
+    } else {
+        match client_kind(&headers) {
+            // A body-presented token from something calling itself a browser
+            // is still answered in the body: it demonstrably holds the token
+            // already, so withholding the next one would only break it.
+            ClientKind::Web => ClientKind::Ios,
+            other => other,
+        }
+    };
+
+    let presented = from_cookie
+        .or_else(|| body.map(|Json(b)| b.refresh_token))
+        .ok_or_else(|| Problem {
+            status: StatusCode::UNAUTHORIZED,
+            title: "the session cannot be refreshed".into(),
+            detail: "sign in again".into(),
+        })?;
+
     match store
-        .refresh_session(&request.refresh_token, hash_ip(&headers).as_deref())
+        .refresh_session(&presented, hash_ip(&headers).as_deref())
         .await
     {
         Ok(Some(issued)) => {
@@ -195,7 +259,7 @@ pub async fn refresh(
                 names::SESSION_REFRESHES,
                 LabelSet::new().enumerated("outcome", "rotated"),
             );
-            Ok(Json(session_body(&issued)).into_response())
+            session_response(&issued, client, StatusCode::OK)
         }
         Ok(None) => {
             // Expired, revoked, unknown and reuse-detected all answer the same
@@ -206,11 +270,17 @@ pub async fn refresh(
                 names::SESSION_REFRESHES,
                 LabelSet::new().enumerated("outcome", "rejected"),
             );
-            Err(Problem {
+            // The cookies are cleared on the way out. Leaving a dead refresh
+            // cookie in the browser means every later request carries a
+            // credential that cannot work, and the client loops.
+            let mut response = Problem {
                 status: StatusCode::UNAUTHORIZED,
                 title: "the session cannot be refreshed".into(),
                 detail: "sign in again".into(),
-            })
+            }
+            .into_response();
+            crate::cookies::apply(response.headers_mut(), crate::cookies::clear());
+            Ok(response)
         }
         Err(e) => Err(internal(e)),
     }
@@ -239,7 +309,9 @@ pub async fn sign_out(
         .await
         .map_err(internal)?;
 
-    Ok(StatusCode::NO_CONTENT.into_response())
+    let mut response = StatusCode::NO_CONTENT.into_response();
+    crate::cookies::apply(response.headers_mut(), crate::cookies::clear());
+    Ok(response)
 }
 
 /// `POST /v1/auth/sign-out-everywhere`

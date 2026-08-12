@@ -58,7 +58,7 @@ building it — not rewriting the core (§32, §36).
 
 | Component | Required now | Architecture ready | Implemented | Tested | Production ready |
 |---|---|---|---|---|---|
-| **Web** | ✓ | ✓ | ✓ beta interface | ✓ e2e through a browser | ◐ see §4 below |
+| **Web** | ✓ | ✓ | ✓ beta interface, cookie sessions | ✓ e2e + 17 cookie/CSRF checks | ◐ see §4 below |
 | **Apple / iOS** | — | ✓ | — deliberately not | — | — |
 | **Android** | — | ✓ | — deliberately not | — | — |
 | **API** | ✓ | ✓ | ✓ 23 paths | ✓ contract + live suites | ✓ |
@@ -115,8 +115,6 @@ from.
 The beta interface is real, driven end to end, and served by the build. It is
 not a finished production web application:
 
-- It authenticates with the company token, not a session. The session surface
-  exists and is tested; the interface has not been moved onto it.
 - No offline or degraded state beyond an error message.
 - Accessibility has not been audited against WCAG.
 - No client-side telemetry.
@@ -131,8 +129,8 @@ different columns for a reason.
 Verified in this environment, in this session:
 
 ```
-474 unit and integration tests          golden dataset  precision 1.000 recall 1.000
- 44 session checks (live API)            10 tenant isolation checks (real Postgres)
+483 unit and integration tests          golden dataset  precision 1.000 recall 1.000
+ 61 session checks (live API)            10 tenant isolation checks (real Postgres)
  39 security checks (live API)           24 failure-injection checks (real Postgres)
  20 end-to-end product steps              5 S3 checks against a real MinIO
  20 end-to-end steps again, on S3        15 notification checks (real SMTP)
@@ -171,10 +169,13 @@ Not verified, and not claimed:
 3. ~~The OTLP exporter.~~ **Done.** Spans leave both processes and a trace
    started by an HTTP request continues into the worker across the queue —
    asserted against a real collector, not inferred.
-4. Move the web interface onto sessions, and retire the company token for
-   human access — keeping it for integrations. **Now the top item.**
+4. ~~Move the web interface onto sessions.~~ **Done.** Email and password,
+   `HttpOnly` `SameSite=Strict` cookies, and a CSRF defence that requires a
+   custom header the browser will not send cross-origin. The company token
+   remains for integrations and for bootstrapping the first user.
 5. Wire the upload-ticket routes into the API. The store layer and the
-   presigning are done; no HTTP endpoint issues a ticket yet.
+   presigning are done; no HTTP endpoint issues a ticket yet. **Now the top
+   item**, because it is the last thing a mobile client needs from the backend.
 
 **Phase 4 — mobile.** Only after (1) and (2), because a phone without upload
 tickets and without push is a worse product than the web client.

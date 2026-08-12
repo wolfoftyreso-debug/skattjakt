@@ -10,6 +10,7 @@
 #![warn(missing_debug_implementations)]
 
 pub mod auth_routes;
+pub mod cookies;
 pub mod observe;
 pub mod routes;
 
@@ -415,10 +416,15 @@ impl Scope {
 /// recover a token byte by byte. The database lookup is by SHA-256, which is
 /// constant-time by construction.
 pub async fn authorise(state: &AppState, headers: &HeaderMap) -> Result<Scope, Problem> {
+    // A bearer header, or the session cookie the web client uses. The cookie is
+    // only honoured alongside a custom header — see `cookies.rs` for why that
+    // is the CSRF defence rather than a formality.
+    let from_cookie = cookies::access_token(headers);
     let presented = headers
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
+        .or(from_cookie.as_deref())
         .ok_or_else(Problem::unauthorized)?;
 
     if let Some(admin) = state.admin_token.as_deref() {

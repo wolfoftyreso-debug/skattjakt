@@ -256,8 +256,10 @@ implemented, and should not be until something needs it.
 
 ### Web
 
-- Session cookie rather than the company token — the surface exists, the
-  interface has not been moved onto it.
+- **Done:** email and password, with the session in `HttpOnly` cookies. The
+  page holds no credential; `authedFetch` refreshes once on a 401 and
+  serialises concurrent refreshes so a slow connection cannot look like a
+  replayed token.
 - Loading, empty, error and degraded states for every view. The empty state
   matters more here than in most products: **finding nothing is a designed
   result**, and it must read as "we looked and found nothing", never as a
@@ -313,10 +315,10 @@ there is a second market.
 
 Stated plainly so nobody discovers it in sprint two:
 
-1. **The S3 client.** Upload tickets resolve through the API until it lands.
-2. **The push sender.** The outbox fills and nothing drains it.
-3. **A sessions-based web client**, as the reference implementation of the
-   flow.
+1. **The upload-ticket endpoints.** The store layer and presigning are done and
+   tested; no HTTP route issues a ticket yet.
+2. **The push sender.** The outbox drains over email; push answers
+   `NotConfigured`.
 4. **A generated client SDK.** The OpenAPI file supports codegen; no pipeline
    produces or publishes one.
 5. **Design.** There are no mobile designs, and this document deliberately does

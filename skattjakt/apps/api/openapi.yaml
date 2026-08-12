@@ -198,6 +198,22 @@ paths:
         page, so a web refresh token lives 12 hours, while iOS and Android put
         it in the Keychain or the Keystore and get 30 days.
 
+        **A web client is not given its tokens.** With
+        `x-skattjakt-client: web` they are set as `HttpOnly` cookies and the
+        body carries `auth: "cookie"` instead. That is the point: a refresh
+        token script can read is a refresh token an XSS can steal, and a stolen
+        refresh token is weeks of access.
+
+        iOS and Android get `auth: "bearer"` and the tokens in the body,
+        because the Keychain and the Keystore are a better place than a cookie
+        jar.
+
+        **Cookie requests must carry `x-skattjakt-client`.** The server refuses
+        to honour a cookie without it. Another site can make a browser send the
+        cookie; it cannot make it send a custom header without a CORS preflight
+        this API never grants. That, plus `SameSite=Strict`, is the CSRF
+        defence.
+
         Send a stable `install_id` your installation generates once and keeps.
         Without it every sign-in creates a new device row, and the customer's
         device list fills with duplicates of the same phone.
@@ -241,6 +257,16 @@ paths:
       description: |
         Rotates. The presented refresh token stops working and a new pair is
         returned.
+
+        A web client sends **no body**: its refresh token is in an `HttpOnly`
+        cookie the browser attaches on its own. A native client sends the token
+        in the body. The response follows how the token *arrived*, not a
+        header — so a native client that omits `x-skattjakt-client` still gets
+        a usable token rather than cookies it cannot read.
+
+        **Serialise refreshes in the client.** Five concurrent 401s must not
+        become five refreshes: each rotates, so four would look like a replayed
+        token and the whole session family would be revoked.
 
         Presenting a refresh token that was already rotated away revokes the
         **whole session family** — that is what a stolen token looks like, and
@@ -767,16 +793,23 @@ components:
         An issued pair. Both tokens are opaque and are stored only as SHA-256,
         so neither can be recovered from a database dump.
       properties:
+        auth:
+          type: string
+          enum: [cookie, bearer]
+          description: |
+            `cookie` — the tokens are in `HttpOnly` cookies and are absent from
+            this body. `bearer` — they are below, for the Keychain or Keystore.
         access_token:
           type: string
-          description: "Send as `Authorization: Bearer`. Short-lived."
+          description: "Bearer clients only. Send as `Authorization: Bearer`. Short-lived."
         token_type: { type: string, enum: [Bearer] }
         expires_at: { type: string, format: date-time }
         refresh_token:
           type: string
           description: |
-            Store in the Keychain (iOS), the Keystore (Android), or an
-            HttpOnly cookie (web). Single-use: each refresh rotates it.
+            Bearer clients only. Store in the Keychain (iOS) or the Keystore
+            (Android). Single-use: each refresh rotates it. A web client never
+            receives this — it is in an `HttpOnly` cookie.
         refresh_expires_at: { type: string, format: date-time }
         company_id: { type: string, format: uuid }
         role: { $ref: "#/components/schemas/Role" }

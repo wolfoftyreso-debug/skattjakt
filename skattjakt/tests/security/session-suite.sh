@@ -76,6 +76,9 @@ export SKATTJAKT_ADMIN_TOKEN="$ADMIN_TOKEN"
 export SKATTJAKT_BLOB_ROOT="$WORKDIR/documents"
 export PORT="$PORT"
 export RUST_LOG=skattjakt=warn
+# The test server speaks plain HTTP, and a `Secure` cookie is simply not sent
+# over it — so the cookie checks below would test nothing.
+export SKATTJAKT_INSECURE_COOKIES=1
 
 "$ROOT/target/debug/skattjakt-api" > "$LOG" 2>&1 &
 API_PID=$!
@@ -217,7 +220,7 @@ echo
 echo "roles"
 # ---------------------------------------------------------------------------
 
-ADV_SESSION="$(sign_in revisor@byra.example web browser-1)"
+ADV_SESSION="$(sign_in revisor@byra.example android browser-1)"
 ADV_ACCESS="$(jqf access_token <<<"$ADV_SESSION")"
 check "an advisor can sign in" advisor "$(jqf role <<<"$ADV_SESSION")"
 
@@ -231,6 +234,10 @@ check "an advisor cannot create a user" 403 \
         -d "{\"email\":\"smyg@byra.example\",\"password\":\"$PASSWORD\"}")"
 
 # --- a web session is much shorter than a phone session ---------------------
+
+# A web sign-in purely to create the row. Its tokens are in cookies, not in the
+# body, which the cookie section below exercises properly.
+sign_in revisor@byra.example web lifetime-probe >/dev/null
 
 WEB_LIFETIME="$(q "SELECT round(extract(epoch FROM refresh_expires_at - created_at))
                    FROM sessions WHERE client_kind = 'web' ORDER BY created_at DESC LIMIT 1")"
@@ -317,7 +324,7 @@ BETA_TOKEN="$(jqf api_token <<<"$BETA")"
 curl -fsS -X POST "$BASE/v1/users" \
     -H "authorization: Bearer $BETA_TOKEN" -H 'content-type: application/json' \
     -d "{\"email\":\"bo@beta.example\",\"password\":\"$PASSWORD\",\"role\":\"owner\"}" >/dev/null
-BO="$(sign_in bo@beta.example web bo-browser)"
+BO="$(sign_in bo@beta.example ios bo-browser)"
 BO_ACCESS="$(jqf access_token <<<"$BO")"
 
 BO_COMPANY="$(curl -fsS -H "authorization: Bearer $BO_ACCESS" "$BASE/v1/companies/me" | jqf id)"
@@ -343,7 +350,7 @@ check "a wrong current password is refused" 401 \
         -d "{\"current_password\":\"inte rätt alls\",\"new_password\":\"nytt lösenord som är långt\"}")"
 
 # A second device, to prove the change signs it out.
-OTHER="$(sign_in bo@beta.example ios bo-phone)"
+OTHER="$(sign_in bo@beta.example android bo-phone)"
 OTHER_ACCESS="$(jqf access_token <<<"$OTHER")"
 
 curl -fsS -X POST "$BASE/v1/auth/change-password" \
@@ -356,6 +363,97 @@ check "the session that made the change survives" 200 \
     "$(status -H "authorization: Bearer $BO_ACCESS" "$BASE/v1/companies/me")"
 
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+echo
+echo "the web client uses cookies, not a token in JavaScript"
+# ---------------------------------------------------------------------------
+
+JAR="$WORKDIR/cookies.txt"
+WEB="$(curl -s -c "$JAR" -X POST "$BASE/v1/auth/sign-in" \
+    -H 'content-type: application/json' -H 'x-skattjakt-client: web' \
+    -d "{\"email\":\"bo@beta.example\",\"password\":\"nytt lösenord som är långt\",
+         \"install_id\":\"web-1\"}")"
+
+check "a web sign-in says the session is in a cookie" cookie "$(jqf auth <<<"$WEB")"
+
+# The whole point: script must not be able to read the credential.
+if grep -q 'access_token\|refresh_token' <<<"$WEB"; then
+    fail "a web sign-in returned tokens in the body, which script can read and store"
+else
+    pass "no token is in the body, so an XSS cannot steal one"
+fi
+
+grep -q 'skattjakt_session' "$JAR" && pass "a session cookie was set" \
+    || fail "no session cookie was set"
+grep -q 'skattjakt_refresh' "$JAR" && pass "a refresh cookie was set" \
+    || fail "no refresh cookie was set"
+
+# curl's jar records the HttpOnly flag with a `#HttpOnly_` prefix on the line.
+grep -q '#HttpOnly_.*skattjakt_session' "$JAR" \
+    && pass "the session cookie is HttpOnly" \
+    || fail "the session cookie is readable by script"
+grep -q '#HttpOnly_.*skattjakt_refresh' "$JAR" \
+    && pass "the refresh cookie is HttpOnly" \
+    || fail "the refresh cookie is readable by script"
+
+# The refresh cookie is scoped to the one endpoint that consumes it.
+if grep 'skattjakt_refresh' "$JAR" | grep -q '/v1/auth/refresh'; then
+    pass "the refresh cookie is scoped to /v1/auth/refresh"
+else
+    fail "the refresh cookie is sent on every request"
+fi
+
+check "the cookie authenticates an ordinary request" 200 \
+    "$(status -b "$JAR" -H 'x-skattjakt-client: web' "$BASE/v1/companies/me")"
+
+# --- CSRF -------------------------------------------------------------------
+#
+# Another site can cause the browser to send the cookie. It cannot make the
+# browser send a custom header without a preflight this API never grants, so
+# the header is what distinguishes our own page from theirs.
+
+check "a cookie without the client header is refused" 401 \
+    "$(status -b "$JAR" "$BASE/v1/companies/me")"
+check "and so is a state-changing request without it" 401 \
+    "$(status -b "$JAR" -X POST "$BASE/v1/auth/sign-out")"
+
+# --- refresh over cookies ---------------------------------------------------
+
+BEFORE="$(grep skattjakt_refresh "$JAR" | awk '{print $NF}')"
+check "a cookie refresh needs no body at all" 200 \
+    "$(status -b "$JAR" -c "$JAR" -X POST "$BASE/v1/auth/refresh" \
+        -H 'x-skattjakt-client: web')"
+AFTER="$(grep skattjakt_refresh "$JAR" | awk '{print $NF}')"
+[[ -n "$AFTER" && "$AFTER" != "$BEFORE" ]] \
+    && pass "the refresh cookie rotated" \
+    || fail "the refresh cookie did not rotate"
+check "the rotated cookie still authenticates" 200 \
+    "$(status -b "$JAR" -H 'x-skattjakt-client: web' "$BASE/v1/companies/me")"
+
+# --- signing out clears the cookies -----------------------------------------
+
+curl -s -b "$JAR" -c "$JAR" -X POST "$BASE/v1/auth/sign-out" \
+    -H 'x-skattjakt-client: web' >/dev/null
+check "the session stops working after sign-out" 401 \
+    "$(status -b "$JAR" -H 'x-skattjakt-client: web' "$BASE/v1/companies/me")"
+
+# A dead cookie left in the browser means every later request carries a
+# credential that cannot work.
+if grep -q 'skattjakt_session' "$JAR" && \
+   [[ -n "$(grep skattjakt_session "$JAR" | awk '{print $NF}')" ]]; then
+    fail "the session cookie was left in the jar with a value"
+else
+    pass "the session cookie was cleared"
+fi
+
+# --- a native client is unaffected ------------------------------------------
+
+NATIVE="$(sign_in anna@alfa.example ios native-1)"
+check "a native sign-in still gets a bearer token" bearer "$(jqf auth <<<"$NATIVE")"
+[[ -n "$(jqf refresh_token <<<"$NATIVE")" ]] \
+    && pass "and its refresh token, for the Keychain" \
+    || fail "a native client got no refresh token"
+
 echo
 echo "what reaches the logs"
 # ---------------------------------------------------------------------------

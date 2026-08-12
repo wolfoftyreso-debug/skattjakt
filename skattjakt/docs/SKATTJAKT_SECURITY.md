@@ -92,6 +92,13 @@ The chosen trade is strictly safer.
 **Proved by:** `tests/security/security-suite.sh` §1, §2.
 
 - Bearer tokens, 256 bits from the OS CSPRNG (`getrandom::fill`).
+- **The web client never holds a token in JavaScript.** A web sign-in sets
+  `HttpOnly` `Secure` `SameSite=Strict` cookies and the response body carries no
+  token at all — a refresh token script can read is one an XSS can steal, and a
+  stolen refresh token is weeks of access. Native clients get bearer tokens,
+  because the Keychain and the Keystore are better than a cookie jar.
+- The refresh cookie is scoped by `Path` to `/v1/auth/refresh`, so it is not
+  attached to every request.
 - Only the SHA-256 is stored. A database dump does not yield a usable
   credential, and the token is shown to the customer exactly once.
 - Comparison is constant-time. A timing oracle on a token prefix is slow to
@@ -442,6 +449,10 @@ Stated rather than implied:
   in the build order; it is not an adversarial engagement.
 - **No WAF.** Ingress rate limiting and the application's own validation, no
   more.
+- **CSRF is defended by `SameSite=Strict` plus a required custom header**, not
+  by a synchroniser token. The header works because this API grants no CORS
+  permission, so a cross-origin request cannot set one. A synchroniser token
+  would add state to defend a surface that is already closed twice.
 - **No secrets rotation automation.** Rotation is a runbook procedure, not a
   scheduled job.
 - **Postgres runs as a single replica.** Availability, not confidentiality, but
