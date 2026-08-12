@@ -208,6 +208,7 @@ Dockerfile               one file, two images
 | [Product surface matrix](docs/SKATTJAKT_PRODUCT_SURFACE.md) | Which surfaces exist, which are prepared, and what platform was reachable |
 | [Client architecture](docs/SKATTJAKT_CLIENT_ARCHITECTURE.md) | What web, Apple and Android need — and what the backend already guarantees them |
 | [Memory architecture](docs/SKATTJAKT_MEMORY_ARCHITECTURE.md) | The four state layers, and why there is no cache and no vector store |
+| [Monte Carlo layer](docs/SKATTJAKT_SIMULATION.md) | Distributions, reproducible runs, sensitivity, convergence — and why a simulated figure is never evidence |
 | [Engineering decisions](docs/SKATTJAKT_ENGINEERING_DECISIONS.md) | Why X was decided that way |
 | [Product specification](docs/SKATTJAKT_PRODUCT_SPEC.md) | What the product promises a customer |
 

@@ -53,6 +53,12 @@ tags:
     description: Tenants and their credentials.
   - name: Documents
     description: Immutable uploads.
+  - name: Simulations
+    description: |
+      A general Monte Carlo layer: define uncertain inputs, calculate outputs
+      over them, and read the whole distribution rather than a single figure.
+      It knows nothing about tax, and nothing it produces is evidence for a
+      finding.
 
 paths:
   /health:
@@ -602,6 +608,411 @@ paths:
                         kind: { type: string }
                         subject_id: { type: string, format: uuid, nullable: true }
 
+  /v1/simulations:
+    post:
+      tags: [Simulations]
+      summary: Define a Monte Carlo model
+      description: |
+        Creates a simulation and its first version. The body is the model: named
+        inputs with probability distributions, and named outputs written as
+        expressions over them.
+
+        The model is compiled before it is stored, so an expression that does
+        not parse or a distribution whose parameters are impossible is a 422 now
+        rather than a run that fails every time anyone presses the button.
+
+        **A simulation is not a finding.** It describes the assumptions someone
+        entered, not the company's accounts, and nothing it produces may become
+        the amount on an `opportunity`. See `/v1/simulations/{id}/results`.
+      responses:
+        "201":
+          description: The model was stored and can be run.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, version, spec_hash]
+                properties:
+                  id: { type: string, format: uuid }
+                  version: { type: integer }
+                  spec_hash:
+                    type: string
+                    description: SHA-256 of the canonical model, recorded on every run.
+                  engine_version: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: The role does not carry `RunSimulation`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "422":
+          description: The model cannot run. `detail` names the input or output.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "501": { $ref: "#/components/responses/NoPersistence" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SimulationSpec" }
+    get:
+      tags: [Simulations]
+      summary: List simulations
+      description: Cursor-paginated, newest first.
+      parameters:
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, maximum: 200 } }
+      responses:
+        "200":
+          description: One page of simulations.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  simulations: { type: array, items: { type: object } }
+                  next_cursor: { type: string, nullable: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "501": { $ref: "#/components/responses/NoPersistence" }
+
+  /v1/simulations/distributions:
+    get:
+      tags: [Simulations]
+      summary: The distributions the engine offers, and its limits
+      description: |
+        Returned by the server so a client does not carry its own copy of the
+        list. A duplicated catalogue is one that drifts, and a client offering a
+        distribution the engine does not implement is a 422 the user cannot
+        explain.
+
+        Each entry carries a Swedish label and one sentence of guidance on when
+        the distribution is the right choice — a picker that offers eleven names
+        and no help is one whose users pick Normal for everything, including the
+        quantities that cannot go below zero.
+      responses:
+        "200":
+          description: The catalogue and the engine's bounds.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  distributions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        kind: { type: string }
+                        label: { type: string }
+                        guidance: { type: string }
+                        parameters: { type: array, items: { type: object } }
+                  limits: { type: object }
+                  engine_version: { type: string }
+                  disclaimer: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/simulations/{id}:
+    get:
+      tags: [Simulations]
+      summary: One model, its derived input summary, and its runs
+      description: |
+        `inputs` carries each input's mean, standard deviation and support —
+        **computed from the distribution rather than stored beside it**, so they
+        cannot disagree with what will actually be sampled.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The model, its inputs and outputs, and up to 20 recent runs.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404":
+          description: No such simulation — the same answer as for another tenant's.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "501": { $ref: "#/components/responses/NoPersistence" }
+
+  /v1/simulations/{id}/versions:
+    post:
+      tags: [Simulations]
+      summary: Add a version of a model
+      description: |
+        Append-only. Earlier versions keep working and earlier runs keep
+        meaning what they meant: a run references a version, never a
+        simulation.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "201":
+          description: The new version number.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404":
+          description: No such simulation.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "422":
+          description: The model cannot run.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "501": { $ref: "#/components/responses/NoPersistence" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SimulationSpec" }
+
+  /v1/simulations/{id}/run:
+    post:
+      tags: [Simulations]
+      summary: Run the model
+      description: |
+        **Where it runs is decided by size, and the response says which way it
+        went.** A small run answers inside the request with `200` and the whole
+        result; a large one returns `202`, a `run_id` and a URL to poll. A round
+        trip through a queue for eighty milliseconds of arithmetic is latency
+        with nothing to show for it, and a two-minute computation inside an HTTP
+        request dies with the first rolling deploy.
+
+        **The seed is a string.** A JSON number silently loses precision above
+        2^53, so a client would round-trip a seed, send it back, and get a
+        different simulation with no error anywhere. Requests may send a number
+        for convenience; responses always return a string. Omit it and the
+        server draws one and records it — a run whose seed was not written down
+        cannot be reproduced.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The run finished inside the request. The whole result is here.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SimulationResult" }
+        "202":
+          description: Queued. Poll `/v1/simulations/{id}/results?run=…`.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  run_id: { type: string, format: uuid }
+                  job_id: { type: string, format: uuid }
+                  state: { type: string, enum: [queued] }
+                  seed: { type: string }
+                  iterations: { type: integer }
+                  poll: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404":
+          description: No such simulation.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "422":
+          description: |
+            The run has no answer — an output that produced an infinity, a
+            constraint no draw can satisfy, an iteration count outside the
+            engine's bounds. `detail` names the output and the iteration.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "429":
+          description: Rate limited.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "501": { $ref: "#/components/responses/NoPersistence" }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                iterations:
+                  type: integer
+                  minimum: 100
+                  maximum: 10000000
+                  default: 10000
+                seed:
+                  oneOf: [{ type: string }, { type: integer }]
+                  description: Decimal string. Omit to have one drawn and recorded.
+                reason:
+                  type: string
+                  description: Why this run was made. Stored on the run and in the audit trail.
+
+  /v1/simulations/{id}/cancel:
+    post:
+      tags: [Simulations]
+      summary: Stop a run
+      description: |
+        A request rather than an act: the worker holding the run polls for it and
+        stops at the end of its current batch, so the response is `202` and the
+        state is `cancelling`. A run that had already finished answers `200`
+        with `cancelled: false` — the caller got what they wanted and nothing
+        was stopped, and a client that reported a cancellation here would be
+        reporting one that did not happen.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: run, in: query, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The run had already finished. Nothing was cancelled.
+        "202":
+          description: Cancellation requested.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404":
+          description: No such simulation or run.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "501": { $ref: "#/components/responses/NoPersistence" }
+
+  /v1/simulations/{id}/results:
+    get:
+      tags: [Simulations]
+      summary: A run's state, statistics and chart data
+      description: |
+        Defaults to the most recent run; `?run=` names an older one, which is how
+        a scenario comparison reads both sides.
+
+        A run that has not finished returns its progress and **no numbers**.
+        Partial statistics would be a result from a sample whose size the caller
+        has no way to know.
+
+        `shapes` is the visualisation payload: a histogram, a density curve and a
+        sampled cumulative distribution. About four kilobytes per output whether
+        the run was a thousand iterations or ten million — the raw samples are
+        never stored or sent, and are reproducible from the seed.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: run, in: query, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The run.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SimulationResult" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404":
+          description: No such simulation or run.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "501": { $ref: "#/components/responses/NoPersistence" }
+
+  /v1/simulations/{id}/statistics:
+    get:
+      tags: [Simulations]
+      summary: The statistics for a run
+      description: |
+        Mean, median, spread and every percentile from P5 to P99, plus the
+        probabilities the model's targets and thresholds ask for.
+
+        `probability_of_target` is **absent** when no target was set. It is never
+        zero for that reason: "no target" and "impossible" are different
+        statements, and a default of 0 turns the first into the second on every
+        screen that reads it.
+
+        `mean_confidence_interval_95` is the interval for the **mean** — this
+        run's sampling error — not the spread of the outcomes. The two are
+        indistinguishable once they are numbers on a screen, so the field name
+        carries the distinction.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: run, in: query, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: One entry per output.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404":
+          description: No such simulation or run.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "501": { $ref: "#/components/responses/NoPersistence" }
+
+  /v1/simulations/{id}/sensitivity:
+    get:
+      tags: [Simulations]
+      summary: Which inputs drive the uncertainty
+      description: |
+        Pearson correlation, Spearman rank correlation, and each input's share of
+        the explained variance — which is the form the question is usually asked
+        in: "how much of the uncertainty comes from this?"
+
+        Read the rank correlation when the two disagree. An input with a strong
+        but curved effect — a threshold, a cap, anything with an `if` in it — can
+        show a Pearson correlation near zero while dominating the outcome.
+
+        `correlation` is **null**, not zero, where none exists: a constant input,
+        or one the output's expression never reads. Zero would read as "measured,
+        and it does not matter".
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: run, in: query, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: One entry per input per output, ranked.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404":
+          description: No such simulation or run.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "501": { $ref: "#/components/responses/NoPersistence" }
+
+  /v1/simulations/{id}/convergence:
+    get:
+      tags: [Simulations]
+      summary: Whether the run has settled
+      description: |
+        The mean, median, P10 and P90 as they stood at 1 000, 10 000, 100 000 …
+        iterations. If the median moved by four per cent between a hundred
+        thousand and a million, the third significant figure on the screen is
+        noise, `stable` is false, and `warning` says so in Swedish.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: run, in: query, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The checkpoint series per output, and its verdict.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404":
+          description: No such simulation or run.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "501": { $ref: "#/components/responses/NoPersistence" }
+
+  /v1/simulations/{id}/audit:
+    get:
+      tags: [Simulations]
+      summary: Who ran what, when, with which seed and which model
+      description: |
+        The trail of section 13: creation, every version, every run requested,
+        completed or cancelled — each with the actor, the seed, the engine
+        version and the model hash that produced it.
+
+        Requires `ReadAuditTrail`, which an advisor does not hold.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The events, oldest first.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: The role does not carry `ReadAuditTrail`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "404":
+          description: No such simulation.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "501": { $ref: "#/components/responses/NoPersistence" }
+
   /v1/companies:
     post:
       tags: [Companies]
@@ -889,6 +1300,237 @@ components:
           schema: { $ref: "#/components/schemas/Problem" }
 
   schemas:
+    SimulationSpec:
+      type: object
+      required: [name, inputs, outputs]
+      description: |
+        A Monte Carlo model. At most 64 inputs and 16 outputs; the second bound
+        exists because each output retains its full sample vector for exact
+        percentiles, so it bounds the engine's memory alongside the iteration
+        count.
+      properties:
+        name: { type: string }
+        description: { type: string }
+        note:
+          type: string
+          description: Why this version exists. Stored on the version, not the model.
+        inputs:
+          type: array
+          minItems: 1
+          maxItems: 64
+          items: { $ref: "#/components/schemas/SimulationInput" }
+        outputs:
+          type: array
+          minItems: 1
+          maxItems: 16
+          items: { $ref: "#/components/schemas/SimulationOutput" }
+
+    SimulationInput:
+      type: object
+      required: [id, name, distribution]
+      description: |
+        One uncertain quantity.
+
+        Note what is **not** here: `mean`, `median`, `min`, `max` and `std_dev`
+        are not stored fields. They are derived from the distribution and
+        returned on `GET /v1/simulations/{id}`. A stored mean beside a stored
+        distribution is two sources of truth for one fact, and the day someone
+        edits the standard deviation without editing the mean is the day the
+        interface starts lying.
+      properties:
+        id:
+          type: string
+          description: |
+            The name used in expressions. Letters, digits and underscores;
+            must not be a reserved word of the expression language
+            (`if`, `and`, `or`, `not`, `pi`, `e`, `true`, `false`).
+        name: { type: string }
+        distribution: { $ref: "#/components/schemas/Distribution" }
+        unit: { type: string }
+        source:
+          type: string
+          description: Where the number came from. A model whose inputs have no stated source is one nobody can defend afterwards.
+        confidence: { type: string, enum: [low, medium, high] }
+        description: { type: string }
+        constraints:
+          type: object
+          description: |
+            A permitted range. `resample` truncates the distribution — what an
+            analyst usually means by "it cannot be negative". `clamp` censors it,
+            piling probability mass onto the bounds; sometimes right, and never
+            right by accident.
+          properties:
+            min: { type: number }
+            max: { type: number }
+            mode: { type: string, enum: [resample, clamp], default: resample }
+
+    SimulationOutput:
+      type: object
+      required: [id, name, expression]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        expression:
+          type: string
+          description: |
+            An expression over the input identifiers and over any output declared
+            *before* this one — which is what makes `profit = revenue - costs`
+            work while making a circular reference an unknown-name error.
+
+            Operators `+ - * / % ^`, comparisons, `and`/`or`/`not`, and the
+            functions `min max abs sqrt exp ln log10 floor ceil round clamp` plus
+            `if(condition, a, b)`. No loops, no assignment, no I/O: it terminates
+            because it cannot do otherwise.
+        unit: { type: string }
+        description: { type: string }
+        target:
+          type: number
+          description: Reported as a probability of reaching it, never as a verdict.
+        target_direction: { type: string, enum: [at_least, at_most], default: at_least }
+        critical_threshold:
+          type: number
+          description: Reported as the probability of falling below it.
+
+    Distribution:
+      type: object
+      required: [kind]
+      description: |
+        Tagged by `kind`. An unknown kind is a parse error rather than a default.
+        Fetch the catalogue from `/v1/simulations/distributions` rather than
+        hard-coding this list in a client.
+      properties:
+        kind:
+          type: string
+          enum:
+            [normal, lognormal, uniform, triangular, beta, exponential,
+             poisson, bernoulli, binomial, discrete, custom]
+        mean: { type: number, description: normal }
+        std_dev: { type: number, description: normal — zero is allowed and means the input is certain }
+        log_mean: { type: number, description: lognormal — parameter of the *underlying normal* }
+        log_std_dev: { type: number, description: lognormal — parameter of the underlying normal }
+        low: { type: number, description: uniform, triangular, beta }
+        high: { type: number, description: uniform, triangular, beta }
+        mode: { type: number, description: triangular }
+        alpha: { type: number, description: beta }
+        beta: { type: number, description: beta }
+        rate: { type: number, description: exponential }
+        lambda: { type: number, description: poisson }
+        p: { type: number, description: bernoulli, binomial }
+        trials: { type: integer, description: binomial }
+        values: { type: array, items: { type: number }, description: discrete }
+        weights: { type: array, items: { type: number }, description: discrete }
+        points:
+          type: array
+          description: |
+            custom — `[value, cumulative_probability]` pairs in increasing order,
+            starting at 0 and ending at 1. Inverted piecewise-linearly, which is
+            what an analyst means by "a 30% chance of being under 100".
+          items:
+            type: array
+            items: { type: number }
+
+    SimulationResult:
+      type: object
+      description: |
+        A run. `statistics` and `shapes` are null until it succeeds.
+
+        Every result carries `disclaimer`, and clients must display it: this
+        describes the model somebody defined, not the world. A probability is
+        never a verdict.
+      properties:
+        run_id: { type: string, format: uuid }
+        state: { type: string, enum: [queued, running, succeeded, failed, cancelled] }
+        seed: { type: string, description: Decimal string, so 64 bits survive JSON. }
+        iterations: { type: integer }
+        completed_iterations: { type: integer }
+        progress: { type: number, minimum: 0, maximum: 1 }
+        engine_version:
+          type: string
+          description: |
+            Bumped whenever a change could alter the numbers a given seed
+            produces. A result from an older engine is marked unreproducible on
+            this one rather than silently recomputed into different figures.
+        spec_hash: { type: string }
+        execution: { type: string, enum: [inline, queued] }
+        duration_ms: { type: integer, nullable: true }
+        iterations_per_second: { type: number, nullable: true }
+        quality:
+          type: object
+          nullable: true
+          description: Rejected draws, clamped samples and convergence warnings. Qualifies the result.
+        error: { type: string, nullable: true }
+        disclaimer: { type: string }
+        statistics:
+          type: array
+          nullable: true
+          items: { $ref: "#/components/schemas/OutputStatistics" }
+        shapes:
+          type: array
+          nullable: true
+          items: { $ref: "#/components/schemas/OutputShape" }
+
+    OutputStatistics:
+      type: object
+      properties:
+        output_id: { type: string }
+        name: { type: string }
+        unit: { type: string, nullable: true }
+        count: { type: integer }
+        mean: { type: number }
+        median: { type: number }
+        min: { type: number }
+        max: { type: number }
+        std_dev: { type: number }
+        variance: { type: number }
+        p5: { type: number }
+        p10: { type: number }
+        p25: { type: number }
+        p50: { type: number }
+        p75: { type: number }
+        p90: { type: number }
+        p95: { type: number }
+        p99: { type: number }
+        probability_of_target:
+          type: number
+          nullable: true
+          description: Absent when no target was set. Never zero for that reason.
+        probability_of_loss: { type: number }
+        probability_below_threshold: { type: number, nullable: true }
+        probability_above_threshold: { type: number, nullable: true }
+        mean_confidence_interval_95:
+          type: array
+          nullable: true
+          description: For the **mean** — this run's sampling error, not the spread of outcomes.
+          items: { type: number }
+        relative_standard_error: { type: number, nullable: true }
+
+    OutputShape:
+      type: object
+      description: The chart payload. Bounded in size regardless of the iteration count.
+      properties:
+        output_id: { type: string }
+        bins:
+          type: array
+          items:
+            type: object
+            properties:
+              low: { type: number }
+              high: { type: number }
+              count: { type: integer }
+              share: { type: number }
+        density:
+          type: array
+          description: A smoothed density at each bin centre, on the same axis as `share`. Empty when the output is constant.
+          items: { type: number }
+        cdf:
+          type: array
+          description: 201 points. Reads as "there is an X% chance the result is at most Y".
+          items:
+            type: object
+            properties:
+              value: { type: number }
+              probability: { type: number }
+
     Problem:
       type: object
       description: |

@@ -44,6 +44,14 @@ pub enum Permission {
     /// justifies granting to an external party.
     DeleteCompany,
     ReadAuditTrail,
+    /// Defining a simulation model and running it.
+    ///
+    /// Separate from `StartAnalysis` because the two cost different things and
+    /// mean different things. An analysis reads the company's own accounts; a
+    /// simulation runs arithmetic over assumptions somebody typed in, and its
+    /// output is a statement about the model rather than about the company.
+    RunSimulation,
+    ReadSimulation,
 }
 
 impl Role {
@@ -84,6 +92,8 @@ impl Role {
                     | StartAnalysis
                     | ReadAnalysis
                     | ReadReport
+                    | RunSimulation
+                    | ReadSimulation
             ),
             Role::Advisor => matches!(
                 permission,
@@ -93,6 +103,11 @@ impl Role {
                     | StartAnalysis
                     | ReadAnalysis
                     | ReadReport
+                    // An advisor may run scenarios. It is the work they were
+                    // engaged for, it touches no document they cannot already
+                    // read, and it changes nothing.
+                    | RunSimulation
+                    | ReadSimulation
             ),
         }
     }

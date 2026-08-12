@@ -30,6 +30,12 @@ pub enum RateBucket {
     Upload,
     /// Everything else, including status polling.
     Read,
+    /// Starting simulation runs.
+    ///
+    /// Its own bucket rather than sharing `Analysis`: a simulation costs CPU
+    /// and no model tokens, so it can be far more generous — and it must not
+    /// be possible to exhaust the analysis quota by running scenarios.
+    Simulation,
 }
 
 impl RateBucket {
@@ -38,6 +44,7 @@ impl RateBucket {
             RateBucket::Analysis => "analysis",
             RateBucket::Upload => "upload",
             RateBucket::Read => "read",
+            RateBucket::Simulation => "simulation",
         }
     }
 
@@ -47,6 +54,11 @@ impl RateBucket {
             RateBucket::Analysis => (20, Duration::hours(1)),
             RateBucket::Upload => (100, Duration::hours(1)),
             RateBucket::Read => (600, Duration::minutes(1)),
+            // Generous, because iterating on a model means running it
+            // repeatedly, and a limit that punishes exploration would make the
+            // feature unusable. The real ceiling on cost is the iteration
+            // bound in the engine, not this counter.
+            RateBucket::Simulation => (120, Duration::hours(1)),
         }
     }
 

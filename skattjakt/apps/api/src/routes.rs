@@ -45,7 +45,7 @@ pub(crate) fn store(state: &AppState) -> Result<&skattjakt_store::Store, Problem
     })
 }
 
-fn queue(state: &AppState) -> Result<&Queue, Problem> {
+pub(crate) fn require_queue(state: &AppState) -> Result<&Queue, Problem> {
     state.queue.as_ref().ok_or_else(|| Problem {
         status: StatusCode::NOT_IMPLEMENTED,
         title: "the job queue is not configured".into(),
@@ -54,7 +54,7 @@ fn queue(state: &AppState) -> Result<&Queue, Problem> {
 }
 
 /// Turns a queue failure into a 500 without leaking its message to the client.
-fn queue_error(error: skattjakt_jobs::QueueError) -> Problem {
+pub(crate) fn map_queue_error(error: skattjakt_jobs::QueueError) -> Problem {
     tracing::error!(error = %error, "queue operation failed");
     Problem {
         status: StatusCode::INTERNAL_SERVER_ERROR,
@@ -445,7 +445,7 @@ pub async fn start_analysis(
     // Hand the work to the durable queue rather than to a background task in
     // this process. A `tokio::spawn` here dies with the pod, and a rolling
     // deploy would silently lose every analysis in flight.
-    let queue = queue(&state)?;
+    let queue = require_queue(&state)?;
     let idempotency_key = match headers.get("idempotency-key").and_then(|v| v.to_str().ok()) {
         Some(raw) => IdempotencyKey::parse(raw)
             .map_err(|e| Problem::bad_request("invalid idempotency key", e.to_string()))?,
@@ -477,12 +477,15 @@ pub async fn start_analysis(
             delay: None,
         })
         .await
-        .map_err(queue_error)?;
+        .map_err(map_queue_error)?;
 
     if !enqueued.is_new() {
         // The key matched a job that already exists. Return that one: a
         // duplicate request must not cost the customer a second model bill.
-        let existing = queue.get(enqueued.job_id()).await.map_err(queue_error)?;
+        let existing = queue
+            .get(enqueued.job_id())
+            .await
+            .map_err(map_queue_error)?;
         return Ok((
             StatusCode::ACCEPTED,
             Json(json!({

@@ -24,6 +24,12 @@ pub enum JobKind {
     Extraction,
     /// Apply the retention policy (section 65).
     Retention,
+    /// Run one Monte Carlo simulation.
+    ///
+    /// Queued rather than run in the request when the iteration count makes it
+    /// too long for one — see `simulation_routes::execution_for`. A run that
+    /// takes two minutes is a run that must survive a rolling deploy.
+    Simulation,
 }
 
 impl JobKind {
@@ -32,6 +38,7 @@ impl JobKind {
             JobKind::Analysis => "analysis",
             JobKind::Extraction => "extraction",
             JobKind::Retention => "retention",
+            JobKind::Simulation => "simulation",
         }
     }
 
@@ -40,6 +47,7 @@ impl JobKind {
             "analysis" => JobKind::Analysis,
             "extraction" => JobKind::Extraction,
             "retention" => JobKind::Retention,
+            "simulation" => JobKind::Simulation,
             _ => return None,
         })
     }
@@ -54,6 +62,11 @@ impl JobKind {
             JobKind::Analysis => Duration::from_secs(20 * 60),
             JobKind::Extraction => Duration::from_secs(5 * 60),
             JobKind::Retention => Duration::from_secs(30 * 60),
+            // Bounded by arithmetic rather than by a network call: ten million
+            // iterations of the widest model the engine accepts runs in a few
+            // minutes, and the lease has to cover the slowest machine that
+            // might claim it.
+            JobKind::Simulation => Duration::from_secs(15 * 60),
         }
     }
 
@@ -68,6 +81,15 @@ impl JobKind {
             JobKind::Extraction => RetryPolicy {
                 max_attempts: 5,
                 base: Duration::from_secs(5),
+                max_backoff: Duration::from_secs(5 * 60),
+            },
+            // A simulation is deterministic: the same seed and the same model
+            // produce the same failure. Retrying twice covers a lost lease or
+            // an evicted pod, and a third attempt would only spend CPU
+            // reproducing the same rejected specification.
+            JobKind::Simulation => RetryPolicy {
+                max_attempts: 2,
+                base: Duration::from_secs(15),
                 max_backoff: Duration::from_secs(5 * 60),
             },
             // The retention sweep is idempotent and runs on a schedule; a

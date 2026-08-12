@@ -198,8 +198,19 @@ mod tests {
         assert_eq!(refresh_token(&allowed).as_deref(), Some("r1"));
     }
 
+    /// Serialises the tests that touch `SKATTJAKT_INSECURE_COOKIES`.
+    ///
+    /// An environment variable is process-global and `cargo test` runs tests on
+    /// parallel threads, so without this the test that switches the flag on can
+    /// be running while the test that asserts cookies are `Secure` reads it.
+    /// That failure is rare, looks exactly like a real regression in the
+    /// strongest security property these cookies have, and would eventually be
+    /// dismissed as flaky — which is the worst outcome available.
+    static ENVIRONMENT: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn an_issued_cookie_is_httponly_samesite_strict_and_secure() {
+        let _guard = ENVIRONMENT.lock().unwrap_or_else(|e| e.into_inner());
         std::env::remove_var("SKATTJAKT_INSECURE_COOKIES");
         let cookies = issue(
             "a",
@@ -272,6 +283,7 @@ mod tests {
 
     #[test]
     fn secure_can_be_switched_off_only_explicitly() {
+        let _guard = ENVIRONMENT.lock().unwrap_or_else(|e| e.into_inner());
         std::env::set_var("SKATTJAKT_INSECURE_COOKIES", "1");
         assert!(!issue("a", Utc::now(), "r", Utc::now())[0].contains("Secure"));
         std::env::remove_var("SKATTJAKT_INSECURE_COOKIES");

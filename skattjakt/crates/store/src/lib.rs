@@ -17,6 +17,7 @@ pub mod identity;
 pub mod notifications;
 pub mod page;
 pub mod s3;
+pub mod simulations;
 pub mod uploads;
 
 use std::collections::BTreeMap;
@@ -874,12 +875,29 @@ impl Tenant<'_> {
         subject: Option<uuid::Uuid>,
         detail: Value,
     ) -> StoreResult<()> {
+        self.audit_as("api".to_string(), event_type, subject, detail)
+            .await
+    }
+
+    /// Appends an audit event naming who did it.
+    ///
+    /// `audit` records "api", which answers WHAT and WHEN and leaves WHO to be
+    /// inferred. Where a session is available the actor is the person, because
+    /// an audit trail that cannot distinguish the owner from the external
+    /// advisor is not one anybody can act on.
+    pub async fn audit_as(
+        &mut self,
+        actor: String,
+        event_type: &str,
+        subject: Option<uuid::Uuid>,
+        detail: Value,
+    ) -> StoreResult<()> {
         sqlx::query(
             "INSERT INTO audit_events (company_id, actor, event_type, subject_id, detail)
              VALUES ($1, $2, $3, $4, $5)",
         )
         .bind(self.company_id.0)
-        .bind("api")
+        .bind(actor)
         .bind(event_type)
         .bind(subject)
         .bind(detail)

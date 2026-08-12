@@ -24,6 +24,7 @@ skattjakt-model.workspace = true
 skattjakt-pipeline.workspace = true
 skattjakt-rules.workspace = true
 skattjakt-jobs.workspace = true
+skattjakt-simulate.workspace = true
 skattjakt-store.workspace = true
 skattjakt-telemetry.workspace = true
 getrandom = "0.3"

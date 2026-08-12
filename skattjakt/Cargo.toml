@@ -10,6 +10,7 @@ members = [
     "crates/notify",
     "crates/extract",
     "crates/pipeline",
+    "crates/simulate",
     "crates/store",
     "crates/jobs",
     "apps/api",
@@ -34,6 +35,7 @@ skattjakt-identity = { path = "crates/identity" }
 skattjakt-notify = { path = "crates/notify" }
 skattjakt-extract = { path = "crates/extract" }
 skattjakt-pipeline = { path = "crates/pipeline" }
+skattjakt-simulate = { path = "crates/simulate" }
 skattjakt-store = { path = "crates/store" }
 skattjakt-jobs = { path = "crates/jobs" }
 skattjakt-api = { path = "apps/api" }

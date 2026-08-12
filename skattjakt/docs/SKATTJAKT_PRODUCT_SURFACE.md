@@ -61,9 +61,9 @@ building it — not rewriting the core (§32, §36).
 | **Web** | ✓ | ✓ | ✓ beta interface, cookie sessions | ✓ e2e + 17 cookie/CSRF checks | ◐ see §4 below |
 | **Apple / iOS** | — | ✓ | — deliberately not | — | — |
 | **Android** | — | ✓ | — deliberately not | — | — |
-| **API** | ✓ | ✓ | ✓ 23 paths | ✓ contract + live suites | ✓ |
+| **API** | ✓ | ✓ | ✓ 38 paths | ✓ contract + live suites | ✓ |
 | **Backend** | ✓ | ✓ | ✓ API + worker | ✓ 451 unit, 20-step e2e on both backends | ✓ |
-| **Database** | ✓ | ✓ | ✓ 28 tables, RLS | ✓ isolation 10/10 | ✓ |
+| **Database** | ✓ | ✓ | ✓ 37 tables, RLS | ✓ isolation 10/10 | ✓ |
 | **Memory / state** | ✓ | ✓ | ✓ four layers, §11 doc | ✓ | ✓ |
 | **Authentication** | ✓ | ✓ | ✓ sessions, rotation, devices | ✓ 44 live checks | ◐ local verifier, not the platform IdP |
 | **Identity** | ✓ | ✓ | ✓ users, membership | ✓ | ✓ |
@@ -72,12 +72,13 @@ building it — not rewriting the core (§32, §36).
 | **File storage** | ✓ | ✓ | ✓ S3 + filesystem, presigned URLs | ✓ 7 live ops + full e2e on MinIO | ✓ |
 | **Notifications** | — | ✓ | ✓ outbox, email, in-app | ✓ 15 checks incl. a real SMTP server | ◐ push has no provider |
 | **Background jobs** | ✓ | ✓ | ✓ leases, retries, DLQ | ✓ failure 24/24 | ✓ |
+| **Simulation / probability** | ✓ | ✓ | ✓ 11 distributions, expression model, 12 endpoints | ✓ 109 unit + 69 live checks | ✓ |
 | **Observability** | ✓ | ✓ | ✓ metrics, logs, correlation, OTLP export | ✓ 12 checks against a real collector | ✓ |
 | **Security** | ✓ | ✓ | ✓ | ✓ security 39/39 | ✓ |
 | **CI/CD** | ✓ | ✓ | ✓ 8 gates | ✓ | ✓ |
 | **Kubernetes** | ✓ | ✓ | ✓ 37 objects × 3 envs | ✓ 111/111 accepted by a real API server; 3 defects found and fixed | ◐ **applied, no pod started** — see §5.1 |
 | **Backup / recovery** | ✓ | ✓ | ✓ daily + weekly restore test | ✓ scripts reviewed | ✗ never run in a cluster |
-| **Documentation** | ✓ | ✓ | ✓ 11 documents | ✓ CI checks the couplings | ✓ |
+| **Documentation** | ✓ | ✓ | ✓ 14 documents | ✓ CI checks the couplings | ✓ |
 
 `◐` = partially. `✗` = not, and the reason is stated.
 

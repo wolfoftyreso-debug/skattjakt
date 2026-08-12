@@ -121,8 +121,11 @@ source = open("apps/api/src/lib.rs").read()
 # `.route("/path", …)` — the path may sit on its own line.
 routed = set(re.findall(r'\.route\(\s*"([^"]+)"', source))
 
-# The interface and its icon are pages, not API surface.
-routed -= {"/", "/favicon.svg", "/favicon.ico"}
+# The interface, its stylesheet and its icon are pages, not API surface. The
+# list is explicit rather than a prefix rule: a new `/v1/...` route that nobody
+# documented must fail this check, and a pattern loose enough to excuse a page
+# would eventually excuse an endpoint.
+routed -= {"/", "/simulations", "/ui/app.css", "/favicon.svg", "/favicon.ico"}
 
 undocumented = sorted(routed - documented)
 unserved = sorted(documented - routed)

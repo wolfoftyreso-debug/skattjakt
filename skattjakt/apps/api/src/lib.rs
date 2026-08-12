@@ -13,7 +13,8 @@ pub mod auth_routes;
 pub mod cookies;
 pub mod observe;
 pub mod routes;
-pub mod upload_routes;
+pub mod simulation_routes;
+mod upload_routes;
 
 use std::sync::Arc;
 
@@ -43,6 +44,11 @@ const OPENAPI: &str = include_str!("../openapi.yaml");
 /// The beta interface. One file, no build step, no dependencies — section 25
 /// asks for a minimal beta, and a bundler would be the largest thing in it.
 const UI: &str = include_str!("../ui/index.html");
+const SIMULATE_UI: &str = include_str!("../ui/simulate.html");
+/// The design system, shared by both pages so a token cannot drift between
+/// them. Served from the binary rather than from disk: the interface loads
+/// nothing from anywhere else, which is what makes the CSP trivial.
+const APP_CSS: &str = include_str!("../ui/app.css");
 
 /// Uploads are bounded; an unbounded body is a denial-of-service surface and a
 /// very large prompt.
@@ -212,6 +218,8 @@ impl AppState {
 pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/", get(ui))
+        .route("/simulations", get(simulate_ui))
+        .route("/ui/app.css", get(app_css))
         .route("/favicon.svg", get(favicon))
         .route("/favicon.ico", get(favicon))
         .route("/health", get(health))
@@ -252,6 +260,42 @@ pub fn router(state: AppState) -> Router {
             axum::routing::put(upload_routes::upload_content),
         )
         .route("/v1/notifications", get(upload_routes::list_notifications))
+        // The Monte Carlo surface. A general probability layer rather than a
+        // feature of one screen: it takes a model and returns a distribution,
+        // and knows nothing about tax.
+        .route("/v1/simulations", post(simulation_routes::create))
+        .route("/v1/simulations", get(simulation_routes::list))
+        .route(
+            "/v1/simulations/distributions",
+            get(simulation_routes::catalogue),
+        )
+        .route("/v1/simulations/{id}", get(simulation_routes::get))
+        .route(
+            "/v1/simulations/{id}/versions",
+            post(simulation_routes::add_version),
+        )
+        .route("/v1/simulations/{id}/run", post(simulation_routes::start))
+        .route(
+            "/v1/simulations/{id}/cancel",
+            post(simulation_routes::cancel),
+        )
+        .route(
+            "/v1/simulations/{id}/results",
+            get(simulation_routes::results),
+        )
+        .route(
+            "/v1/simulations/{id}/statistics",
+            get(simulation_routes::statistics),
+        )
+        .route(
+            "/v1/simulations/{id}/sensitivity",
+            get(simulation_routes::sensitivity),
+        )
+        .route(
+            "/v1/simulations/{id}/convergence",
+            get(simulation_routes::convergence),
+        )
+        .route("/v1/simulations/{id}/audit", get(simulation_routes::audit))
         .route("/v1/companies", post(routes::create_company))
         .route("/v1/companies/me", get(routes::get_company))
         .route("/v1/documents", post(routes::upload_document))
@@ -534,6 +578,17 @@ async fn ready(State(state): State<AppState>) -> impl IntoResponse {
 
 async fn ui() -> impl IntoResponse {
     ([(header::CONTENT_TYPE, "text/html; charset=utf-8")], UI)
+}
+
+async fn simulate_ui() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+        SIMULATE_UI,
+    )
+}
+
+async fn app_css() -> impl IntoResponse {
+    ([(header::CONTENT_TYPE, "text/css; charset=utf-8")], APP_CSS)
 }
 
 /// An inline mark, so the browser does not request one that does not exist.

@@ -38,7 +38,7 @@ pub struct RunFailure {
 }
 
 impl RunFailure {
-    fn permanent(kind: &'static str, message: impl Into<String>) -> Self {
+    pub(crate) fn permanent(kind: &'static str, message: impl Into<String>) -> Self {
         Self {
             kind,
             retryable: false,
@@ -46,7 +46,7 @@ impl RunFailure {
         }
     }
 
-    fn transient(kind: &'static str) -> Self {
+    pub(crate) fn transient(kind: &'static str) -> Self {
         Self {
             kind,
             retryable: true,

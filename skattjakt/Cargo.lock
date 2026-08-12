@@ -1862,6 +1862,7 @@ dependencies = [
  "skattjakt-model",
  "skattjakt-pipeline",
  "skattjakt-rules",
+ "skattjakt-simulate",
  "skattjakt-store",
  "skattjakt-telemetry",
  "sqlx",
@@ -1887,6 +1888,7 @@ dependencies = [
  "skattjakt-model",
  "skattjakt-pipeline",
  "skattjakt-rules",
+ "skattjakt-simulate",
  "skattjakt-store",
  "skattjakt-telemetry",
  "tokio",
@@ -2037,6 +2039,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "skattjakt-simulate"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror",
+]
+
+[[package]]
 name = "skattjakt-store"
 version = "0.1.0"
 dependencies = [
@@ -2051,6 +2064,7 @@ dependencies = [
  "skattjakt-core",
  "skattjakt-identity",
  "skattjakt-model",
+ "skattjakt-simulate",
  "skattjakt-telemetry",
  "sqlx",
  "tempfile",

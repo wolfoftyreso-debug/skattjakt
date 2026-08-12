@@ -12,6 +12,7 @@
 //! `skattjakt-jobs`, where it is testable without a worker.
 
 mod runner;
+mod simulation;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -147,11 +148,21 @@ async fn main() -> anyhow::Result<()> {
                 LogRecord::info("shutdown requested; finishing the current job and stopping").emit();
                 break;
             }
-            claimed = queue.claim(JobKind::Analysis) => {
+            claimed = claim_any(&queue) => {
                 match claimed {
                     Ok(Some(job)) => {
                         let heartbeat = spawn_heartbeat(queue.clone(), job.clone());
-                        let outcome = runner.run(&job).await;
+                        // Two kinds of work, one loop. They share a node pool
+                        // and a memory limit because they are the same shape of
+                        // workload: minutes of CPU with nobody holding a socket
+                        // open. A notification is not, which is why that has a
+                        // Deployment of its own.
+                        let outcome = match job.kind {
+                            JobKind::Simulation => {
+                                simulation::run(&store, &metrics_registry, &job).await
+                            }
+                            _ => runner.run(&job).await,
+                        };
                         heartbeat.abort();
 
                         let report = match &outcome {
@@ -212,6 +223,21 @@ async fn main() -> anyhow::Result<()> {
     maintenance.abort();
     LogRecord::info("analysis worker stopped").emit();
     Ok(())
+}
+
+/// Claims whichever kind of work is waiting.
+///
+/// Analyses first, deliberately. A customer is watching a progress bar for one
+/// of those; a queued simulation is large by definition and its requester has
+/// already been told it is running in the background. Under saturation the
+/// interactive work should win.
+async fn claim_any(
+    queue: &Queue,
+) -> Result<Option<skattjakt_jobs::Job>, skattjakt_jobs::QueueError> {
+    if let Some(job) = queue.claim(JobKind::Analysis).await? {
+        return Ok(Some(job));
+    }
+    queue.claim(JobKind::Simulation).await
 }
 
 fn spawn_maintenance(queue: Queue, store: Store) -> tokio::task::JoinHandle<()> {

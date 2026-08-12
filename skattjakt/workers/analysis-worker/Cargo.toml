@@ -19,6 +19,7 @@ skattjakt-jobs.workspace = true
 skattjakt-model.workspace = true
 skattjakt-pipeline.workspace = true
 skattjakt-rules.workspace = true
+skattjakt-simulate.workspace = true
 skattjakt-store.workspace = true
 skattjakt-telemetry.workspace = true
 

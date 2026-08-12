@@ -379,6 +379,15 @@ pub mod names {
     pub const DOCUMENTS_UPLOADED: &str = "skattjakt_documents_uploaded_total";
     pub const EXTRACTION_FACTS: &str = "skattjakt_extracted_facts_total";
 
+    // Monte Carlo simulation
+    pub const SIMULATIONS_STARTED: &str = "skattjakt_simulations_started_total";
+    pub const SIMULATIONS_FINISHED: &str = "skattjakt_simulations_finished_total";
+    pub const SIMULATION_DURATION: &str = "skattjakt_simulation_duration_ms";
+    pub const SIMULATION_ITERATIONS: &str = "skattjakt_simulation_iterations_total";
+    pub const SIMULATION_THROUGHPUT: &str = "skattjakt_simulation_iterations_per_second";
+    pub const SIMULATION_CONVERGENCE_FAILURES: &str =
+        "skattjakt_simulation_convergence_failures_total";
+
     // Model quality and cost (sections 46, 68, 69)
     pub const MODEL_CALLS: &str = "skattjakt_model_calls_total";
     pub const MODEL_TOKENS: &str = "skattjakt_model_tokens_total";
@@ -415,6 +424,31 @@ pub fn register_all(registry: &Registry) {
     );
     registry.register_gauge(HTTP_IN_FLIGHT, "HTTP requests currently being handled.");
     registry.register_counter(RATE_LIMITED, "Requests rejected by the rate limiter.");
+    registry.register_counter(
+        SIMULATIONS_STARTED,
+        "Simulation runs started, by execution mode.",
+    );
+    registry.register_counter(
+        SIMULATIONS_FINISHED,
+        "Simulation runs finished, by outcome.",
+    );
+    registry.register_histogram(
+        SIMULATION_DURATION,
+        "Wall-clock time of a simulation run.",
+        "milliseconds",
+        vec![10, 50, 100, 500, 1_000, 5_000, 15_000, 60_000, 300_000],
+    );
+    registry.register_counter(SIMULATION_ITERATIONS, "Monte Carlo iterations executed.");
+    registry.register_histogram(
+        SIMULATION_THROUGHPUT,
+        "Iterations per second achieved by a run.",
+        "iterations per second",
+        vec![1_000, 10_000, 50_000, 100_000, 250_000, 500_000, 1_000_000],
+    );
+    registry.register_counter(
+        SIMULATION_CONVERGENCE_FAILURES,
+        "Runs whose results had not stabilised at the iteration count used.",
+    );
     registry.register_counter(SIGN_INS, "Sign-in attempts, by client kind and outcome.");
     registry.register_counter(
         NOTIFICATIONS_DELIVERED,

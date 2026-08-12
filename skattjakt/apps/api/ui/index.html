@@ -5,84 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skattjakt</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/ui/app.css">
 <style>
-  /* Light is the base; dark is a token swap, so nothing is defined only inside
-     a media query. */
-  :root {
-    --bg: #fbfaf8;
-    --surface: #ffffff;
-    --border: #e3ded6;
-    --ink: #1c1a17;
-    --muted: #6b655c;
-    --accent: #1f5d4c;
-    --accent-soft: #e8f1ee;
-    --warn: #8a5a1a;
-    --warn-soft: #fbf1e2;
-    --radius: 10px;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #171614;
-      --surface: #201e1b;
-      --border: #35322d;
-      --ink: #eeeae4;
-      --muted: #a49d92;
-      --accent: #6fc0a7;
-      --accent-soft: #1d2e29;
-      --warn: #d9a35a;
-      --warn-soft: #2c2519;
-    }
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0; background: var(--bg); color: var(--ink);
-    font: 16px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  }
-  main { max-width: 760px; margin: 0 auto; padding: 2.5rem 1.25rem 5rem; }
-  h1 { font-size: 1.9rem; letter-spacing: -0.02em; margin: 0 0 .4rem; }
-  h2 { font-size: 1.15rem; margin: 2rem 0 .75rem; }
-  h3 { font-size: 1rem; margin: 0; }
-  p { margin: 0 0 1rem; }
-  .lede { color: var(--muted); font-size: 1.05rem; }
-  .step { display: none; }
+.step { display: none; }
   .step.active { display: block; }
-
-  label { display: block; font-size: .85rem; color: var(--muted); margin: .9rem 0 .3rem; }
-  input, select, textarea {
-    width: 100%; padding: .6rem .7rem; font: inherit; color: var(--ink);
-    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
-  }
-  textarea { min-height: 190px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82rem; }
-  input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
-  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 0 1rem; }
-  @media (max-width: 560px) { .row { grid-template-columns: 1fr; } }
-
-  button {
-    font: inherit; font-weight: 550; padding: .65rem 1.2rem; border-radius: 8px;
-    border: 1px solid var(--accent); background: var(--accent); color: var(--bg);
-    cursor: pointer;
-  }
-  button.secondary { background: transparent; color: var(--accent); }
-  button:disabled { opacity: .5; cursor: not-allowed; }
-  .actions { display: flex; gap: .6rem; margin-top: 1.6rem; flex-wrap: wrap; }
-
-  .card {
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: var(--radius); padding: 1rem 1.1rem; margin-bottom: .85rem;
-  }
-  .card header { display: flex; justify-content: space-between; gap: 1rem; align-items: baseline; }
-  .amount { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
-  .tag {
-    display: inline-block; font-size: .72rem; padding: .12rem .5rem; border-radius: 999px;
-    background: var(--accent-soft); color: var(--accent); border: 1px solid transparent;
-  }
-  .tag.warn { background: var(--warn-soft); color: var(--warn); }
-  .meta { color: var(--muted); font-size: .8rem; margin-top: .5rem; }
-  details { margin-top: .7rem; }
-  summary { cursor: pointer; font-size: .85rem; color: var(--accent); }
-  details ul { margin: .5rem 0 0; padding-left: 1.1rem; font-size: .85rem; color: var(--muted); }
-  details li { margin-bottom: .3rem; }
-  code { font-size: .8rem; }
 
   .counts { display: flex; gap: 1.5rem; flex-wrap: wrap; margin: 1rem 0 1.5rem; }
   .counts div { font-size: .85rem; color: var(--muted); }
@@ -94,13 +20,6 @@
   ol.stages li::before { content: "○"; position: absolute; left: 0; }
   ol.stages li.done { color: var(--ink); }
   ol.stages li.done::before { content: "●"; color: var(--accent); }
-
-  .notice { border-left: 3px solid var(--warn); background: var(--warn-soft); padding: .8rem 1rem; border-radius: 0 8px 8px 0; margin-bottom: 1rem; font-size: .9rem; }
-  .error { border-left-color: #b3452f; }
-  footer { border-top: 1px solid var(--border); margin-top: 3rem; padding-top: 1.2rem; font-size: .78rem; color: var(--muted); }
-  footer details summary { color: var(--muted); }
-  .hint { color: var(--muted); font-size: .82rem; margin-top: 1rem; }
-  .hidden { display: none; }
 </style>
 </head>
 <body>
