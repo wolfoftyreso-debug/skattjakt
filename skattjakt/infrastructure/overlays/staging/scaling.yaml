@@ -1,0 +1,36 @@
+# Staging's autoscaler range.
+#
+# Staging inherited production's range — two to six API pods, two to eight
+# workers — against a quota half production's size. At its ceiling that
+# workload needs 25.4Gi of memory limits and the quota allows 16Gi, so under
+# load the HPA would have asked for pods the quota refused. Nothing crashes:
+# the ReplicaSet emits a FailedCreate event, the Deployment reports fewer
+# replicas than it wants, and the environment stops scaling exactly when it
+# was being load-tested. In staging that is worse than in production, because
+# the whole purpose of the environment is to find out how the system behaves
+# under load, and it would have been measuring the quota rather than the code.
+#
+# The `replicas: 1` in kustomization.yaml is likewise not what runs; the HPA
+# owns that field. `minReplicas` below is the real steady state.
+#
+# Staging keeps production's *shape* — an autoscaler on both workloads, the
+# same metric, the same behaviour — at a smaller ceiling. Production's own
+# range is unchanged and fits its quota with room for the backup job.
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: skattjakt-api
+  namespace: skattjakt
+spec:
+  minReplicas: 2
+  maxReplicas: 3
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: skattjakt-analysis-worker
+  namespace: skattjakt
+spec:
+  minReplicas: 2
+  maxReplicas: 4

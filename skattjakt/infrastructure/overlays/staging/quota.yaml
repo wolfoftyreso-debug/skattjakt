@@ -8,7 +8,11 @@ spec:
     requests.cpu: "4"
     requests.memory: 8Gi
     limits.cpu: "8"
-    limits.memory: 16Gi
+    # 24Gi, not 16Gi. At the autoscaler's ceiling the workload needs 15.9Gi,
+    # and the nightly backup and the restore test each want another gigabyte on
+    # top of whatever is running at the time. A quota that fits the service
+    # exactly is a quota that cancels the backup on a busy night.
+    limits.memory: 24Gi
     requests.storage: 100Gi
     persistentvolumeclaims: "6"
     count/deployments.apps: "10"

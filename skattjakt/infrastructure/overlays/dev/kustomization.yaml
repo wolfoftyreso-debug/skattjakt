@@ -33,3 +33,6 @@ patches:
   - path: config.yaml
   - path: ingress.yaml
   - path: quota.yaml
+  # Pod and volume sizes. Without this the "smaller" above is only the replica
+  # count, and the declared workload does not fit the quota three lines up.
+  - path: resources.yaml

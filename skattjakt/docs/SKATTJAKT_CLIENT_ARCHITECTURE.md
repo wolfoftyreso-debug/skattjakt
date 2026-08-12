@@ -193,10 +193,19 @@ derived from identifiers rather than from the filename, and is redeemed against
 what actually arrived — so a ticket for a small file cannot be redeemed for a
 large one.
 
-**State:** the ticket lifecycle is implemented and tested. The S3 client that
-makes the storage URL a genuine direct-to-storage URL is not written, so today a
-ticket resolves through the API. That is the one piece a mobile client needs
-before it ships, and it is a backend change with no contract change.
+**State: built and served.** All three endpoints exist. The response tells the
+client which of two shapes it got:
+
+```json
+{"upload_url": "https://…", "method": "direct"}     ← a presigned URL, S3-backed
+{"upload_url": "/v1/documents/tickets/…/content", "method": "proxied"}
+```
+
+`direct` when object storage can presign, `proxied` when it cannot — a
+filesystem-backed deployment, for instance. **The client's code is the same
+either way:** `PUT` the bytes to `upload_url`, then `POST …/complete`. A client
+should not branch on `method`; it is there so a support engineer can tell which
+path a failed upload took.
 
 ---
 
@@ -315,14 +324,18 @@ there is a second market.
 
 Stated plainly so nobody discovers it in sprint two:
 
-1. **The upload-ticket endpoints.** The store layer and presigning are done and
-   tested; no HTTP route issues a ticket yet.
-2. **The push sender.** The outbox drains over email; push answers
-   `NotConfigured`.
-4. **A generated client SDK.** The OpenAPI file supports codegen; no pipeline
+1. **The push sender.** The outbox drains over email; push answers
+   `NotConfigured`. A device can register an APNs or FCM token today and
+   nothing will ever be sent to it. This is the one item that a mobile client
+   cannot ship without, because §4's whole flow depends on it.
+2. **A generated client SDK.** The OpenAPI file supports codegen; no pipeline
    produces or publishes one.
-5. **Design.** There are no mobile designs, and this document deliberately does
+3. **Design.** There are no mobile designs, and this document deliberately does
    not invent them.
 
-Items 1 and 2 are backend work with no contract change. A mobile client can be
-started before they land and cannot ship without them.
+Item 1 is backend work with no contract change — the endpoint a client calls to
+register its token already exists and is tested. A mobile client can be started
+before it lands and cannot ship without it.
+
+The upload-ticket endpoints used to be first on this list. They are built,
+served and described in §5.

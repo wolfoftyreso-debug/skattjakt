@@ -205,17 +205,32 @@ else
     fail "$broken referenced paths do not exist"
 fi
 
-# --- the surface matrix does not claim a cluster it never reached ----------
+# --- the surface matrix does not claim more of the cluster than it reached --
 #
-# The one claim most likely to drift into being false, because it is the one
-# that would be true if anyone ever ran the manifests.
+# This check used to assert the string "never applied", which was true until the
+# manifests were applied to a real API server. The claim it guards has moved
+# rather than gone away, and it moved in the direction that matters: the
+# manifests are now admitted by a live cluster, and no container has ever
+# started, because the build environment masks CAP_SYS_RESOURCE and the kubelet
+# cannot set a pod sandbox's oom_score_adj.
+#
+# So the assertion is now the *narrower* claim. "Applied" must not quietly
+# become "running", and anything that needs a running container — NetworkPolicy
+# enforcement above all — must stay on the unverified list until something
+# actually runs.
 
 echo
 echo "the surface matrix is honest about the cluster"
-if grep -q "never applied" docs/SKATTJAKT_PRODUCT_SURFACE.md; then
-    pass "the matrix still records that Kubernetes was never applied"
+if grep -q "no pod started" docs/SKATTJAKT_PRODUCT_SURFACE.md; then
+    pass "the matrix records that the manifests were applied but nothing ran"
 else
-    fail "the matrix no longer records that Kubernetes was never applied"
+    fail "the matrix no longer records that no pod has started"
+fi
+
+if grep -q "NetworkPolicy \*enforcement\*" docs/SKATTJAKT_PRODUCT_SURFACE.md; then
+    pass "NetworkPolicy enforcement is still listed as unverified"
+else
+    fail "NetworkPolicy enforcement is no longer listed as unverified"
 fi
 
 # --- the rule set's review state matches what the documents claim ----------

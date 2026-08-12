@@ -52,7 +52,7 @@ for env in "${ENVIRONMENTS[@]}"; do
     # about a document tree, and expressing them in shell would mean grepping
     # YAML, which is how a check passes for the wrong reason.
     if python3 - "$rendered" "$env" <<'PYTHON'
-import json
+import re
 import sys
 
 import yaml
@@ -94,6 +94,217 @@ check(
 )
 check(len(by_kind("ResourceQuota")) == 1, "no ResourceQuota")
 check(len(by_kind("LimitRange")) == 1, "no LimitRange")
+
+# --- the declared workload has to fit inside its own quota -----------------
+#
+# Added after applying these manifests to a real API server for the first time
+# and watching the dev environment come up without object storage. Every object
+# was individually valid and every object was accepted; the ResourceQuota then
+# refused MinIO's PersistentVolumeClaim, so the StatefulSet controller never
+# created the pod. No pod is in a failing state, no rollout reports an error,
+# and the only trace is an event on a controller nobody watches.
+#
+# A schema validator cannot see this, because the conflict does not exist in
+# any one document — it exists in the sum. That is exactly the kind of question
+# worth asking here rather than in a cluster.
+
+_SUFFIX = {
+    "": 1, "m": 0.001,
+    "k": 10 ** 3, "M": 10 ** 6, "G": 10 ** 9, "T": 10 ** 12,
+    "Ki": 2 ** 10, "Mi": 2 ** 20, "Gi": 2 ** 30, "Ti": 2 ** 40,
+}
+
+
+def quantity(value):
+    """A Kubernetes quantity as a float in base units: cores, or bytes."""
+    if value is None:
+        return 0.0
+    match = re.fullmatch(r"(\d+(?:\.\d+)?)([a-zA-Z]*)", str(value).strip())
+    if not match or match.group(2) not in _SUFFIX:
+        raise ValueError(f"cannot parse the quantity {value!r}")
+    return float(match.group(1)) * _SUFFIX[match.group(2)]
+
+
+def human(value, key):
+    return f"{value / 2 ** 30:.2f}Gi" if ("memory" in key or "storage" in key) else f"{value:.2f}"
+
+
+if by_kind("ResourceQuota") and by_kind("LimitRange"):
+    quota = by_kind("ResourceQuota")[0]["spec"]["hard"]
+    ranges = by_kind("LimitRange")[0]["spec"]["limits"]
+    container_range = next(r for r in ranges if r["type"] == "Container")
+    claim_range = next((r for r in ranges if r["type"] == "PersistentVolumeClaim"), {})
+    default_request = container_range.get("defaultRequest", {})
+    default_limit = container_range.get("default", {})
+
+    def demand_of(container):
+        """What the quota will actually charge for this container.
+
+        Not simply what it declares: the LimitRange fills in anything omitted,
+        and the filled-in value is what gets counted. Reading only the explicit
+        fields would under-count a container that states no CPU limit and be
+        wrong in the safe-looking direction.
+        """
+        resources = container.get("resources", {})
+        stated_requests = resources.get("requests", {})
+        stated_limits = resources.get("limits", {})
+        demand = {}
+        for resource in ("cpu", "memory"):
+            limit = stated_limits.get(resource, default_limit.get(resource))
+            request = stated_requests.get(
+                resource, default_request.get(resource, limit)
+            )
+            demand[f"requests.{resource}"] = quantity(request)
+            demand[f"limits.{resource}"] = quantity(limit)
+        return demand
+
+    def pod_demand(spec):
+        """A pod's charge: the containers' sum, or its largest init container.
+
+        Init containers run one at a time and before the rest, so the scheduler
+        charges whichever of the two is bigger rather than their total.
+        """
+        totals = {k: 0.0 for k in
+                  ("requests.cpu", "requests.memory", "limits.cpu", "limits.memory")}
+        for container in spec.get("containers", []):
+            for key, value in demand_of(container).items():
+                totals[key] += value
+        for container in spec.get("initContainers", []):
+            for key, value in demand_of(container).items():
+                totals[key] = max(totals[key], value)
+        return totals
+
+    # `spec.replicas` is not what the cluster runs. Where an HPA targets a
+    # workload it owns the replica count within seconds of the apply, so a
+    # `replicas: 1` in an overlay next to an HPA with `minReplicas: 2` is a
+    # number that is true for about as long as it takes to read it. Both ends
+    # of the HPA's range have to be checked, and for different reasons:
+    #
+    #   min — the steady state. If this does not fit, the environment never
+    #         reaches full strength and sits permanently degraded.
+    #   max — the ceiling the autoscaler is allowed to reach. If *this* does
+    #         not fit, the HPA scales up under load until the quota refuses,
+    #         and the service stops scaling at precisely the moment it needed
+    #         to. The only signal is a FailedCreate event on a ReplicaSet.
+    #
+    # A quota below the autoscaler's ceiling is not a guardrail. It is a bug
+    # with a guardrail's name on it.
+    autoscaled = {
+        h["spec"]["scaleTargetRef"]["name"]: (h["spec"]["minReplicas"], h["spec"]["maxReplicas"])
+        for h in by_kind("HorizontalPodAutoscaler")
+    }
+
+    def workload_totals(at_ceiling):
+        totals = {k: 0.0 for k in
+                  ("requests.cpu", "requests.memory", "limits.cpu", "limits.memory")}
+        storage, claims = 0.0, 0
+        counts = {"count/deployments.apps": 0, "count/statefulsets.apps": 0}
+        for doc in docs:
+            if doc["kind"] not in ("Deployment", "StatefulSet"):
+                continue
+            counts[f"count/{doc['kind'].lower()}s.apps"] += 1
+            name = doc["metadata"]["name"]
+            declared_replicas = doc["spec"].get("replicas", 1)
+            low, high = autoscaled.get(name, (declared_replicas, declared_replicas))
+            replicas = high if at_ceiling else low
+            for key, value in pod_demand(doc["spec"]["template"]["spec"]).items():
+                totals[key] += value * replicas
+            # Volumes do not scale with an HPA: a StatefulSet's claims follow
+            # its own replica count, and nothing autoscales a StatefulSet here.
+            for claim in doc["spec"].get("volumeClaimTemplates", []):
+                totals.setdefault("requests.storage", 0.0)
+                totals["requests.storage"] += (
+                    quantity(claim["spec"]["resources"]["requests"]["storage"])
+                    * declared_replicas
+                )
+                claims += declared_replicas
+        totals.setdefault("requests.storage", 0.0)
+        return totals, claims, counts
+
+    steady, claims, counts = workload_totals(at_ceiling=False)
+    ceiling, _, _ = workload_totals(at_ceiling=True)
+
+    for label, totals in (("at rest", steady), ("at the autoscaler's ceiling", ceiling)):
+        for key, used in totals.items():
+            hard = quantity(quota.get(key))
+            check(
+                used <= hard,
+                f"{label} the workload needs {key}={human(used, key)} "
+                f"and the quota allows {human(hard, key)}",
+            )
+
+    ceiling_pods = sum(
+        autoscaled.get(d["metadata"]["name"], (d["spec"].get("replicas", 1),) * 2)[1]
+        for d in docs
+        if d["kind"] in ("Deployment", "StatefulSet")
+    )
+    if "pods" in quota:
+        check(
+            ceiling_pods <= int(quota["pods"]),
+            f"the autoscaler's ceiling is {ceiling_pods} pods and the quota allows "
+            f"{quota['pods']}",
+        )
+
+    check(
+        claims <= int(quota.get("persistentvolumeclaims", 0)),
+        f"the workload declares {claims} volume claims and the quota allows "
+        f"{quota.get('persistentvolumeclaims')}",
+    )
+    for key, used in counts.items():
+        check(
+            used <= int(quota.get(key, 0)),
+            f"the workload declares {used} of {key} and the quota allows {quota.get(key)}",
+        )
+
+    # A CronJob's pod is charged while it runs, and it does not get to pick a
+    # quiet moment: the backup runs on a schedule, which may well be while the
+    # service is at its busiest and the HPA is at its ceiling. If it does not
+    # fit there, the backup silently does not run — which is the failure this
+    # whole section exists to prevent.
+    for job in by_kind("CronJob"):
+        job_spec = job["spec"]["jobTemplate"]["spec"]["template"]["spec"]
+        needed = pod_demand(job_spec)
+        for key in ("limits.memory", "requests.cpu"):
+            hard = quantity(quota.get(key))
+            check(
+                ceiling[key] + needed[key] <= hard,
+                f"{job['metadata']['name']} cannot be admitted while the service "
+                f"is at its autoscaler's ceiling: {key} would reach "
+                f"{human(ceiling[key] + needed[key], key)} of {human(hard, key)}",
+            )
+
+    # The LimitRange's own ceilings and floors, which are enforced per object at
+    # admission rather than in aggregate.
+    for name, spec in pod_specs():
+        for container in spec.get("containers", []):
+            needed = demand_of(container)
+            label = f"{name}/{container['name']}"
+            for resource in ("cpu", "memory"):
+                ceiling = quantity(container_range.get("max", {}).get(resource))
+                floor = quantity(container_range.get("min", {}).get(resource))
+                if ceiling:
+                    check(
+                        needed[f"limits.{resource}"] <= ceiling,
+                        f"{label} asks for more {resource} than the LimitRange allows",
+                    )
+                if floor:
+                    check(
+                        needed[f"requests.{resource}"] >= floor,
+                        f"{label} asks for less {resource} than the LimitRange allows",
+                    )
+
+    for doc in docs:
+        if doc["kind"] not in ("Deployment", "StatefulSet"):
+            continue
+        for claim in doc["spec"].get("volumeClaimTemplates", []):
+            size = quantity(claim["spec"]["resources"]["requests"]["storage"])
+            label = f"{doc['metadata']['name']}/{claim['metadata']['name']}"
+            ceiling = quantity(claim_range.get("max", {}).get("storage"))
+            floor = quantity(claim_range.get("min", {}).get("storage"))
+            if ceiling:
+                check(size <= ceiling, f"{label} is larger than the LimitRange allows")
+            if floor:
+                check(size >= floor, f"{label} is smaller than the LimitRange allows")
 
 # Everything lands in the environment's namespace and nowhere else.
 namespaced = {

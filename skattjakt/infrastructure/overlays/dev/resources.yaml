@@ -1,0 +1,124 @@
+# Dev is smaller than production. Until this file existed it was not.
+#
+# The overlay shrank the replica counts and the quota and left every pod and
+# every volume at its production size, so the declared workload asked for 70Gi
+# of storage and 8.9Gi of memory limits against a quota of 40Gi and 8Gi. That
+# does not fail at apply time — every object is accepted. It fails afterwards,
+# quietly and partially:
+#
+#   - The MinIO StatefulSet's PVC is refused by the quota, so the StatefulSet
+#     controller never creates the pod. There is no failing pod to look at,
+#     only an event on a controller nobody watches. Dev comes up with no object
+#     storage and the API reports a healthy start.
+#   - The memory-limit overage lands on whichever pod is admitted last, which
+#     is whichever pod happened to be created last — so the same manifest
+#     produces a different broken pod on each redeploy.
+#
+# Both were found by applying the manifests to a real API server, which is the
+# only thing that evaluates a ResourceQuota. A schema validator cannot: every
+# object here is individually valid, and the conflict only exists in the sum.
+#
+# The sizes below are the ones the dev quota was evidently written for. The
+# *shape* is untouched — same containers, same probes, same NetworkPolicies,
+# same Pod Security level — because an environment that differs in its
+# isolation cannot be used to test whether production's isolation works.
+#
+# Note on the volumes: `volumeClaimTemplates` is immutable on a live
+# StatefulSet. Changing these sizes against an existing dev namespace requires
+# deleting the StatefulSet (`--cascade=orphan` keeps the pods) and its PVCs.
+# For dev that is the right trade; for staging and production it is why their
+# sizes are not patched here.
+#
+# The replica counts are here too, and they are the part that was most wrong.
+# The overlay above sets `replicas: 1` on both Deployments; the base ships an
+# HPA with `minReplicas: 2` for each. The HPA owns the field, so the applied
+# `1` survives for about a second — dev ran two of everything, and would have
+# scaled to six API pods and eight workers, which fits neither the quota nor
+# the intent of a dev environment. Verified on a live cluster: applied with
+# `replicas: 1`, read back as 2.
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: skattjakt-api
+  namespace: skattjakt
+spec:
+  minReplicas: 1
+  # Two, not one: an autoscaler that cannot scale is not being tested. Dev
+  # keeps the behaviour and not the capacity.
+  maxReplicas: 2
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: skattjakt-analysis-worker
+  namespace: skattjakt
+spec:
+  minReplicas: 1
+  maxReplicas: 2
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: skattjakt-postgres
+  namespace: skattjakt
+spec:
+  template:
+    spec:
+      containers:
+        - name: postgres
+          resources:
+            requests:
+              memory: 256Mi
+            limits:
+              # 4Gi in production, where it holds a real working set. A dev
+              # database holds a handful of test companies.
+              memory: 1Gi
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 10Gi
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: skattjakt-minio
+  namespace: skattjakt
+spec:
+  template:
+    spec:
+      containers:
+        - name: minio
+          resources:
+            limits:
+              memory: 512Mi
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            # 50Gi in production holds years of scanned annual reports. Dev
+            # holds the fixtures in tests/.
+            storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: skattjakt-analysis-worker
+  namespace: skattjakt
+spec:
+  template:
+    spec:
+      containers:
+        - name: worker
+          resources:
+            limits:
+              # The production limit is sized for extraction on a large scanned
+              # document. Dev runs the same code on small fixtures.
+              memory: 1Gi

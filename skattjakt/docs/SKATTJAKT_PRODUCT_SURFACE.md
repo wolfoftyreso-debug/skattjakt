@@ -75,7 +75,7 @@ building it — not rewriting the core (§32, §36).
 | **Observability** | ✓ | ✓ | ✓ metrics, logs, correlation, OTLP export | ✓ 12 checks against a real collector | ✓ |
 | **Security** | ✓ | ✓ | ✓ | ✓ security 39/39 | ✓ |
 | **CI/CD** | ✓ | ✓ | ✓ 8 gates | ✓ | ✓ |
-| **Kubernetes** | ✓ | ✓ | ✓ 33 objects × 3 envs | ✓ 99/99 schema-valid | ✗ **never applied** |
+| **Kubernetes** | ✓ | ✓ | ✓ 37 objects × 3 envs | ✓ 111/111 accepted by a real API server; 3 defects found and fixed | ◐ **applied, no pod started** — see §5.1 |
 | **Backup / recovery** | ✓ | ✓ | ✓ daily + weekly restore test | ✓ scripts reviewed | ✗ never run in a cluster |
 | **Documentation** | ✓ | ✓ | ✓ 11 documents | ✓ CI checks the couplings | ✓ |
 
@@ -126,6 +126,53 @@ different columns for a reason.
 
 ## 5. Honest totals
 
+### 5.1 What happened when the manifests met a real cluster
+
+They had never been applied. A k3s v1.31.2 cluster was brought up in this
+environment and all three overlays were put through it. What that changed:
+
+**Accepted.** 111 objects — 37 per environment — through server-side apply on a
+real API server: schema, defaulting, admission and cross-references. The dev
+overlay was then applied for real, and every object was created.
+
+**Rejected, correctly, and this is the part a schema validator cannot do.**
+A `ResourceQuota` is evaluated against the *sum* of what a namespace declares,
+and no single document is invalid. Three defects, all in that shape:
+
+1. **Dev had no object storage.** The overlay shrank the replica counts and the
+   quota and left every pod and volume at its production size: 70Gi of storage
+   declared against a 40Gi quota. MinIO's PVC was refused, so its StatefulSet
+   never created a pod. Nothing was in a failing state — no crash, no failing
+   rollout, one event on a controller nobody watches.
+2. **Dev ran two of everything.** The overlay said `replicas: 1`; the base ships
+   an HPA with `minReplicas: 2`, and the HPA owns that field within seconds of
+   an apply. Applied as 1, read back as 2.
+3. **Dev and staging were configured to autoscale into their own quota.** At
+   their HPA ceilings they need 12.9Gi and 25.4Gi of memory limits against
+   quotas of 8Gi and 16Gi. Under load the autoscaler would have asked for pods
+   the quota refused — the service stops scaling exactly when it needs to, and
+   the nightly backup is what gets refused first.
+
+All three are fixed, and `validate-manifests.sh` now models the quota the way
+the API server does: at rest, at the autoscaler's ceiling, and with a CronJob
+running on top of the ceiling. Removing the fixes makes it fail.
+
+**Verified live.** Pod Security `restricted` is genuinely enforced by the
+namespace label, not merely asserted in a test: a pod requesting
+`hostNetwork`, `hostPID`, `privileged`, `runAsUser: 0` and a `hostPath` mount
+of `/` was rejected by the API server with seven separate violations.
+
+**Not verified: no container ever started.** The sandbox this was built in
+masks `CAP_SYS_RESOURCE` (`CapEff: 000001fffeffffff`). The kubelet sets
+`oom_score_adj: -998` on every pod sandbox, lowering it below the parent's
+value requires that capability, and the kernel refuses — even as root, and on
+both container runtimes tried. Every pod reaches `Scheduled` and stops at
+`FailedCreatePodSandBox`. This is a property of the build environment, not of
+the manifests: it fails identically for coredns. See §6 for what it leaves
+unproven.
+
+### 5.2 Totals
+
 Verified in this environment, in this session:
 
 ```
@@ -134,18 +181,20 @@ Verified in this environment, in this session:
  39 security checks (live API)           24 failure-injection checks (real Postgres)
  20 end-to-end product steps              5 S3 checks against a real MinIO
  20 end-to-end steps again, on S3        15 notification checks (real SMTP)
- 12 trace checks (real OTel collector)
- 99 Kubernetes objects schema-valid
+ 12 trace checks (real OTel collector)  111 Kubernetes objects applied to a live
+ 15 migration checks: fresh install,       API server; 1 Pod Security rejection
+    and upgrade-with-data from every       verified with 7 violations
+    earlier version
   9 container image assertions          305 SBOM components, all checksummed
- 17 documentation coupling checks
+ 18 documentation coupling checks
 ```
 
 Not verified, and not claimed:
 
-- Applying the manifests to a live cluster, and therefore NetworkPolicy
-  *enforcement*, HPA behaviour, Argo CD reconciliation, ingress and TLS.
-- The upload-ticket HTTP endpoints. The store layer and presigning are tested;
-  nothing serves them yet.
+- **Anything that requires a running container.** NetworkPolicy *enforcement*,
+  HPA behaviour under real load, probe outcomes, Argo CD reconciliation,
+  ingress and TLS termination. The manifests are applied and admitted; no pod
+  has run. §5.1 says why, and it is the environment rather than the manifests.
 - The backup and restore CronJobs running for real.
 - Trivy, cosign signing, SLSA provenance against a registry.
 - Any mobile client, because none was built.
@@ -173,15 +222,27 @@ Not verified, and not claimed:
    `HttpOnly` `SameSite=Strict` cookies, and a CSRF defence that requires a
    custom header the browser will not send cross-origin. The company token
    remains for integrations and for bootstrapping the first user.
-5. Wire the upload-ticket routes into the API. The store layer and the
-   presigning are done; no HTTP endpoint issues a ticket yet. **Now the top
-   item**, because it is the last thing a mobile client needs from the backend.
+5. ~~Wire the upload-ticket routes into the API.~~ **Done.** Four endpoints:
+   issue a ticket, upload through the API when storage cannot presign, redeem
+   the ticket against what actually arrived, and list notifications. A ticket
+   for a small file cannot be redeemed for a large one, and the storage key is
+   derived from identifiers rather than from the filename.
+6. ~~Apply the manifests to a real cluster.~~ **Done, as far as this
+   environment allows.** All three overlays are accepted by a live API server
+   and the dev overlay is applied; three quota defects were found and fixed
+   (§5.1). No container has started, and the reason is the sandbox rather than
+   the manifests. **Now the top item** for anyone with an ordinary cluster:
+   run the dev overlay somewhere a pod can start, which is the only way to
+   verify NetworkPolicy enforcement.
+7. **The push sender.** The outbox drains over email; push answers
+   `NotConfigured`, which is honest and is not a delivery channel. It is the
+   last backend gap before a mobile client can ship.
 
-**Phase 4 — mobile.** Only after (1) and (2), because a phone without upload
-tickets and without push is a worse product than the web client.
+**Phase 4 — mobile.** Only after (7), because a phone without push is a worse
+product than the web client.
 
-**Phase 5 — hardening.** Everything in §5's "not verified" list, which needs a
-cluster.
+**Phase 5 — hardening.** Everything in §5's "not verified" list, all of which
+needs a cluster where containers can run.
 
 **And before any of it:** a Swedish tax professional reads the 14 rules. Until
 that happens the product cannot present a finding as established, and that is

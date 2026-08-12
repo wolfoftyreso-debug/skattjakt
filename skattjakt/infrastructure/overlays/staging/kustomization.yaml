@@ -32,3 +32,6 @@ images:
 patches:
   - path: ingress.yaml
   - path: quota.yaml
+  # The autoscaler range. The `replicas` above is owned by the HPA within
+  # seconds of an apply, so this is where staging's real size is set.
+  - path: scaling.yaml
