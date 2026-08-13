@@ -14,7 +14,9 @@ use sqlx::Row;
 use uuid::Uuid;
 
 use skattjakt_core::{AnalysisId, CompanyId, Money};
-use skattjakt_payments::{OrderState, Product};
+use skattjakt_payments::{
+    DeliveryChoice, OrderState, Product, CANCELLATION_PERIOD_DAYS, CONSENT_WORDING_VERSION,
+};
 
 use crate::{Store, StoreError, StoreResult, Tenant};
 
@@ -29,6 +31,12 @@ pub struct Order {
     pub note: Option<String>,
     pub created_at: DateTime<Utc>,
     pub paid_at: Option<DateTime<Utc>>,
+    /// What the buyer chose about delivery, and therefore about cancelling.
+    pub delivery_choice: DeliveryChoice,
+    /// When they consented to immediate delivery, if they did.
+    pub consent_at: Option<DateTime<Utc>>,
+    /// Earliest moment the analysis this order bought may start.
+    pub deliverable_from: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -62,6 +70,13 @@ fn order_from(row: &sqlx::postgres::PgRow) -> StoreResult<Order> {
         note: row.get("note"),
         created_at: row.get("created_at"),
         paid_at: row.get("paid_at"),
+        delivery_choice: {
+            let choice: String = row.get("delivery_choice");
+            DeliveryChoice::parse(&choice)
+                .ok_or_else(|| StoreError::Invalid(format!("unknown delivery choice {choice}")))?
+        },
+        consent_at: row.get("consent_at"),
+        deliverable_from: row.get("deliverable_from"),
     })
 }
 
@@ -81,20 +96,42 @@ fn payment_from(row: &sqlx::postgres::PgRow) -> Payment {
 }
 
 const ORDER_COLUMNS: &str = "id, company_id, product, amount_ore, state, analysis_id, note, \
-                             created_at, paid_at";
+                             created_at, paid_at, delivery_choice, consent_at, deliverable_from";
 const PAYMENT_COLUMNS: &str = "id, order_id, company_id, provider, provider_reference, state, \
                                amount_ore, provider_status, error_code, lookups";
 
 impl Tenant<'_> {
-    /// Creates an order at the product's current price.
-    pub async fn create_order(&mut self, product: Product) -> StoreResult<Order> {
+    /// Creates an order at the product's current price, recording what the
+    /// buyer chose about delivery.
+    ///
+    /// The consent and the date it may be delivered are computed here rather
+    /// than passed in, so a caller cannot record a consent that was never given
+    /// or a delivery date that does not follow from the choice. `now()` is the
+    /// database's, so the fourteen days are measured against one clock.
+    pub async fn create_order(
+        &mut self,
+        product: Product,
+        delivery: DeliveryChoice,
+    ) -> StoreResult<Order> {
+        // Branched in SQL rather than in Rust so that the consent, the wording
+        // and the delivery date are all decided by the same `now()` and the
+        // same choice. Three statements agreeing by construction beats three
+        // agreeing by care.
         let row = sqlx::query(&format!(
-            "INSERT INTO orders (company_id, product, amount_ore)
-             VALUES (current_company_id(), $1, $2)
+            "INSERT INTO orders (company_id, product, amount_ore, delivery_choice,
+                                 consent_at, consent_wording_version, deliverable_from)
+             VALUES (current_company_id(), $1, $2, $3,
+                     CASE WHEN $3 = 'immediate' THEN now() END,
+                     CASE WHEN $3 = 'immediate' THEN $4 END,
+                     CASE WHEN $3 = 'immediate' THEN now()
+                          ELSE now() + make_interval(days => $5::int) END)
              RETURNING {ORDER_COLUMNS}"
         ))
         .bind(product.as_str())
         .bind(product.price().ore())
+        .bind(delivery.as_str())
+        .bind(CONSENT_WORDING_VERSION)
+        .bind(CANCELLATION_PERIOD_DAYS as i32)
         .fetch_one(&mut *self.tx)
         .await?;
         order_from(&row)
@@ -239,10 +276,17 @@ impl Tenant<'_> {
         order_id: Uuid,
         analysis_id: AnalysisId,
     ) -> StoreResult<Order> {
+        // `deliverable_from` is part of the condition, not a check before it.
+        //
+        // A buyer who kept their right to cancel bought an analysis that must
+        // not start for fourteen days. Enforcing that above this statement
+        // would leave the usual gap — read the date, decide, act — and the gap
+        // is where a fortnight becomes a few milliseconds. The database decides,
+        // against its own clock, in the statement that consumes the order.
         let row = sqlx::query(&format!(
             "UPDATE orders
              SET state = 'consumed', analysis_id = $2, consumed_at = now(), updated_at = now()
-             WHERE id = $1 AND state = 'paid'
+             WHERE id = $1 AND state = 'paid' AND deliverable_from <= now()
              RETURNING {ORDER_COLUMNS}"
         ))
         .bind(order_id)
@@ -276,6 +320,36 @@ impl Tenant<'_> {
         }
 
         Ok(order)
+    }
+
+    /// Cancels a paid order the buyer still has the right to cancel.
+    ///
+    /// One conditional statement, for the same reason redemption is: the right
+    /// exists until the analysis starts, and "check then act" would let a
+    /// cancellation and a redemption both succeed — the customer refunded and
+    /// analysed, or worse, neither.
+    ///
+    /// Returns the order when it was cancelled, and `NotFound` when it was not
+    /// cancellable: already spent, already refunded, never paid, or bought with
+    /// a consent to immediate delivery that gave the right away.
+    pub async fn cancel_order(&mut self, order_id: Uuid) -> StoreResult<Order> {
+        let row = sqlx::query(&format!(
+            "UPDATE orders
+             SET state = 'refund_owed',
+                 note = 'ångrat av köparen inom ångerfristen',
+                 updated_at = now()
+             WHERE id = $1
+               AND state = 'paid'
+               AND analysis_id IS NULL
+               AND delivery_choice = 'after_cancellation_period'
+               AND deliverable_from > now()
+             RETURNING {ORDER_COLUMNS}"
+        ))
+        .bind(order_id)
+        .fetch_optional(&mut *self.tx)
+        .await?
+        .ok_or(StoreError::NotFound)?;
+        order_from(&row)
     }
 
     /// Marks a paid order as owing a refund, because what it bought could not

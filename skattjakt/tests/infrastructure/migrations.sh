@@ -99,7 +99,11 @@ for stop in $(seq 1 $((${#MIGRATIONS[@]} - 1))); do
     apply_through "$db" "$stop"
 
     # Data every version has been able to hold since 0001.
-    COMPANY=aaaaaaaa-0000-0000-0000-00000000000$stop
+    #
+    # Zero-padded rather than concatenated. Pasting the index onto a fixed
+    # prefix produced a valid uuid for nine migrations and a thirteen-character
+    # group for the tenth — a latent break that waited for 0010 to arrive.
+    COMPANY="$(printf 'aaaaaaaa-0000-0000-0000-%012d' "$stop")"
     psql -d "$db" >/dev/null <<SQL
 INSERT INTO companies (id, name, org_number, fiscal_year_start, fiscal_year_end)
 VALUES ('$COMPANY', 'Bevarat AB', '5560160680', '2025-01-01', '2025-12-31');

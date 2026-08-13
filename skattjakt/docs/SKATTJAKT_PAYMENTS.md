@@ -374,9 +374,82 @@ the statutes cited in the source registry. **No lawyer has read them.** That is
 stated on the pages themselves, not only here, because the person who needs to
 know is the one reading them.
 
-The specific point a lawyer should be asked about first: a digital service
-delivered immediately loses its right of cancellation only if the consumer has
-expressly consented to immediate delivery *and* acknowledged the loss
-(distansavtalslagen 2 kap. 11 § 11). The purchase flow must therefore capture
-that consent at the point of payment — not merely publish it on `/angerratt` —
-and the checkout does not capture it yet.
+The specific point a lawyer should look at first is the wording itself, in
+`skattjakt_payments::CONSENT_WORDING`, and whether it is enough to carry
+distansavtalslagen (2005:59) 2 kap. 11 § 11. The mechanism around it is built
+and tested — see section 11 — but nobody qualified has read the sentence.
+
+---
+
+## 11. The choice at checkout
+
+A digital service delivered immediately loses its right of cancellation only if
+the consumer has **expressly consented** to delivery beginning and has
+**acknowledged** that the right is thereby lost — distansavtalslagen (2005:59)
+2 kap. 11 § 11. Publishing that on a terms page is not consent. Consent is
+something the buyer does, at the moment of buying.
+
+`/villkor` and `/angerratt` promised the buyer two options from the day they
+were written — start now and lose the right, or wait out the fourteen days and
+keep it — and the checkout offered neither. A purchase term describing a choice
+that does not exist is the worst kind of documentation drift, because it is the
+kind a customer can rely on to their cost.
+
+```
+POST /v1/orders
+{ "product": "company_analysis",
+  "delivery": "immediate",
+  "accepts_loss_of_cancellation_right": true }
+```
+
+Two fields rather than one, because the law asks for two things and one field
+could only ever record one of them. `delivery: immediate` without the
+acknowledgement is refused (`consent_required`) rather than quietly downgraded
+to the safe option — a buyer put in a two-week queue they did not ask for would
+find out a fortnight later.
+
+**Silence is never consent.** An order that says nothing about delivery keeps
+the right to cancel. The column defaults that way, so even a row inserted by
+something that has never heard of this can only err towards the buyer.
+
+### What is recorded, and why the wording is versioned
+
+Proving consent means knowing what was consented to. A boolean would record that
+a box was ticked next to text nobody can reconstruct: the wording changes, and
+every earlier consent silently becomes a claim about words the buyer never saw.
+So the order carries `consent_at` and `consent_wording_version`, `/angerratt`
+renders the wording from the same constant the order records, and
+`tests/e2e/shopfront.sh` asserts the published words verbatim.
+
+Two database constraints keep the record honest in both directions: consent
+without the choice, and the choice without consent, are equally a
+misrepresentation of what the buyer agreed to.
+
+### The fourteen days are real
+
+`orders.deliverable_from` is part of the condition that consumes an order, not a
+check before it:
+
+```sql
+WHERE id = $1 AND state = 'paid' AND deliverable_from <= now()
+```
+
+for the same reason the double-spend defence is one statement: read-decide-act
+is where a fortnight becomes a few milliseconds. A buyer who asks for their
+analysis during the period gets `409 order_not_deliverable_yet` **with the
+date** — it is the wait they chose, not a failure.
+
+### Exercising the right
+
+`POST /v1/orders/{id}/cancel`, available until the period runs out or the
+analysis starts, whichever comes first. It is one conditional statement for the
+same reason again: a cancellation and a redemption racing must not both win.
+
+It does **not** move money. This system cannot make refunds, so it moves the
+order to `refund_owed` and says a person will pay it. Reporting a refund that
+nobody has made would be the one lie a payments document must not contain.
+
+Every way an order can fail to be cancellable — never paid, already spent,
+already cancelled, or bought with a consent that gave the right away — answers
+the same `409 order_not_cancellable` with the reasons in the detail.
+Distinguishing them would tell a caller which orders exist.

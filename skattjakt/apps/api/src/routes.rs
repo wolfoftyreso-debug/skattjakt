@@ -476,12 +476,31 @@ pub async fn start_analysis(
                 // This is the same invariant as before, read the other way
                 // round: one order buys exactly one analysis, and asking twice
                 // shows you the one you bought rather than selling a second.
-                let already = tenant
-                    .order(order_id)
-                    .await
-                    .ok()
-                    .and_then(|o| o.analysis_id);
-                if let Some(bought) = already {
+                let existing = tenant.order(order_id).await.ok();
+
+                // A third possibility, and the one a customer will meet: the
+                // order is paid, unspent, and not deliverable yet because they
+                // chose to keep their right to cancel. That is not a refusal of
+                // their money — it is the fortnight they asked for — so it says
+                // when, rather than that something is wrong.
+                if let Some(order) = &existing {
+                    if order.analysis_id.is_none()
+                        && order.state == skattjakt_payments::OrderState::Paid
+                        && order.deliverable_from > chrono::Utc::now()
+                    {
+                        return Err(Problem {
+                            status: StatusCode::CONFLICT,
+                            title: "order_not_deliverable_yet".into(),
+                            detail: format!(
+                                "this order keeps its right of cancellation until {}, \
+                                 and the analysis starts then",
+                                order.deliverable_from.format("%Y-%m-%d %H:%M UTC")
+                            ),
+                        });
+                    }
+                }
+
+                if let Some(bought) = existing.and_then(|o| o.analysis_id) {
                     // The analysis created a few lines above is discarded by
                     // dropping the transaction uncommitted — it was never
                     // enqueued and nothing else refers to it.

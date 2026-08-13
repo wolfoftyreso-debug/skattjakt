@@ -474,13 +474,18 @@ tillbaka, så det som motsvarar en returpolicy är rätten att ångra köpet och
 innehåll som levereras omedelbart upphör ångerrätten när leveransen påbörjats, om du \
 uttryckligen samtyckt till att den påbörjas och bekräftat att du därmed förlorar \
 ångerrätten.</p>
-<p>I kassan väljer du själv:</p>
+<p>I kassan väljer du själv, och valet spelas in mot köpet:</p>
 <ul>
 <li><strong>Starta analysen direkt.</strong> Du samtycker till omedelbar leverans och \
 förlorar ångerrätten när analysen påbörjas.</li>
 <li><strong>Vänta ut ångerfristen.</strong> Analysen startar efter fjorton dagar, och \
 fram till dess kan du ångra köpet och få hela beloppet tillbaka.</li>
 </ul>
+<p>Väljer du att starta direkt är det den här meningen du bekräftar, ordagrant, och den \
+sparas mot ditt köp tillsammans med tidpunkten:</p>
+<blockquote class=\"notice\">{consent}</blockquote>
+<p class=\"meta\">Ordalydelse version {consent_version}. Ändras den får senare köp en ny \
+version; ditt köp behåller den du faktiskt fick se.</p>
 
 <h2>När du får pengarna tillbaka ändå</h2>
 <p>Ångerrätten är ett golv, inte ett tak. Du får pengarna tillbaka om:</p>
@@ -509,6 +514,11 @@ rekommendationer.</p>
             escape(&merchant.email),
             escape(&merchant.name),
             escape(&merchant.org_number),
+            // Rendered from the constant the order records, not retyped. A page
+            // that phrased it differently would make every stored consent a
+            // claim about words the buyer never saw.
+            consent = escape(skattjakt_payments::CONSENT_WORDING),
+            consent_version = escape(skattjakt_payments::CONSENT_WORDING_VERSION),
         ),
     ))
     .into_response()

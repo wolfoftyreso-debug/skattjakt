@@ -22,7 +22,9 @@ use serde_json::json;
 use uuid::Uuid;
 
 use skattjakt_core::CompanyId;
-use skattjakt_payments::{OrderState, PaymentError, PaymentRequest, Product, Settlement};
+use skattjakt_payments::{
+    DeliveryChoice, OrderState, PaymentError, PaymentRequest, Product, Settlement,
+};
 use skattjakt_store::payments::Order;
 use skattjakt_telemetry::{metrics::names, LabelSet, LogRecord};
 
@@ -38,6 +40,20 @@ pub struct CreateOrderRequest {
     /// the app-switch flow, where the payer identifies themselves in the app.
     #[serde(default)]
     pub payer_alias: Option<String>,
+    /// Whether the analysis starts now or after the cancellation period.
+    ///
+    /// Absent means the cautious one. A consumer who says nothing keeps their
+    /// right of cancellation; nothing here may read silence as consent.
+    #[serde(default)]
+    pub delivery: Option<String>,
+    /// The buyer's express acknowledgement that starting now costs them the
+    /// right to cancel.
+    ///
+    /// Separate from `delivery` on purpose. Distansavtalslagen asks for two
+    /// things — consent to immediate delivery *and* an acknowledgement that the
+    /// right is lost — and one field could only ever record one of them.
+    #[serde(default)]
+    pub accepts_loss_of_cancellation_right: bool,
 }
 
 fn order_json(order: &Order, token: Option<&str>) -> serde_json::Value {
@@ -48,7 +64,14 @@ fn order_json(order: &Order, token: Option<&str>) -> serde_json::Value {
         "amount": order.amount.to_string(),
         "currency": "SEK",
         "state": order.state.as_str(),
-        "audience": order.product.audience(),
+        "audience": order.product.audience_key(),
+        // What the buyer chose, and what follows from it. A client cannot show
+        // an honest "you can still cancel until…" without these.
+        "delivery_choice": order.delivery_choice.as_str(),
+        "keeps_right_to_cancel": order.delivery_choice.keeps_right_to_cancel()
+            && order.analysis_id.is_none(),
+        "consented_at": order.consent_at,
+        "deliverable_from": order.deliverable_from,
         "analysis_id": order.analysis_id.map(|id| id.0),
         "note": order.note,
         // Present only just after creation. The client turns it into an app
@@ -107,6 +130,37 @@ pub async fn create_order(
         });
     }
 
+    // The choice the terms page promises the buyer, actually offered.
+    //
+    // `/villkor` and `/angerratt` have said since they were written that the
+    // buyer picks between starting at once and waiting out the fourteen days.
+    // Until now the checkout offered neither, which made a purchase term into a
+    // description of something that did not exist — the one kind of
+    // documentation drift a customer can rely on to their cost.
+    let delivery = match request.delivery.as_deref() {
+        None => DeliveryChoice::default(),
+        Some(value) => DeliveryChoice::parse(value).ok_or_else(|| {
+            Problem::bad_request(
+                "unknown_delivery_choice",
+                format!("{value:?} is not one of: immediate, after_cancellation_period"),
+            )
+        })?,
+    };
+
+    // Consent is a thing the buyer does, not a thing a page says. Immediate
+    // delivery without the acknowledgement is refused rather than downgraded
+    // quietly to the safe option: a buyer who asked to start now and was
+    // silently put in a two-week queue would find out a fortnight later.
+    if delivery.needs_consent() && !request.accepts_loss_of_cancellation_right {
+        return Err(Problem::bad_request(
+            "consent_required",
+            format!(
+                "immediate delivery requires accepts_loss_of_cancellation_right: \"{}\"",
+                skattjakt_payments::CONSENT_WORDING
+            ),
+        ));
+    }
+
     let callback_url = match state.payments.callback_url() {
         Some(url) => url.to_string(),
         None => {
@@ -122,7 +176,10 @@ pub async fn create_order(
     // request that dies between the two leaves a record of what was attempted
     // rather than a payment nothing in this system knows about.
     let mut tenant = store.tenant(company_id).await.map_err(internal)?;
-    let order = tenant.create_order(product).await.map_err(internal)?;
+    let order = tenant
+        .create_order(product, delivery)
+        .await
+        .map_err(internal)?;
     let instruction = skattjakt_payments::swish::instruction_id(Uuid::new_v4());
     let payment = tenant
         .start_payment(&order, state.payments.provider().name(), &instruction)
@@ -222,6 +279,59 @@ pub async fn get_order(
     tenant.commit().await.map_err(internal)?;
 
     Ok(Json(order_json(&order, None)).into_response())
+}
+
+/// Cancels a paid order within the cancellation period.
+///
+/// This is the other half of the choice `/angerratt` offers. A buyer who kept
+/// their right to cancel must have somewhere to exercise it, or the right is a
+/// sentence on a page.
+///
+/// It does **not** move money. The system cannot make a refund — see the
+/// `skattjakt-payments` crate documentation — so it records that one is owed
+/// and says so plainly, rather than reporting a refund that no person has made.
+pub async fn cancel_order(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<Response, Problem> {
+    let company_id = company_scope(
+        &authorise(&state, &headers).await?,
+        Permission::StartAnalysis,
+    )?;
+    let store = store(&state)?;
+
+    let mut tenant = store.tenant(company_id).await.map_err(internal)?;
+    let order = tenant.cancel_order(id).await.map_err(|e| match e {
+        // Deliberately one answer for every way an order can fail to be
+        // cancellable, with the reasons spelled out. Distinguishing them would
+        // mean telling an unauthenticated guess which orders exist.
+        skattjakt_store::StoreError::NotFound => Problem {
+            status: StatusCode::CONFLICT,
+            title: "order_not_cancellable".into(),
+            detail: "that order cannot be cancelled: it does not exist, was not paid, has \
+                     already bought an analysis, has already been cancelled, or was bought \
+                     with a consent to immediate delivery"
+                .into(),
+        },
+        other => internal(other),
+    })?;
+    tenant.commit().await.map_err(internal)?;
+
+    LogRecord::info("an order was cancelled within the cancellation period")
+        .internal("order_id", order.id.to_string())
+        .emit();
+
+    Ok(Json(json!({
+        "order": order_json(&order, None),
+        "refund": {
+            "owed": true,
+            "amount": order.amount.to_string(),
+            "note": "Beloppet betalas tillbaka manuellt av säljaren. \
+                     Systemet gör inga återbetalningar självt.",
+        },
+    }))
+    .into_response())
 }
 
 /// Swish telling us something changed.

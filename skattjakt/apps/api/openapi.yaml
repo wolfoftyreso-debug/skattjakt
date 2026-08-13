@@ -179,6 +179,28 @@ paths:
                     taking money for an empty report. `private_analysis` is in
                     that state today — the shipped rule set has no
                     private-individual rules.
+                delivery:
+                  type: string
+                  enum: [immediate, after_cancellation_period]
+                  default: after_cancellation_period
+                  description: |
+                    Whether the analysis starts now or after the fourteen-day
+                    cancellation period. Omitting it means the cautious one: a
+                    consumer who says nothing keeps their right to cancel, and
+                    nothing here reads silence as consent.
+                accepts_loss_of_cancellation_right:
+                  type: boolean
+                  default: false
+                  description: |
+                    Required to be `true` when `delivery` is `immediate`.
+                    Distansavtalslagen (2005:59) 2 kap. 11 § 11 asks for two
+                    things — express consent to delivery beginning, and an
+                    acknowledgement that the right of cancellation is thereby
+                    lost — so this is a separate field from `delivery` rather
+                    than implied by it. Immediate delivery without it is
+                    refused (`consent_required`) rather than quietly downgraded
+                    to the safe option, which the buyer would only discover a
+                    fortnight later.
                 payer_alias:
                   type: [string, "null"]
                   description: |
@@ -201,6 +223,44 @@ paths:
             This deployment cannot take payments
             (`payments_not_configured`), or cannot deliver the product asked
             for (`product_not_available`).
+          content: { application/json: { schema: { $ref: "#/components/schemas/Problem" } } }
+
+  /v1/orders/{id}/cancel:
+    post:
+      tags: [Payments]
+      summary: Cancel a paid order within the cancellation period
+      description: |
+        The other half of the choice at checkout. An order bought with
+        `delivery: after_cancellation_period` can be cancelled until the period
+        runs out, and the analysis has not started.
+
+        **This does not move money.** The system cannot make refunds — see
+        `SKATTJAKT_PAYMENTS.md` — so it records that one is owed and says so,
+        rather than reporting a refund no person has made.
+
+        Every way an order can fail to be cancellable answers the same
+        `409 order_not_cancellable`, with the reasons listed in the detail.
+        Distinguishing them would tell a caller which orders exist.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Cancelled, and a refund is owed.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order: { $ref: "#/components/schemas/Order" }
+                  refund:
+                    type: object
+                    properties:
+                      owed: { type: boolean }
+                      amount: { type: string }
+                      note: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409":
+          description: Not cancellable.
           content: { application/json: { schema: { $ref: "#/components/schemas/Problem" } } }
 
   /v1/orders/{id}:
@@ -1723,6 +1783,7 @@ components:
             - analysis_failed
             - analysis_is_not_finished
             - authentication_unavailable
+            - consent_required
             - content_does_not_match_its_declared_type
             - document_too_large
             - empty_document
@@ -1743,6 +1804,8 @@ components:
             - not_found
             - not_what_was_bought
             - nothing_was_uploaded
+            - order_not_cancellable
+            - order_not_deliverable_yet
             - order_not_payable
             - password_rejected
             - payment_provider_unavailable
@@ -1764,6 +1827,7 @@ components:
             - too_many_simulations_at_once
             - unauthorized
             - unknown_audience
+            - unknown_delivery_choice
             - unknown_document
             - unknown_product
             - unknown_push_provider

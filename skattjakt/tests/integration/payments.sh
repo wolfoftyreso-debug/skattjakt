@@ -327,6 +327,80 @@ NAMED="$("${PSQL[@]}" -d "$DB" -c "SELECT (analysis_id IS NOT NULL) FROM orders 
 check "and the analysis it bought is recorded" t "$NAMED"
 
 echo
+echo "the choice the terms page promises is actually offered"
+# `/villkor` and `/angerratt` have always said the buyer picks between starting
+# at once and waiting out the fourteen days. Until this existed the checkout
+# offered neither, which made a purchase term a description of something that
+# did not exist — the one kind of drift a customer can rely on to their cost.
+
+# Immediate delivery without the acknowledgement is refused rather than quietly
+# downgraded to the safe option: a buyer put in a two-week queue they did not
+# ask for finds out a fortnight later.
+check "immediate delivery without consent is refused" 400 \
+    "$(code POST /v1/orders "$TOKEN_A" \
+        '{"product":"company_analysis","delivery":"immediate"}')"
+check "an unknown delivery choice is refused" 400 \
+    "$(code POST /v1/orders "$TOKEN_A" \
+        '{"product":"company_analysis","delivery":"whenever"}')"
+
+# Silence is not consent. An order with no choice keeps the right to cancel.
+DEFAULTED_ORDER="$("${PSQL[@]}" -d "$DB" -c "
+    INSERT INTO orders (company_id, product, amount_ore, state)
+    SELECT id, 'company_analysis', 6900, 'created' FROM companies
+    WHERE name = 'Betalbolaget AB' RETURNING id")"
+DEFAULT_CHOICE="$("${PSQL[@]}" -d "$DB" -c \
+    "SELECT delivery_choice FROM orders WHERE id='$DEFAULTED_ORDER'")"
+check "an order that says nothing keeps the right to cancel" \
+    after_cancellation_period "$DEFAULT_CHOICE"
+
+# The database refuses the two states that would misrepresent what the buyer
+# agreed to: consent without the choice, and the choice without consent.
+if "${PSQL[@]}" -d "$DB" -c "UPDATE orders SET delivery_choice='immediate'
+    WHERE id='$DEFAULTED_ORDER'" >/dev/null 2>&1; then
+    fail "an order claimed immediate delivery with no consent recorded"
+else
+    pass "immediate delivery cannot be claimed without a recorded consent"
+fi
+if "${PSQL[@]}" -d "$DB" -c "UPDATE orders SET consent_at=now()
+    WHERE id='$DEFAULTED_ORDER'" >/dev/null 2>&1; then
+    fail "a consent was recorded against an order that did not choose immediate"
+else
+    pass "a consent cannot be recorded without the choice it belongs to"
+fi
+
+# The waiting period is real: a paid order that keeps its right to cancel does
+# not buy an analysis yet.
+WAITING="$("${PSQL[@]}" -d "$DB" -c "
+    INSERT INTO orders (company_id, product, amount_ore, state, paid_at, deliverable_from)
+    SELECT id, 'company_analysis', 6900, 'paid', now(), now() + interval '14 days'
+    FROM companies WHERE name = 'Betalbolaget AB' RETURNING id")"
+check "a paid order still inside the cancellation period does not deliver yet" 409 \
+    "$(code POST /v1/analyses/stored "$TOKEN_A" \
+        "{\"document_version_ids\":[\"$DV\"],\"accounts_state\":\"preliminary\",\"order_id\":\"$WAITING\"}")"
+
+# And the buyer can actually exercise the right the page promises them.
+CANCELLED="$(api POST "/v1/orders/$WAITING/cancel" "$TOKEN_A" '{}')"
+python3 -c 'import json,sys; d=json.load(sys.stdin); sys.exit(0 if d["refund"]["owed"] else 1)' \
+    <<<"$CANCELLED" && pass "cancelling says a refund is owed" \
+    || fail "cancelling did not record a refund"
+CANCELLED_STATE="$("${PSQL[@]}" -d "$DB" -c "SELECT state FROM orders WHERE id='$WAITING'")"
+check "and the order is marked refund_owed" refund_owed "$CANCELLED_STATE"
+check "cancelling twice is refused" 409 \
+    "$(code POST "/v1/orders/$WAITING/cancel" "$TOKEN_A" '{}')"
+
+# A buyer who consented has no right left to exercise.
+CONSENTED="$("${PSQL[@]}" -d "$DB" -c "
+    INSERT INTO orders (company_id, product, amount_ore, state, paid_at,
+                        delivery_choice, consent_at, consent_wording_version)
+    SELECT id, 'company_analysis', 6900, 'paid', now(), 'immediate', now(), '2026.1'
+    FROM companies WHERE name = 'Betalbolaget AB' RETURNING id")"
+check "an order bought with consent cannot be cancelled" 409 \
+    "$(code POST "/v1/orders/$CONSENTED/cancel" "$TOKEN_A" '{}')"
+check "and it delivers immediately" 202 \
+    "$(code POST /v1/analyses/stored "$TOKEN_A" \
+        "{\"document_version_ids\":[\"$DV\"],\"accounts_state\":\"preliminary\",\"order_id\":\"$CONSENTED\"}")"
+
+echo
 echo "what was bought is what is served"
 # The hole this closes: the gate checked *that* an order was paid and never
 # *what it was for*, while the report chose its presentation layer from a query

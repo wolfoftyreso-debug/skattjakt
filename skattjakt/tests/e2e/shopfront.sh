@@ -196,6 +196,18 @@ grep -q "inte hittade något\|inte funnit något" <<<"$RETURNS" \
     || fail "it does not address the found-nothing case"
 grep -qF "$MERCHANT_EMAIL" <<<"$RETURNS" && pass "it says where to send a claim" \
     || fail "it does not say where to send a claim"
+# The exact words the checkout records, shown where the buyer reads about the
+# right they are giving up. Page and record are rendered from one constant, so
+# a stored consent can never be a claim about words nobody was shown.
+grep -q "Jag samtycker till att analysen påbörjas omedelbart" <<<"$RETURNS" \
+    && pass "the consent wording is published verbatim" \
+    || fail "the page does not show the words the checkout records"
+grep -q "förlorar min ångerrätt" <<<"$RETURNS" \
+    && pass "and it includes the acknowledgement the law asks for" \
+    || fail "the wording omits the acknowledgement of the loss"
+grep -q "Ordalydelse version" <<<"$RETURNS" \
+    && pass "the wording is versioned where the buyer can see it" \
+    || fail "the wording carries no version"
 
 echo
 echo "nothing renders with a gap"

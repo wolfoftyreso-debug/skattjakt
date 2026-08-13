@@ -116,14 +116,73 @@ impl Product {
             Product::ControlReview => "Skattjakt Kontroll",
         }
     }
+}
 
-    /// Which presentation layer this product buys.
-    pub fn audience(self) -> &'static str {
+/// How long a consumer has to change their mind about a distance purchase.
+///
+/// Fourteen days, from distansavtalslagen (2005:59) 2 kap. 10 §.
+pub const CANCELLATION_PERIOD_DAYS: i64 = 14;
+
+/// What the buyer is asked to agree to, and the version of those words.
+///
+/// Kept here rather than typed into a page, because this exact text is what
+/// gets recorded against the order. A page that phrases it differently from
+/// what is stored would make every stored consent a claim about words the buyer
+/// never saw — and the point of recording consent is being able to show what it
+/// was consent to.
+///
+/// Bump the version whenever the wording changes. Earlier orders keep the
+/// version they were taken under, so an old consent stays readable as what it
+/// actually was.
+pub const CONSENT_WORDING_VERSION: &str = "2026.1";
+
+/// The words themselves. Swedish, because the buyer is.
+pub const CONSENT_WORDING: &str =
+    "Jag samtycker till att analysen påbörjas omedelbart, och jag bekräftar att jag \
+     därmed förlorar min ångerrätt när den påbörjats.";
+
+/// What the buyer chose about delivery, and therefore about their right to
+/// cancel.
+///
+/// The default is deliberately the cautious one: absent an explicit consent, a
+/// consumer keeps the right of cancellation. Nothing may infer consent from
+/// silence, from a hurry, or from the fact that they clearly wanted the thing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DeliveryChoice {
+    /// Start now. The buyer has expressly consented and acknowledged the loss
+    /// of the right of cancellation.
+    Immediate,
+    /// Wait out the fourteen days. The buyer keeps the right to cancel, and the
+    /// analysis does not start until the period has run.
+    #[default]
+    AfterCancellationPeriod,
+}
+
+impl DeliveryChoice {
+    pub fn as_str(self) -> &'static str {
         match self {
-            Product::PrivateAnalysis => "private",
-            Product::CompanyAnalysis => "company",
-            Product::ControlReview => "accountant",
+            DeliveryChoice::Immediate => "immediate",
+            DeliveryChoice::AfterCancellationPeriod => "after_cancellation_period",
         }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        Some(match value {
+            "immediate" => DeliveryChoice::Immediate,
+            "after_cancellation_period" => DeliveryChoice::AfterCancellationPeriod,
+            _ => return None,
+        })
+    }
+
+    /// Whether choosing this requires a recorded consent.
+    pub fn needs_consent(self) -> bool {
+        matches!(self, DeliveryChoice::Immediate)
+    }
+
+    /// Whether the buyer may still cancel and be refunded.
+    pub fn keeps_right_to_cancel(self) -> bool {
+        matches!(self, DeliveryChoice::AfterCancellationPeriod)
     }
 }
 

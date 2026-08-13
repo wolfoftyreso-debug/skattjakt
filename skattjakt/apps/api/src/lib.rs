@@ -351,6 +351,7 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/documents", get(routes::list_documents))
         .route("/v1/orders", post(payment_routes::create_order))
         .route("/v1/orders/{id}", get(payment_routes::get_order))
+        .route("/v1/orders/{id}/cancel", post(payment_routes::cancel_order))
         // Unauthenticated on purpose: it carries no authority. See the module
         // documentation — the body is read for one field and the truth comes
         // from asking Swish.
