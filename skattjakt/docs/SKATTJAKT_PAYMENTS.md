@@ -90,13 +90,33 @@ somebody eventually fills in and commits.
 | `SKATTJAKT_SWISH_CALLBACK_URL` | Public HTTPS URL of `/v1/payments/swish/callback` |
 | `SKATTJAKT_PAYMENTS_REQUIRED` | Whether an analysis needs a paid order |
 
-Four things are refusals to start rather than warnings, because each one
-produces a deployment that takes orders it cannot collect on:
+And the seller's own details, which the shop pages in section 10 are built from:
+
+| Variable | Meaning |
+|---|---|
+| `SKATTJAKT_MERCHANT_NAME` | Registered company name. **Empty means the shop pages are unconfigured** |
+| `SKATTJAKT_MERCHANT_ORG_NUMBER` | Organisationsnummer |
+| `SKATTJAKT_MERCHANT_ADDRESS` | Postal address |
+| `SKATTJAKT_MERCHANT_EMAIL` | Where a customer writes about an order |
+| `SKATTJAKT_MERCHANT_PHONE` | Optional; the only optional one |
+| `SKATTJAKT_MERCHANT_VAT_REGISTERED` | Whether VAT may be stated on a price |
+
+Setting the name commits to the rest: the other three required fields are then
+refusals to start, naming the one that is missing. A business below the VAT
+registration threshold must not state VAT on a price, so
+`SKATTJAKT_MERCHANT_VAT_REGISTERED` changes what the price page is permitted to
+say rather than only what it shows.
+
+Six things are refusals to start rather than warnings, because each one
+produces a deployment that takes orders it cannot collect on — or takes them
+without saying who is collecting:
 
 - a Swish number that is not `123` + seven digits;
 - `SKATTJAKT_PAYMENTS_REQUIRED` with no provider configured;
 - a certificate file that cannot be read or parsed;
-- a callback URL that is not `https://`.
+- a callback URL that is not `https://`;
+- payments required with no merchant configured;
+- a merchant name set without its organisationsnummer, address or email.
 
 The default base URL is the **test** environment. Getting that wrong in this
 direction fails a TLS handshake; the other way round moves real money.
@@ -225,8 +245,10 @@ collected in the first place.
 |---|---|
 | Provider | Swish Commerce API v2, mutual TLS |
 | Verified against a real Swish endpoint | **No.** No merchant agreement exists yet |
-| Verified against a real database and a real API | Yes — `tests/integration/payments.sh`, 25 checks |
+| Verified against a real database and a real API | Yes — `tests/integration/payments.sh`, 27 checks |
 | Settlement logic | 24 unit tests in `crates/payments` |
+| The six pages the scheme requires | Published — `tests/e2e/shopfront.sh`, 46 checks |
+| Terms reviewed by a lawyer | **No.** Section 10 |
 
 The wire format in `swish.rs` — URLs, field names, status strings — is written
 against the documented v2 Commerce API and **must be checked against the
@@ -238,3 +260,52 @@ Until a payment has been made against the test host with a real certificate, the
 honest description of this is: the gate, the state machine, the double-spend
 defence and the settlement rules are tested and hold; the conversation with
 Swish has never happened.
+
+---
+
+## 10. The six pages the scheme requires
+
+The Swish Handel application has six checkboxes: prices, product and service
+information, terms of purchase, contact details, returns policy, returns
+information. Ticking them is not a formality — it is the merchant's attestation
+to the bank that these exist on the site named in the form. Two of them are
+also statutory in their own right: prisinformationslagen (2004:347) requires a
+price to be stated so a consumer can read it, and distansavtalslagen (2005:59)
+requires the right of cancellation to be given before the purchase, not after.
+
+They are served by the API rather than by a separate site, so that the price a
+page publishes and the price the checkout charges come from the same
+`Product::price()`:
+
+| Page | Box it answers |
+|---|---|
+| `/priser` | Prisuppgifter |
+| `/tjanster` | Information om produkter och tjänster |
+| `/villkor` | Köpavtal |
+| `/kontakt` | Kontaktuppgifter |
+| `/angerratt` | Information om returpolicy **and** information om returer |
+
+### Why the details are configuration
+
+Three of the required facts — registered name, organisationsnummer, address —
+are not knowable from this repository. A placeholder for them would be the worst
+available outcome: the pages would look complete and be false in precisely the
+way an attestation must not be. So they come from the environment, a deployment
+that takes payment without them refuses to start, and a deployment that has not
+configured them serves a page saying it is unconfigured rather than a page with
+a blank where the seller's name belongs. `tests/e2e/shopfront.sh` asserts both
+directions.
+
+### The one thing on these pages that is not verified
+
+The purchase terms and the cancellation text are a serious draft written against
+the statutes cited in the source registry. **No lawyer has read them.** That is
+stated on the pages themselves, not only here, because the person who needs to
+know is the one reading them.
+
+The specific point a lawyer should be asked about first: a digital service
+delivered immediately loses its right of cancellation only if the consumer has
+expressly consented to immediate delivery *and* acknowledged the loss
+(distansavtalslagen 2 kap. 11 § 11). The purchase flow must therefore capture
+that consent at the point of payment — not merely publish it on `/angerratt` —
+and the checkout does not capture it yet.

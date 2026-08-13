@@ -55,6 +55,14 @@ fn state() -> AppState {
         // Unconfigured: the stateless surface has no database to hold an order
         // in, and a provider that refuses is the honest state for it.
         payments: Arc::new(crate::payments::Payments::unconfigured()),
+        merchant: Some(crate::shopfront::Merchant {
+            name: "Testbolaget AB".into(),
+            org_number: "556016-0680".into(),
+            address: "Testgatan 1, 111 22 Stockholm".into(),
+            email: "hej@example.test".into(),
+            phone: None,
+            vat_registered: true,
+        }),
         // No database, so no queue: the stateless surface computes inline.
         queue: None,
         metrics: {

@@ -16,6 +16,7 @@ pub mod observe;
 pub mod payment_routes;
 pub mod payments;
 pub mod routes;
+pub mod shopfront;
 pub mod simulation_routes;
 mod upload_routes;
 
@@ -93,6 +94,10 @@ pub struct AppState {
     /// `Payments::unconfigured()` when no provider is set up, which refuses
     /// rather than letting analyses through free.
     pub payments: Arc<crate::payments::Payments>,
+    /// Who is selling, for the pages a payment scheme requires a webshop to
+    /// publish. `None` renders those pages as unconfigured rather than with
+    /// gaps, and is a refusal to start once payments are required.
+    pub merchant: Option<crate::shopfront::Merchant>,
     /// The durable queue. Present exactly when persistence is: a queue without
     /// a database has nowhere to put a job.
     pub queue: Option<skattjakt_jobs::Queue>,
@@ -199,6 +204,19 @@ impl AppState {
         // payment setup is a refusal to start rather than a service that takes
         // orders it can never collect on.
         let payments = crate::payments::Payments::from_env()?;
+        let merchant = crate::shopfront::Merchant::from_env()?;
+
+        // Selling without publishing who is selling is not a state to run in:
+        // the six pages a payment scheme asks about are an attestation the
+        // merchant signs, and a page rendered with gaps is worse than one that
+        // is honestly absent.
+        if payments.required() && merchant.is_none() {
+            return Err(
+                "SKATTJAKT_PAYMENTS_REQUIRED is set but SKATTJAKT_MERCHANT_NAME is \
+                        not: the shop pages required to take payment cannot be published"
+                    .into(),
+            );
+        }
 
         Ok(Self {
             engine,
@@ -226,6 +244,7 @@ impl AppState {
             store,
             blobs: skattjakt_store::blob::from_env(&blob_root)?,
             payments: Arc::new(payments),
+            merchant,
             queue,
             metrics: registry,
         })
@@ -236,6 +255,15 @@ pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/", get(ui))
         .route("/simulations", get(simulate_ui))
+        // The six things a Swedish payment scheme requires a webshop to
+        // publish. Returns policy and returns information are one page: for a
+        // digital service they are one subject, and two pages saying the same
+        // thing would be two pages to keep in step.
+        .route("/priser", get(shopfront::prices))
+        .route("/tjanster", get(shopfront::services))
+        .route("/villkor", get(shopfront::terms))
+        .route("/kontakt", get(shopfront::contact))
+        .route("/angerratt", get(shopfront::returns))
         .route("/ui/app.css", get(app_css))
         .route("/ui/index.css", get(index_css))
         .route("/ui/index.js", get(index_js))

@@ -65,6 +65,15 @@ export RUST_LOG=skattjakt=warn
 # for exactly this case, and it is the only way to exercise the cookie flow
 # without terminating TLS in a test.
 export SKATTJAKT_INSECURE_COOKIES=1
+# The shop pages are audited with a merchant configured, because the version a
+# customer sees is the one with the details filled in. The unconfigured
+# fallback is shorter and would pass more easily, which is the wrong page to
+# hold to the standard.
+export SKATTJAKT_MERCHANT_NAME="Skattjakt Sverige AB"
+export SKATTJAKT_MERCHANT_ORG_NUMBER="559999-1234"
+export SKATTJAKT_MERCHANT_ADDRESS="Exempelgatan 1, 111 22 Stockholm"
+export SKATTJAKT_MERCHANT_EMAIL="hej@skattjakt.se"
+export SKATTJAKT_MERCHANT_VAT_REGISTERED=1
 
 PORT="$APIPORT" "$ROOT/target/debug/skattjakt-api" > "$WORKDIR/api.log" 2>&1 &
 API_PID=$!

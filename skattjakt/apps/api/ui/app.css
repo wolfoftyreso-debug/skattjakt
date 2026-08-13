@@ -89,9 +89,17 @@
   summary { cursor: pointer; font-size: .85rem; color: var(--accent); }
   details ul { margin: .5rem 0 0; padding-left: 1.1rem; font-size: .85rem; color: var(--muted); }
   details li { margin-bottom: .3rem; }
+  /* Every link, not only the ones inside citations. Until this existed only
+     `.citations a` was coloured, so a link anywhere else fell back to the
+     browser's #0000ee — which is 1.92:1 against the dark background and
+     unreadable. That was a hole waiting for the next link anyone added, and the
+     footer navigation to the shop pages is the one that walked into it. Stating
+     it once for `a` means the next link is right without anyone remembering.
+     :visited is named explicitly: the UA's purple loses to any author rule, but
+     the intent is that a visited link stays legible, not that it happens to. */
+  a, a:visited { color: var(--accent); }
   .citations { margin: .25rem 0 .4rem; padding-left: 1.1rem; list-style: circle; }
   .citations li { margin-bottom: .2rem; }
-  .citations a { color: var(--accent); }
   code { font-size: .8rem; }
 
   .notice { border-left: 3px solid var(--warn); background: var(--warn-soft); padding: .8rem 1rem; border-radius: 0 8px 8px 0; margin-bottom: 1rem; font-size: .9rem; }

@@ -129,6 +129,14 @@ routed -= {
     "/", "/simulations", "/favicon.svg", "/favicon.ico",
     "/ui/app.css", "/ui/index.css", "/ui/index.js",
     "/ui/simulate.css", "/ui/simulate.js",
+    # The shop pages the payment scheme requires: prices, service description,
+    # terms, contact details, right of cancellation. They are excused from the
+    # contract on the same grounds as the interface — a browser reads them, no
+    # client integrates against them — but not from review. What reviews them is
+    # `tests/e2e/shopfront.sh`, which asserts far more than an OpenAPI entry
+    # could: that each one resolves, carries the price the checkout actually
+    # charges, and never renders with a blank where a merchant detail belongs.
+    "/priser", "/tjanster", "/villkor", "/kontakt", "/angerratt",
 }
 
 undocumented = sorted(routed - documented)

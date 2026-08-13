@@ -112,6 +112,21 @@ try {
   await auditContrast("the main interface", "dark");
   await page.emulateMedia({ colorScheme: "light" });
 
+  // --- the shop pages ---------------------------------------------------
+  //
+  // These are the most public pages the product has: anyone can reach them
+  // without an account, and a consumer deciding whether to buy is meant to read
+  // them. They are also the pages a payment scheme was told exist. A price or a
+  // right of cancellation that a screen reader cannot announce is not published
+  // in any sense that matters, so they are audited like everything else — in
+  // both schemes, because they carry no interactive state to audit instead.
+  for (const path of ["/priser", "/tjanster", "/villkor", "/kontakt", "/angerratt"]) {
+    await page.goto(`${base}${path}`, { waitUntil: "networkidle" });
+    await audit(`the shop page ${path}`);
+    await auditContrast(`the shop page ${path}`, "dark");
+    await page.emulateMedia({ colorScheme: "light" });
+  }
+
   // --- the simulation page, signed out ----------------------------------
   await page.goto(`${base}/simulations`, { waitUntil: "networkidle" });
   await page.waitForSelector("#signin:not(.hidden)", { timeout: 10_000 });

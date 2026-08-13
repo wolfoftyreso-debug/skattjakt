@@ -198,13 +198,46 @@ subprocess.run([
 open(sys.argv[1], "a").write(open(sys.argv[1] + ".crt").read())
 PY
 
+# A provider is necessary but not sufficient. Taking money obliges the shop to
+# publish who is taking it — the price, the terms, the address, the right to
+# cancel — and those pages cannot render without merchant details. So a
+# deployment configured to charge but not to identify itself is also a refusal
+# to start, for the same reason as the one above: it would sell under a name
+# nobody can read.
+if env DATABASE_URL="$DATABASE_URL" SKATTJAKT_PAYMENTS_REQUIRED=1 \
+       SKATTJAKT_SWISH_PAYEE_ALIAS=1231234567 \
+       SKATTJAKT_SWISH_CLIENT_PEM="$CERT" \
+       SKATTJAKT_SWISH_CA_PEM="$CERT.crt" \
+       SKATTJAKT_SWISH_CALLBACK_URL="https://example.test/v1/payments/swish/callback" \
+       SKATTJAKT_BLOB_ROOT="$WORKDIR/blobs" PORT="$((APIPORT + 1))" \
+       "$API" >"$WORKDIR/nomerchant.log" 2>&1; then
+    fail "the API started ready to charge with no merchant published"
+else
+    grep -q "SKATTJAKT_MERCHANT_NAME" "$WORKDIR/nomerchant.log" \
+        && pass "charging without publishing the shop pages is a refusal to start" \
+        || fail "it refused for the wrong reason: $(tail -2 "$WORKDIR/nomerchant.log")"
+fi
+
 start_api SKATTJAKT_PAYMENTS_REQUIRED=1 \
     SKATTJAKT_SWISH_PAYEE_ALIAS=1231234567 \
     SKATTJAKT_SWISH_CLIENT_PEM="$CERT" \
     SKATTJAKT_SWISH_CA_PEM="$CERT.crt" \
     SKATTJAKT_SWISH_CALLBACK_URL="https://example.test/v1/payments/swish/callback" \
+    SKATTJAKT_MERCHANT_NAME="Skattjakt Sverige AB" \
+    SKATTJAKT_MERCHANT_ORG_NUMBER="559999-1234" \
+    SKATTJAKT_MERCHANT_ADDRESS="Exempelgatan 1, 111 22 Stockholm" \
+    SKATTJAKT_MERCHANT_EMAIL="hej@skattjakt.se" \
+    SKATTJAKT_MERCHANT_VAT_REGISTERED=1 \
     || { tail -5 "$WORKDIR/api.log"; fail "the API did not start with a provider"; exit 1; }
 pass "the API starts with a configured provider"
+
+# The price a customer is charged must be the price the shop publishes. These
+# are two different code paths — the product table and the price page — and
+# nothing but this check stops them drifting apart.
+PRICE_PAGE="$(curl -sS --max-time 20 "http://127.0.0.1:$APIPORT/priser")"
+grep -qF "69,00 kr" <<<"$PRICE_PAGE" \
+    && pass "the published price matches the one the checkout charges" \
+    || fail "the price page and the checkout disagree"
 
 check "an analysis with no order is refused" 402 \
     "$(code POST /v1/analyses/stored "$TOKEN_A" "{\"document_version_ids\":[\"$DV\"],\"accounts_state\":\"preliminary\"}")"
