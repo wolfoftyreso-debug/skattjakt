@@ -844,6 +844,7 @@ fn the_error_codes_are_the_set_the_contract_promises() {
         "payment_required",
         "payments_not_configured",
         "persistence_is_not_configured",
+        "product_not_available",
         "provider_required",
         "rate_limited",
         "simulation_cancelled",

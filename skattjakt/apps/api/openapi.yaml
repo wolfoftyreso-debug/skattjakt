@@ -171,6 +171,14 @@ paths:
                 product:
                   type: string
                   enum: [private_analysis, company_analysis, control_review]
+                  description: |
+                    Not every product in this list can be bought from every
+                    build. A product is sellable only if the rule set contains
+                    rules for the kind of taxpayer it serves; one that does not
+                    is refused with `503 product_not_available` rather than
+                    taking money for an empty report. `private_analysis` is in
+                    that state today — the shipped rule set has no
+                    private-individual rules.
                 payer_alias:
                   type: [string, "null"]
                   description: |
@@ -189,7 +197,10 @@ paths:
           description: The payment provider could not be reached. Worth retrying.
           content: { application/json: { schema: { $ref: "#/components/schemas/Problem" } } }
         "503":
-          description: This deployment cannot take payments.
+          description: >
+            This deployment cannot take payments
+            (`payments_not_configured`), or cannot deliver the product asked
+            for (`product_not_available`).
           content: { application/json: { schema: { $ref: "#/components/schemas/Problem" } } }
 
   /v1/orders/{id}:
@@ -1739,6 +1750,7 @@ components:
             - payment_required
             - payments_not_configured
             - persistence_is_not_configured
+            - product_not_available
             - provider_required
             - rate_limited
             - simulation_cancelled

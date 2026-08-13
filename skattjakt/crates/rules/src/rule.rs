@@ -232,6 +232,39 @@ impl ImpactSpec {
     }
 }
 
+/// Who a rule is about.
+///
+/// Swedish tax law for an aktiebolag and for a private individual are different
+/// bodies of rules, and a finding from one is not merely less relevant to the
+/// other — it is wrong. Periodiseringsfond does not exist for an employee; a
+/// ROT deduction does not exist for a company.
+///
+/// This is on the rule rather than inferred from the documents because the
+/// engine must be able to answer "can I analyse this kind of taxpayer at all?"
+/// **before** it runs, so that nothing is sold that cannot be delivered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Taxpayer {
+    /// An aktiebolag. Every rule shipped today.
+    Company,
+    /// A private individual filing their own return.
+    PrivateIndividual,
+}
+
+impl Taxpayer {
+    /// The audience key a report for this taxpayer is served under.
+    ///
+    /// `Company` covers two audiences — the owner reading about their own
+    /// company, and an accountant reviewing it — which is why this returns a
+    /// set rather than one key. They are the same rules seen from two chairs.
+    pub fn audience_keys(self) -> &'static [&'static str] {
+        match self {
+            Taxpayer::Company => &["company", "accountant"],
+            Taxpayer::PrivateIndividual => &["private"],
+        }
+    }
+}
+
 /// One versioned rule.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Rule {
@@ -240,6 +273,14 @@ pub struct Rule {
     pub version: String,
     /// ISO country code. Only `SE` is served today.
     pub jurisdiction: String,
+
+    /// Who this rule is about.
+    ///
+    /// Deliberately **not** defaulted. A missing value on a new rule would
+    /// silently make it a company rule, and the one place that matters is the
+    /// first private-individual rule somebody writes — which would then be
+    /// invisible to private analyses and never fire, with nothing to say why.
+    pub taxpayer: Taxpayer,
 
     /// First tax year the rule applies to.
     pub tax_year_from: i32,
@@ -401,6 +442,7 @@ mod tests {
             rule_id: "se.test".into(),
             version: "1".into(),
             jurisdiction: "SE".into(),
+            taxpayer: Taxpayer::Company,
             tax_year_from: from,
             tax_year_to: to,
             title: "t".into(),

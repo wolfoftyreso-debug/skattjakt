@@ -237,6 +237,31 @@ The derived key now carries the order when there is one. Every purchase is its
 own piece of work; a retry of the same purchase still derives the same key,
 which is the case the derivation exists for.
 
+### Nothing is sold that cannot be delivered
+
+The three products are three presentation layers over one engine, and the engine
+only has rules for the taxpayers somebody has written rules for. Rules now say
+which kind of taxpayer they are about — an aktiebolag or a private individual —
+because Swedish tax law for the two is not the same body of rules, and a finding
+from one is not merely less relevant to the other, it is wrong.
+
+`RuleSet::covers_audience` answers the question a shop has to ask before it
+takes money, and three places ask it: `/priser` lists the product without a
+price, `/tjanster` says it is not open, and `POST /v1/orders` refuses with
+`503 product_not_available`.
+
+**Privatanalys is in that state today.** It has a price, a page and a Swish
+payment message, and the shipped rule set contains no private-individual rules
+at all, so a customer paying 29 kronor would receive an empty report with no way
+to tell "we found nothing" from "we looked at nothing". It is listed as closed
+rather than hidden, because a service the site describes elsewhere and silently
+omits from the price list reads as an oversight.
+
+The answer comes from the rule set rather than a constant, so the day somebody
+writes the first private rule the product becomes sellable on its own. Two tests
+fail that day — one in `crates/rules` and one in `tests/e2e/shopfront.sh` — and
+that is how whoever wrote the rule finds out they have opened a shop.
+
 ### What was bought is what is served
 
 The gate checked *that* an order was paid. It did not check *what it was for*.

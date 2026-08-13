@@ -22,7 +22,7 @@ pub use engine::{context, RuleEngine, RuleSet, RuleSetError};
 pub use expr::{EvalError, Expr, Parameter, ParameterKind, TaxYearConstants};
 pub use rule::{
     CalculationInputRecord, CalculationRecord, Exception, ImpactSpec, Retrieval, ReviewState, Rule,
-    RuleEvaluation, RuleOutcome, RuleSource, Source, SourceState,
+    RuleEvaluation, RuleOutcome, RuleSource, Source, SourceState, Taxpayer,
 };
 pub use verify::CheckOutcome;
 

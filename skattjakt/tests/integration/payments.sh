@@ -245,6 +245,14 @@ grep -qF "69,00 kr" <<<"$PRICE_PAGE" \
     && pass "the published price matches the one the checkout charges" \
     || fail "the price page and the checkout disagree"
 
+# Nothing may be sold that this build cannot deliver. Privatanalys has a price,
+# a page and a payment message, and the shipped rule set has no
+# private-individual rules — so an order for it would take 29 kronor for a
+# report with nothing in it, and the customer could not tell "we found nothing"
+# from "we looked at nothing".
+check "a product with no rules behind it cannot be ordered" 503 \
+    "$(code POST /v1/orders "$TOKEN_A" '{"product":"private_analysis"}')"
+
 check "an analysis with no order is refused" 402 \
     "$(code POST /v1/analyses/stored "$TOKEN_A" "{\"document_version_ids\":[\"$DV\"],\"accounts_state\":\"preliminary\"}")"
 

@@ -84,6 +84,29 @@ pub async fn create_order(
         ));
     };
 
+    // Nothing may be sold that this build cannot deliver.
+    //
+    // The three products are three presentation layers over one engine, and the
+    // engine only has rules for the taxpayers somebody has written rules for.
+    // Privatanalys is the live case: it has a price, a page and a payment
+    // message, and the shipped rule set contains no private-individual rules at
+    // all — so a customer paying 29 kronor would receive an empty report and no
+    // way to tell "we found nothing" from "we looked at nothing".
+    //
+    // Asked of the rule set rather than of a constant, so the day the first
+    // private rule lands the product becomes sellable on its own.
+    if !state.engine.set().covers_audience(product.audience_key()) {
+        return Err(Problem {
+            status: StatusCode::SERVICE_UNAVAILABLE,
+            title: "product_not_available".into(),
+            detail: format!(
+                "{} cannot be sold by this build: it has no rules for that kind of \
+                 taxpayer, so the analysis would be empty",
+                product.as_str()
+            ),
+        });
+    }
+
     let callback_url = match state.payments.callback_url() {
         Some(url) => url.to_string(),
         None => {

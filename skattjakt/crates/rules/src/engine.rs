@@ -14,7 +14,7 @@ use crate::condition::{EvalContext, Truth};
 use crate::expr::{EvalError, Expr, TaxYearConstants};
 use crate::rule::{
     CalculationInputRecord, CalculationRecord, ImpactSpec, Rule, RuleEvaluation, RuleOutcome,
-    Source, SourceState,
+    Source, SourceState, Taxpayer,
 };
 
 /// A versioned set of rules plus the per-year constants they reference.
@@ -34,6 +34,40 @@ pub struct RuleSet {
 impl RuleSet {
     pub fn source_by_id(&self, id: &str) -> Option<&Source> {
         self.sources.get(id)
+    }
+
+    /// Whether this build can analyse a given kind of taxpayer at all.
+    ///
+    /// The question a shop has to be able to ask before it takes money. A build
+    /// with no private-individual rules cannot deliver a private analysis, and
+    /// selling one would be selling an empty report — worse than refusing,
+    /// because the customer has paid to be told nothing and cannot tell whether
+    /// that means "nothing found" or "nothing looked".
+    ///
+    /// Answered from the rule set rather than from a constant, so the day
+    /// somebody writes the first private rule the product becomes sellable
+    /// without anyone remembering to flip a switch.
+    pub fn covers(&self, taxpayer: Taxpayer) -> bool {
+        self.rules.iter().any(|rule| rule.taxpayer == taxpayer)
+    }
+
+    /// Every kind of taxpayer this build has rules for.
+    pub fn covered_taxpayers(&self) -> Vec<Taxpayer> {
+        let mut kinds: Vec<Taxpayer> = self.rules.iter().map(|r| r.taxpayer).collect();
+        kinds.sort();
+        kinds.dedup();
+        kinds
+    }
+
+    /// Whether a report for `audience` can be produced by this build.
+    ///
+    /// Takes the audience key rather than a `Taxpayer` because that is what the
+    /// products and the report endpoint speak, and translating in one place is
+    /// better than three call sites each doing it slightly differently.
+    pub fn covers_audience(&self, audience: &str) -> bool {
+        self.covered_taxpayers()
+            .into_iter()
+            .any(|t| t.audience_keys().contains(&audience))
     }
 
     /// How far a rule's sources have been checked, taken together.
@@ -599,11 +633,49 @@ mod tests {
         }))
     }
 
+    #[test]
+    fn the_shipped_set_covers_companies_and_not_private_individuals() {
+        // Not an aspiration — a statement of what this build can deliver, and
+        // the thing the shop asks before it takes money. If somebody writes the
+        // first private-individual rule, this test fails and they update it
+        // knowing that Privatanalys has just gone on sale.
+        let engine = RuleEngine::load_embedded().expect("the shipped set must load");
+        assert!(engine.set().covers(Taxpayer::Company));
+        assert!(
+            !engine.set().covers(Taxpayer::PrivateIndividual),
+            "a private rule exists: Privatanalys is now sellable, and the shop \
+             pages and tests that say otherwise need updating"
+        );
+        assert!(engine.set().covers_audience("company"));
+        assert!(engine.set().covers_audience("accountant"));
+        assert!(!engine.set().covers_audience("private"));
+    }
+
+    #[test]
+    fn every_audience_belongs_to_exactly_one_taxpayer() {
+        // The mapping is what the product gate reads. An audience claimed by
+        // both kinds would make a private rule sell a company report.
+        let company = Taxpayer::Company.audience_keys();
+        let private = Taxpayer::PrivateIndividual.audience_keys();
+        for key in private {
+            assert!(!company.contains(key), "{key} belongs to both");
+        }
+        // And every audience the report layer knows is claimed by somebody, or
+        // it could never be sold at all.
+        for key in ["private", "company", "accountant"] {
+            assert!(
+                company.contains(&key) || private.contains(&key),
+                "no taxpayer claims {key}"
+            );
+        }
+    }
+
     fn test_rule() -> Rule {
         Rule {
             rule_id: "se.test.headroom".into(),
             version: "2025.1".into(),
             jurisdiction: "SE".into(),
+            taxpayer: Taxpayer::Company,
             tax_year_from: 2021,
             tax_year_to: None,
             title: "Testregel".into(),

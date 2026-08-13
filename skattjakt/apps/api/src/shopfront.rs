@@ -170,6 +170,20 @@ fn merchant_or_page<'a>(state: &'a AppState, what: &str) -> Result<&'a Merchant,
     }
 }
 
+/// A row for a product this build cannot deliver.
+///
+/// Shown rather than hidden. A price list that silently omits a service the
+/// site describes elsewhere reads as an oversight; one that says the service is
+/// not open yet is the truth, and it is the truth the customer needs before
+/// they look for a way to pay for it.
+fn unavailable_row(product: Product) -> String {
+    format!(
+        "<tr><td>{}</td><td colspan=\"3\">Inte öppen för köp ännu — \
+         den här tjänsten har inget regelverk i den här versionen</td></tr>",
+        escape(product_title(product))
+    )
+}
+
 fn price_row(product: Product, vat_registered: bool) -> String {
     let gross = product.price();
     let vat = vat_portion(gross);
@@ -227,7 +241,13 @@ pub async fn prices(State(state): State<AppState>) -> Response {
 
     let rows: String = Product::ALL
         .iter()
-        .map(|p| price_row(*p, merchant.vat_registered))
+        .map(|p| {
+            if state.engine.set().covers_audience(p.audience_key()) {
+                price_row(*p, merchant.vat_registered)
+            } else {
+                unavailable_row(*p)
+            }
+        })
         .collect();
 
     let headers = if merchant.vat_registered {
@@ -272,11 +292,22 @@ pub async fn services(State(state): State<AppState>) -> Response {
     let items: String = Product::ALL
         .iter()
         .map(|p| {
+            // A service description that does not say the service is closed is
+            // an advertisement for something nobody can buy.
+            let availability = if state.engine.set().covers_audience(p.audience_key()) {
+                format!("<p class=\"meta\">Pris: {}</p>", p.price())
+            } else {
+                "<p class=\"notice\"><strong>Inte öppen för köp ännu.</strong> \
+                 Skattjakt har ännu inget regelverk för den här sortens underlag, \
+                 så en analys skulle inte hitta något — och det går inte att skilja \
+                 från att det inte finns något att hitta. Tjänsten säljs inte förrän \
+                 den kan svara på något.</p>"
+                    .to_string()
+            };
             format!(
-                "<h2>{}</h2><p>{}</p><p class=\"meta\">Pris: {}</p>",
+                "<h2>{}</h2><p>{}</p>{availability}",
                 escape(product_title(*p)),
                 escape(product_description(*p)),
-                p.price()
             )
         })
         .collect();

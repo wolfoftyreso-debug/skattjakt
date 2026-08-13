@@ -115,13 +115,19 @@ done
 echo
 echo "1. Prisuppgifter"
 PRICES="$(body /priser)"
-# The three products the code sells, at the prices the code charges. A price
+# The prices the code charges, for the products the code can deliver. A price
 # page that disagrees with the checkout is the one failure a customer will
 # certainly notice.
-for expected in "29,00 kr" "69,00 kr"; do
-    grep -qF "$expected" <<<"$PRICES" && pass "the price $expected is published" \
-        || fail "the price $expected is missing"
-done
+grep -qF "69,00 kr" <<<"$PRICES" && pass "the price 69,00 kr is published" \
+    || fail "the price 69,00 kr is missing"
+# 29,00 kr is Privatanalys, which this build cannot deliver — no
+# private-individual rules exist — so it must NOT carry a price. When somebody
+# writes the first private rule, `covers_audience` starts returning true, this
+# assertion fails, and whoever wrote the rule learns that the product just went
+# on sale. That is the intended way for this to change.
+grep -qF "29,00 kr" <<<"$PRICES" \
+    && fail "a price is published for a service this build cannot deliver" \
+    || pass "no price is published for a service that cannot be bought"
 grep -qF "13,80 kr" <<<"$PRICES" && pass "the VAT inside 69 kr is shown" \
     || fail "the VAT inside 69 kr is not shown"
 grep -q "inklusive" <<<"$PRICES" && pass "prices are stated as including VAT" \
@@ -141,6 +147,20 @@ grep -q "inte skatterådgivning\|lämnar inte skatterådgivning" <<<"$SERVICES" 
 grep -q "granskat av en kvalificerad" <<<"$SERVICES" \
     && pass "the unreviewed rule set is disclosed where a buyer sees it" \
     || fail "the limitation is not disclosed on the service page"
+grep -q "Inte öppen för köp ännu" <<<"$SERVICES" \
+    && pass "a service that cannot be delivered says so where it is described" \
+    || fail "the service page advertises something nobody can buy"
+
+# Nothing may be priced that cannot be bought. The live case: the shipped rule
+# set has no private-individual rules, so Privatanalys would return an empty
+# report and the customer could not tell "we found nothing" from "we looked at
+# nothing". It is listed and marked closed rather than quietly hidden.
+grep -q "Inte öppen för köp ännu" <<<"$PRICES" \
+    && pass "a service with no rules behind it is not priced" \
+    || fail "the price page prices something this build cannot deliver"
+grep -q "Privatanalys" <<<"$PRICES" \
+    && pass "and it is still listed rather than quietly dropped" \
+    || fail "the unavailable service vanished from the price list"
 
 echo
 echo "3. Köpavtal"
