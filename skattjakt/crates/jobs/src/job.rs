@@ -224,6 +224,54 @@ impl IdempotencyKey {
         ))
     }
 
+    /// Derives a key for work that was paid for.
+    ///
+    /// The order belongs in the key because it is part of what makes the work
+    /// distinct. Two analyses of the same documents are the same work only if
+    /// nobody bought them separately; once an order is involved, a second
+    /// purchase is a second piece of work even though every document matches.
+    ///
+    /// Without this the customer's paid request collapses onto an earlier free
+    /// one, and they are handed an analysis their order did not buy.
+    pub fn derived_for_order(kind: JobKind, scope: Uuid, parts: &[Uuid], order: Uuid) -> Self {
+        // The order id is carried **whole**, unlike the document ids.
+        //
+        // `derived` keeps the first eight hex characters of each document,
+        // because a collision there merely coalesces two requests over
+        // near-identical document sets. A collision on the order is a different
+        // thing entirely: two separate purchases would become one job, and a
+        // customer who paid would be handed the other one's analysis. That is
+        // the exact failure this function exists to prevent, so it does not get
+        // 32 bits of collision resistance.
+        //
+        // It leads rather than trails, so the truncation below can only ever
+        // eat document ids.
+        let mut sorted: Vec<String> = parts.iter().map(|p| p.simple().to_string()).collect();
+        sorted.sort();
+        let docs = sorted.iter().map(|p| &p[..8]).collect::<Vec<_>>().join("-");
+
+        let head = format!(
+            "auto:{}:{}:o{}",
+            kind.as_str(),
+            scope.simple(),
+            order.simple()
+        );
+        // `parse` accepts at most 200 characters, and a derived key that its own
+        // parser would reject is a job that cannot be re-enqueued from its own
+        // recorded key. The head is 14 + 32 + 2 + 32 = 80 at most, so there is
+        // always room for some documents; a request with more than about
+        // thirteen of them loses the tail, which is harmless because the order
+        // in front of it already makes the key unique.
+        const LIMIT: usize = 200;
+        let room = LIMIT - head.len() - 1;
+        let docs = if docs.len() > room {
+            &docs[..room]
+        } else {
+            &docs
+        };
+        Self(format!("{head}:{docs}"))
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -494,5 +542,79 @@ mod tests {
             assert_eq!(JobKind::parse(kind.as_str()), Some(kind));
         }
         assert_eq!(JobKind::parse("analyse"), None);
+    }
+
+    #[test]
+    fn two_purchases_of_the_same_documents_are_two_pieces_of_work() {
+        // The defect this is here for: without the order in the key, a paid
+        // request over documents that had been analysed before collapsed onto
+        // the earlier job. The order was consumed and the customer was handed
+        // the earlier analysis — they paid and received something else.
+        let company = Uuid::from_u128(1);
+        let docs = [Uuid::from_u128(2), Uuid::from_u128(3)];
+        let first = IdempotencyKey::derived_for_order(
+            JobKind::Analysis,
+            company,
+            &docs,
+            Uuid::from_u128(10),
+        );
+        let second = IdempotencyKey::derived_for_order(
+            JobKind::Analysis,
+            company,
+            &docs,
+            Uuid::from_u128(11),
+        );
+        assert_ne!(first.as_str(), second.as_str());
+
+        // And a paid request never collides with a free one over the same
+        // documents, which is the collision that actually happened.
+        let free = IdempotencyKey::derived(JobKind::Analysis, company, &docs);
+        assert_ne!(first.as_str(), free.as_str());
+    }
+
+    #[test]
+    fn retrying_the_same_purchase_still_derives_the_same_key() {
+        // The whole point of deriving a key: a client that retries a timed-out
+        // request without one must not be billed for a second analysis.
+        let company = Uuid::from_u128(1);
+        let docs = [Uuid::from_u128(2)];
+        let order = Uuid::from_u128(9);
+        assert_eq!(
+            IdempotencyKey::derived_for_order(JobKind::Analysis, company, &docs, order).as_str(),
+            IdempotencyKey::derived_for_order(JobKind::Analysis, company, &docs, order).as_str()
+        );
+    }
+
+    #[test]
+    fn a_derived_key_is_always_one_the_parser_accepts() {
+        // Derived keys go into the same column as client-supplied ones. A
+        // derivation that produced something `parse` rejects would be a job
+        // that cannot be re-enqueued from its own recorded key.
+        // Fifty documents is more than any real request and exactly the shape
+        // that would overrun the limit if the key were built by concatenation
+        // and hope.
+        let many: Vec<Uuid> = (0..50).map(|i| Uuid::from_u128(100 + i)).collect();
+        let key = IdempotencyKey::derived_for_order(
+            JobKind::Analysis,
+            Uuid::from_u128(1),
+            &many,
+            Uuid::new_v4(),
+        );
+        assert!(
+            IdempotencyKey::parse(key.as_str()).is_ok(),
+            "{}",
+            key.as_str()
+        );
+
+        // And the order survives the truncation, because it is what makes the
+        // key unique.
+        let order = Uuid::new_v4();
+        let truncated =
+            IdempotencyKey::derived_for_order(JobKind::Analysis, Uuid::from_u128(1), &many, order);
+        assert!(
+            truncated.as_str().contains(&order.simple().to_string()),
+            "the order was truncated away: {}",
+            truncated.as_str()
+        );
     }
 }

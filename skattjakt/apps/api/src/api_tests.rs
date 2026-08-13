@@ -835,6 +835,7 @@ fn the_error_codes_are_the_set_the_contract_promises() {
         "no_documents",
         "not_a_session",
         "not_found",
+        "not_what_was_bought",
         "nothing_was_uploaded",
         "order_not_payable",
         "password_rejected",

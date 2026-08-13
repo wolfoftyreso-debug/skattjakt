@@ -460,18 +460,52 @@ pub async fn start_analysis(
                 detail: "this analysis must be drawn against a paid order".into(),
             });
         };
-        tenant
-            .redeem_order(order_id, analysis_id)
-            .await
-            .map_err(|e| match e {
-                skattjakt_store::StoreError::NotFound => Problem {
+        match tenant.redeem_order(order_id, analysis_id).await {
+            Ok(_) => {}
+            Err(skattjakt_store::StoreError::NotFound) => {
+                // Not payable — or already spent, which is a different thing
+                // and must not be answered the same way.
+                //
+                // A customer whose request timed out and who pressed the button
+                // again has an order that is already consumed. Refusing them
+                // with 402 would take their money and hand back "that order
+                // cannot be used", which is the worst answer available: the
+                // order *was* used, and it bought them something. So an order
+                // that already names an analysis answers with that analysis.
+                //
+                // This is the same invariant as before, read the other way
+                // round: one order buys exactly one analysis, and asking twice
+                // shows you the one you bought rather than selling a second.
+                let already = tenant
+                    .order(order_id)
+                    .await
+                    .ok()
+                    .and_then(|o| o.analysis_id);
+                if let Some(bought) = already {
+                    // The analysis created a few lines above is discarded by
+                    // dropping the transaction uncommitted — it was never
+                    // enqueued and nothing else refers to it.
+                    return Ok((
+                        StatusCode::ACCEPTED,
+                        Json(json!({
+                            "analysis_id": bought,
+                            "status": "pending",
+                            "stage": "queued",
+                            "duplicate_of": bought,
+                            "poll": format!("/v1/analyses/{bought}"),
+                        })),
+                    )
+                        .into_response());
+                }
+                return Err(Problem {
                     status: StatusCode::PAYMENT_REQUIRED,
                     title: "order_not_payable".into(),
                     detail: "that order does not exist, is not paid, or has already been used"
                         .into(),
-                },
-                other => internal(other),
-            })?;
+                });
+            }
+            Err(other) => return Err(internal(other)),
+        }
     }
 
     tenant.commit().await.map_err(internal)?;
@@ -485,11 +519,28 @@ pub async fn start_analysis(
             .map_err(|e| Problem::bad_request("invalid idempotency key", e.to_string()))?,
         // Derived from the work itself, so a client that retries a timed-out
         // request without a key still gets one analysis rather than two.
-        None => IdempotencyKey::derived(
-            JobKind::Analysis,
-            company_id.0,
-            &request.document_version_ids,
-        ),
+        //
+        // The order is part of the work. Without it the key is
+        // (company, documents), so a paid analysis over the same documents as
+        // an earlier one collides with it — and the customer is handed the
+        // earlier analysis while their order is consumed against a new row
+        // nobody will ever look at. They paid, and were given something else.
+        // The order id makes every purchase its own piece of work; a retry of
+        // the *same* purchase still derives the same key, which is the case
+        // this derivation exists for.
+        None => match request.order_id {
+            Some(order_id) => IdempotencyKey::derived_for_order(
+                JobKind::Analysis,
+                company_id.0,
+                &request.document_version_ids,
+                order_id,
+            ),
+            None => IdempotencyKey::derived(
+                JobKind::Analysis,
+                company_id.0,
+                &request.document_version_ids,
+            ),
+        },
     };
 
     let enqueued = queue
@@ -707,13 +758,56 @@ pub async fn get_report(
     // default: a caller asking for `accountant` and silently getting the
     // company view would not notice, and would ship a review with no control
     // section in it.
-    let audience = match query.audience.as_deref() {
-        None => skattjakt_pipeline::Audience::Company,
-        Some(value) => skattjakt_pipeline::Audience::parse(value).ok_or_else(|| Problem {
-            status: StatusCode::BAD_REQUEST,
-            title: "unknown audience".into(),
-            detail: format!("{value:?} is not one of: private, company, accountant"),
-        })?,
+    let requested = match query.audience.as_deref() {
+        None => None,
+        Some(value) => Some(
+            skattjakt_pipeline::Audience::parse(value).ok_or_else(|| Problem {
+                status: StatusCode::BAD_REQUEST,
+                title: "unknown audience".into(),
+                detail: format!("{value:?} is not one of: private, company, accountant"),
+            })?,
+        ),
+    };
+
+    // What was bought decides what is served.
+    //
+    // This used to be the query parameter alone, which meant a customer who
+    // paid 29 kronor for Privatanalys could ask for `?audience=accountant` and
+    // receive the 69-kronor Kontroll report. The payment was verified; the
+    // entitlement was not. That is the same mistake as letting a client declare
+    // its own payment settled — the client was deciding what it had bought.
+    //
+    // There is deliberately no ladder here. Bolagsanalys and Skattjakt Kontroll
+    // cost the same and are different reports, not more and less of one report,
+    // so "at or below what you paid for" has no meaning to implement. You get
+    // the layer you bought.
+    let audience = match analysis.audience.as_deref() {
+        // Not bought — payments were not required — so the caller chooses, as
+        // before.
+        None => requested.unwrap_or(skattjakt_pipeline::Audience::Company),
+        Some(bought) => {
+            let entitled = skattjakt_pipeline::Audience::parse(bought).ok_or_else(|| {
+                // Unreachable through the API — the column is constrained to
+                // the three keys — but an unreadable entitlement must fail
+                // closed rather than fall back to a default that might be
+                // more than was paid for.
+                internal(format!("analysis carries an unknown audience {bought:?}"))
+            })?;
+            if let Some(requested) = requested {
+                if requested != entitled {
+                    return Err(Problem {
+                        status: StatusCode::FORBIDDEN,
+                        title: "not_what_was_bought".into(),
+                        detail: format!(
+                            "this analysis was bought as {}, so it cannot be read as {}",
+                            entitled.as_str(),
+                            requested.as_str()
+                        ),
+                    });
+                }
+            }
+            entitled
+        }
     };
 
     let report = skattjakt_pipeline::build_report_for(

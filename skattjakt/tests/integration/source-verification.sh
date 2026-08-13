@@ -269,8 +269,14 @@ MISMATCH_COUNT="$("${PSQL[@]}" -d "$DB" -c \
     && pass "the database holds $VERIFIED_COUNT verified and $MISMATCH_COUNT contradicted" \
     || fail "the database has nothing interesting to report ($VERIFIED_COUNT/$MISMATCH_COUNT)"
 
+# Whichever build is newer, not whichever profile is preferred. A release binary
+# left over from before the change under test passes the health check and then
+# fails in ways that read as product bugs — this has now cost two debugging
+# sessions, so the rule lives in every suite that picks a binary.
 API="$ROOT/target/release/skattjakt-api"
 [[ -x "$API" ]] || API="$ROOT/target/debug/skattjakt-api"
+DEBUG_API="$ROOT/target/debug/skattjakt-api"
+[[ -x "$DEBUG_API" && "$DEBUG_API" -nt "$API" ]] && API="$DEBUG_API"
 APIPORT="${APIPORT:-18095}"
 TOKEN="source-verification-suite"
 DATABASE_URL="$DATABASE_URL" SKATTJAKT_API_TOKEN="$TOKEN" \

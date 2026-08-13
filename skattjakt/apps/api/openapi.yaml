@@ -1274,7 +1274,13 @@ paths:
                 accounts_state: { $ref: "#/components/schemas/AccountsState" }
       responses:
         "202":
-          description: Accepted. Poll the returned location.
+          description: >
+            Accepted. Poll the returned location. `duplicate_of` is present when
+            this request did not create new work: either the derived idempotency
+            key matched a job already queued, or the `order_id` names an order
+            that has already bought an analysis — a spent order answers with the
+            analysis it bought rather than refusing, because the caller has
+            already paid.
           content:
             application/json:
               schema:
@@ -1284,6 +1290,7 @@ paths:
                   analysis_id: { type: string, format: uuid }
                   status: { type: string }
                   stage: { type: string }
+                  duplicate_of: { type: string, format: uuid }
                   poll: { type: string }
         "400":
           description: No documents, or a document version this company does not have.
@@ -1363,6 +1370,18 @@ paths:
         An unrecognised value is a 400 rather than a silent fall back to the
         default: a caller asking for `accountant` and quietly receiving the
         company view would ship a review with no control section in it.
+
+        **The parameter does not choose what you are entitled to.** When an
+        analysis was bought — that is, when payments were required and an order
+        was redeemed against it — the layer is fixed at redemption from the
+        product on the order, and `?audience=` may only agree with it. Asking
+        for a different one is a 403. Otherwise a customer who paid 29 kr for
+        Privatanalys could ask for the 69 kr Kontroll report and get it.
+
+        There is no ladder: Bolagsanalys and Skattjakt Kontroll cost the same
+        and are different reports, not more and less of one report. You get the
+        layer you bought. When payments are not required nothing was bought, and
+        the parameter chooses freely.
       parameters:
         - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
         - { name: format, in: query, required: false, schema: { type: string, enum: [json, markdown] } }
@@ -1384,6 +1403,13 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Problem" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: >
+            A layer other than the one this analysis was bought as
+            (`not_what_was_bought`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409":
           description: The analysis has not finished.
@@ -1704,6 +1730,7 @@ components:
             - no_documents
             - not_a_session
             - not_found
+            - not_what_was_bought
             - nothing_was_uploaded
             - order_not_payable
             - password_rejected

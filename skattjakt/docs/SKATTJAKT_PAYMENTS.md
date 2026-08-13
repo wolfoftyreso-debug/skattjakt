@@ -203,17 +203,63 @@ RETURNING …
 ```
 
 The condition and the transition are the same statement, so two requests racing
-on one order cannot both observe `paid`. The loser updates nothing and receives
-`402`. A unique index on `analysis_id` makes a second attempt a failed
-transaction rather than a support ticket.
+on one order cannot both observe `paid`. The loser updates nothing. A unique
+index on `analysis_id` makes a second attempt a failed transaction rather than a
+support ticket.
 
 A check-then-act in the handler passes every sequential test and fails exactly
 where it matters — a customer double-tapping on a slow connection.
 `tests/integration/payments.sh` fires ten concurrent requests at one paid order
-and asserts that exactly one wins.
+and asserts that all ten name the same analysis and the order was spent once.
 
 The redemption happens **inside the transaction that creates the analysis**, so
 an order cannot be spent on an analysis that then fails to be created.
+
+### What a spent order answers
+
+Not `402`. An order that already names an analysis answers with **that
+analysis**, because the customer asking a second time is nearly always the
+customer whose first request timed out. They have paid; "that order cannot be
+used" would be both false and expensive. One order still buys exactly one
+analysis — asking twice shows you the one you bought.
+
+### The order is part of the idempotency key
+
+A request that supplies no `Idempotency-Key` gets one derived from the work, so
+a retry does not run the analysis twice. That derivation was
+`(kind, company, document_version_ids)` — which does not mention the order, and
+so a paid analysis over documents that had been analysed before **collapsed onto
+the earlier job**. The order was consumed, a new analysis row was written, and
+the customer was handed the *earlier* analysis. They paid and received something
+else, and nothing in the system recorded that anything was wrong.
+
+The derived key now carries the order when there is one. Every purchase is its
+own piece of work; a retry of the same purchase still derives the same key,
+which is the case the derivation exists for.
+
+### What was bought is what is served
+
+The gate checked *that* an order was paid. It did not check *what it was for*.
+The report chose its presentation layer from a query parameter:
+
+```
+GET /v1/analyses/{id}/report?audience=accountant
+```
+
+so 29 kronor of Privatanalys bought the 69-kronor Skattjakt Kontroll report, for
+anyone who read the API documentation. The money was verified and the
+entitlement was not — the same mistake as letting a client declare its own
+payment settled, with the client deciding what it had bought.
+
+Redemption now stamps `analysis_jobs.audience` from the order's product, in the
+same transaction and by the same function, and the report reads that column
+rather than the query string. A parameter that disagrees is a `403`. There is
+no ladder: Bolagsanalys and Skattjakt Kontroll cost the same and are different
+reports, not more and less of one report.
+
+An analysis created while payments were not required carries `NULL` — nobody
+bought it, so nothing constrains it — and a deferred constraint trigger refuses
+to commit a consumed order whose analysis was never stamped.
 
 ---
 

@@ -604,7 +604,7 @@ impl Tenant<'_> {
     pub async fn analysis(&mut self, id: AnalysisId) -> StoreResult<StoredAnalysis> {
         let row = sqlx::query(
             "SELECT id, document_version_ids, accounts_state, status, stage,
-                    rule_set_version, result, error, created_at, started_at, finished_at
+                    rule_set_version, audience, result, error, created_at, started_at, finished_at
              FROM analysis_jobs WHERE id = $1",
         )
         .bind(id.0)
@@ -632,6 +632,7 @@ impl Tenant<'_> {
             },
             stage: stage_from_key(row.get::<String, _>("stage").as_str()),
             rule_set_version: row.get("rule_set_version"),
+            audience: row.get("audience"),
             result: result
                 .filter(|v| !v.is_null())
                 .and_then(|v| serde_json::from_value(v).ok()),
@@ -943,6 +944,10 @@ pub struct StoredAnalysis {
     pub status: AnalysisStatus,
     pub stage: AnalysisStage,
     pub rule_set_version: String,
+    /// The presentation layer this analysis was bought as, stamped from the
+    /// order when it was redeemed. `None` means it was not bought — payments
+    /// were not required — and so nothing constrains how it may be read.
+    pub audience: Option<String>,
     pub result: Option<AnalysisResult>,
     pub error: Option<String>,
     pub created_at: DateTime<Utc>,

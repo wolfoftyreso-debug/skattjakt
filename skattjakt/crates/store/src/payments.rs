@@ -250,7 +250,32 @@ impl Tenant<'_> {
         .fetch_optional(&mut *self.tx)
         .await?
         .ok_or(StoreError::NotFound)?;
-        order_from(&row)
+        let order = order_from(&row)?;
+
+        // Stamping the entitlement is part of redeeming, not a step after it.
+        //
+        // Separating them would allow an analysis to exist, paid for, with no
+        // record of what it was paid for — and an unstamped analysis is
+        // readable as any audience at all, which is the hole this closes. Same
+        // statement sequence, same transaction, and a deferred constraint
+        // trigger in `0010_analysis_entitlement.sql` refuses the commit if this
+        // ever stops happening.
+        let stamped = sqlx::query(
+            "UPDATE analysis_jobs SET audience = $2 WHERE id = $1 AND audience IS NULL",
+        )
+        .bind(analysis_id.as_uuid())
+        .bind(order.product.audience_key())
+        .execute(&mut *self.tx)
+        .await?;
+
+        // An analysis that already carried an audience was already bought.
+        // `orders_one_analysis_each` makes that nearly impossible, and "nearly"
+        // is why this is checked rather than assumed.
+        if stamped.rows_affected() != 1 {
+            return Err(StoreError::NotFound);
+        }
+
+        Ok(order)
     }
 
     /// Marks a paid order as owing a refund, because what it bought could not

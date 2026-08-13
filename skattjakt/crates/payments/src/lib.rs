@@ -79,6 +79,24 @@ impl Product {
         })
     }
 
+    /// Which presentation layer this product entitles the buyer to.
+    ///
+    /// One engine, three presentation layers — so the product a customer paid
+    /// for is not a different analysis, it is a different report over the same
+    /// result. Returned as the audience key rather than a `pipeline::Audience`
+    /// so that taking money does not depend on the analysis pipeline; the two
+    /// crates agree on three strings and nothing else.
+    ///
+    /// The mapping is exhaustive and total on purpose. A product with no
+    /// audience would be a thing that can be sold and not delivered.
+    pub fn audience_key(self) -> &'static str {
+        match self {
+            Product::PrivateAnalysis => "private",
+            Product::CompanyAnalysis => "company",
+            Product::ControlReview => "accountant",
+        }
+    }
+
     /// In öre, because every amount in this system is an integer of öre and a
     /// price is not the place to introduce a float.
     pub fn price(self) -> Money {

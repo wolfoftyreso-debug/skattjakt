@@ -44,8 +44,14 @@ APIPORT="${APIPORT:-18100}"
 DB=skattjakt_payments
 ADMIN_TOKEN="admin-payments-suite"
 
+# Whichever build is newer, not whichever profile is preferred. A release binary
+# left over from before the change under test passes the health check and then
+# fails in ways that read as product bugs — this has now cost two debugging
+# sessions, so the rule lives in every suite that picks a binary.
 API="$ROOT/target/release/skattjakt-api"
 [[ -x "$API" ]] || API="$ROOT/target/debug/skattjakt-api"
+DEBUG_API="$ROOT/target/debug/skattjakt-api"
+[[ -x "$DEBUG_API" && "$DEBUG_API" -nt "$API" ]] && API="$DEBUG_API"
 
 PGBIN="${PGBIN:-$(dirname "$(command -v initdb || echo /usr/lib/postgresql/16/bin/initdb)")}"
 [[ -x "$PGBIN/initdb" ]] || PGBIN=/usr/lib/postgresql/16/bin
@@ -294,14 +300,85 @@ FIRST="$(code POST /v1/analyses/stored "$TOKEN_A" \
     "{\"document_version_ids\":[\"$DV\"],\"accounts_state\":\"preliminary\",\"order_id\":\"$ORDER_ID\"}")"
 check "the first analysis is accepted" 202 "$FIRST"
 
-SECOND="$(code POST /v1/analyses/stored "$TOKEN_A" \
+# Asking again with an order that is already spent must not sell a second
+# analysis — and must not refuse either. The customer whose request timed out
+# and who pressed the button again has already paid; 402 would take the money
+# and answer "that order cannot be used". They are shown what they bought.
+SECOND="$(api POST /v1/analyses/stored "$TOKEN_A" \
     "{\"document_version_ids\":[\"$DV\"],\"accounts_state\":\"preliminary\",\"order_id\":\"$ORDER_ID\"}")"
-check "the same order cannot buy a second analysis" 402 "$SECOND"
+SECOND_ID="$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("analysis_id",""))' <<<"$SECOND")"
+BOUGHT_BY_ORDER="$("${PSQL[@]}" -d "$DB" -c "SELECT analysis_id FROM orders WHERE id='$ORDER_ID'")"
+check "asking twice shows the analysis the order bought" "$BOUGHT_BY_ORDER" "$SECOND_ID"
+COUNT_FOR_ORDER="$("${PSQL[@]}" -d "$DB" -c \
+    "SELECT count(*) FROM analysis_jobs WHERE id='$BOUGHT_BY_ORDER'")"
+check "and exactly one analysis exists for it" 1 "$COUNT_FOR_ORDER"
 
 CONSUMED="$("${PSQL[@]}" -d "$DB" -c "SELECT state FROM orders WHERE id='$ORDER_ID'")"
 check "the order is consumed and names its analysis" consumed "$CONSUMED"
 NAMED="$("${PSQL[@]}" -d "$DB" -c "SELECT (analysis_id IS NOT NULL) FROM orders WHERE id='$ORDER_ID'")"
 check "and the analysis it bought is recorded" t "$NAMED"
+
+echo
+echo "what was bought is what is served"
+# The hole this closes: the gate checked *that* an order was paid and never
+# *what it was for*, while the report chose its presentation layer from a query
+# parameter the client sets. So 29 kronor of Privatanalys bought the 69-kronor
+# Kontroll report, for anyone who read the API documentation.
+PRIVATE_ORDER="$("${PSQL[@]}" -d "$DB" -c "
+    INSERT INTO orders (company_id, product, amount_ore, state)
+    SELECT id, 'private_analysis', 2900, 'awaiting_payment' FROM companies
+    WHERE name = 'Betalbolaget AB' RETURNING id")"
+"${PSQL[@]}" -d "$DB" -c "UPDATE orders SET state='paid', paid_at=now() WHERE id='$PRIVATE_ORDER'" >/dev/null
+
+BOUGHT="$(api POST /v1/analyses/stored "$TOKEN_A" \
+    "{\"document_version_ids\":[\"$DV\"],\"accounts_state\":\"preliminary\",\"order_id\":\"$PRIVATE_ORDER\"}")"
+BOUGHT_ID="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["analysis_id"])' <<<"$BOUGHT")"
+
+STAMP="$("${PSQL[@]}" -d "$DB" -c "SELECT audience FROM analysis_jobs WHERE id='$BOUGHT_ID'")"
+check "redeeming a private order stamps the analysis private" private "$STAMP"
+
+# The report needs a finished analysis, and no worker runs here. The result is
+# therefore written directly — a shortcut on the *input* to the entitlement
+# check, never on the check.
+"${PSQL[@]}" -d "$DB" -c "
+    UPDATE analysis_jobs SET status='succeeded', stage='done', finished_at=now(),
+    result = jsonb_build_object(
+        'analysis_id', id::text, 'company_id', company_id::text,
+        'summary', jsonb_build_object(
+            'identified_opportunities', 0, 'high_priority_count', 0,
+            'needs_investigation_count', 0, 'missing_information_count', 0,
+            'warnings_count', 0,
+            'estimated_total', jsonb_build_object('low', 0, 'high', 0),
+            'found_nothing', true),
+        'opportunities', '[]'::jsonb, 'warnings', '[]'::jsonb,
+        'missing_information', '[]'::jsonb, 'covered_areas', '[]'::jsonb,
+        'cleared', '[]'::jsonb, 'recommended_actions', '[]'::jsonb,
+        'limitations', '[]'::jsonb, 'rejected', '[]'::jsonb,
+        'disclaimer', 'Preliminart.', 'generated_at', to_char(now() AT TIME ZONE 'UTC',
+            'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'))
+    WHERE id='$BOUGHT_ID'" >/dev/null
+
+check "the layer it was bought as is served" 200 \
+    "$(code GET "/v1/analyses/$BOUGHT_ID/report?audience=private" "$TOKEN_A")"
+check "asking for the 69 kr review after paying 29 kr is refused" 403 \
+    "$(code GET "/v1/analyses/$BOUGHT_ID/report?audience=accountant" "$TOKEN_A")"
+check "and so is the company view" 403 \
+    "$(code GET "/v1/analyses/$BOUGHT_ID/report?audience=company" "$TOKEN_A")"
+
+# Omitting the parameter must not be the way round it. The default used to be
+# `company`; on a bought analysis there is no default but the entitlement.
+DEFAULTED="$(api GET "/v1/analyses/$BOUGHT_ID/report" "$TOKEN_A")"
+python3 -c "
+import json, sys
+r = json.load(sys.stdin)
+sys.exit(0 if r.get('audience') == 'private' or 'control_review' not in json.dumps(r) else 1)
+" <<<"$DEFAULTED" && pass "omitting the parameter serves what was bought" \
+    || fail "omitting the parameter did not serve the bought layer"
+
+# And the control section — the thing the 69 kr actually buys — is not in it.
+grep -q "control_review" <<<"$DEFAULTED" \
+    && fail "the private report carried the accountant control review" \
+    || pass "the control review is not in a report nobody bought it in"
 
 echo
 echo "under a race"
@@ -324,21 +401,33 @@ RESULTS="$WORKDIR/race"
 RACERS=()
 for i in $(seq 1 10); do
     (
-        code POST /v1/analyses/stored "$TOKEN_A" \
+        api POST /v1/analyses/stored "$TOKEN_A" \
             "{\"document_version_ids\":[\"$DV\"],\"accounts_state\":\"preliminary\",\"order_id\":\"$RACE_ORDER\"}" \
             > "$WORKDIR/race.$i"
     ) &
     RACERS+=("$!")
 done
-# Tolerant of a racer exiting non-zero: what matters is the status code
-# each one recorded, and `set -e` would otherwise kill the suite silently.
+# Tolerant of a racer exiting non-zero: what matters is what each one recorded,
+# and `set -e` would otherwise kill the suite silently.
 wait "${RACERS[@]}" || true
-for i in $(seq 1 10); do cat "$WORKDIR/race.$i" 2>/dev/null || echo "missing"; echo; done > "$RESULTS"
+for i in $(seq 1 10); do
+    python3 -c 'import json,sys
+try: print(json.load(sys.stdin).get("analysis_id", "none"))
+except Exception: print("unreadable")' < "$WORKDIR/race.$i" 2>/dev/null || echo "missing"
+done > "$RESULTS"
 
-WON="$(grep -c '^202$' "$RESULTS" || true)"
-LOST="$(grep -c '^402$' "$RESULTS" || true)"
-check "exactly one request spent the order" 1 "$WON"
-check "the other nine were refused" 9 "$LOST"
+# The invariant is not "nine were refused" — since a spent order now answers
+# with the analysis it bought, the losers are told the truth rather than turned
+# away. The invariant is that the order bought exactly one analysis and every
+# racer names it. That is the property double-spending would break; the status
+# codes were only ever a proxy for it.
+DISTINCT="$(sort -u "$RESULTS" | grep -cv '^$' || true)"
+check "all ten requests name one and the same analysis" 1 "$DISTINCT"
+RACE_BOUGHT="$("${PSQL[@]}" -d "$DB" -c "SELECT analysis_id FROM orders WHERE id='$RACE_ORDER'")"
+check "and it is the analysis the order records" "$RACE_BOUGHT" "$(head -1 "$RESULTS")"
+RACE_ROWS="$("${PSQL[@]}" -d "$DB" -c \
+    "SELECT count(*) FROM orders WHERE id='$RACE_ORDER' AND state='consumed'")"
+check "the order was spent exactly once" 1 "$RACE_ROWS"
 
 echo
 echo "an order belongs to one tenant"
