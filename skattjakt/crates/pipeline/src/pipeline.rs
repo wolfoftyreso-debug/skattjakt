@@ -359,6 +359,7 @@ impl AnalysisPipeline {
         observer.stage(AnalysisStage::VerifyingCalculations);
         let mut opportunities = Vec::new();
         let mut rejected = Vec::new();
+        let mut cleared: Vec<skattjakt_core::analysis::ClearedCheck> = Vec::new();
 
         for evaluation in &evaluations {
             if let RuleOutcome::RuleError { reason } = &evaluation.outcome {
@@ -369,13 +370,34 @@ impl AnalysisPipeline {
                 });
                 continue;
             }
-            if !evaluation.outcome.produces_finding() {
-                continue;
-            }
-
             let Some(rule) = self.engine.rule(&evaluation.rule_id) else {
                 continue;
             };
+
+            if !evaluation.outcome.produces_finding() {
+                // A rule that did not fire is not automatically a clean bill of
+                // health. It is only worth reporting as checked if it was
+                // evaluated against values we actually read: a rule whose
+                // trigger fact was never found decided nothing, and saying
+                // "looks correct" about it would be the most damaging kind of
+                // wrong — reassurance in place of a look.
+                let referenced = rule.referenced_facts();
+                let readable = referenced.iter().all(|kind| facts.get(kind).is_some());
+                if readable {
+                    let reason = match &evaluation.outcome {
+                        RuleOutcome::NotApplicable { reason } => reason.clone(),
+                        RuleOutcome::ExceptionApplies { explanation, .. } => explanation.clone(),
+                        _ => continue,
+                    };
+                    cleared.push(skattjakt_core::analysis::ClearedCheck {
+                        rule_id: rule.rule_id.clone(),
+                        title: rule.title.clone(),
+                        category: format!("{:?}", rule.category).to_lowercase(),
+                        reason,
+                    });
+                }
+                continue;
+            }
 
             // A rule that could not read a single one of the values it depends
             // on has not found anything — it has failed to look. Presenting it
@@ -449,6 +471,7 @@ impl AnalysisPipeline {
             warnings,
             missing_information,
             covered_areas,
+            cleared,
             limitations,
             rejected,
         );

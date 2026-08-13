@@ -1250,10 +1250,33 @@ paths:
     get:
       tags: [Analysis]
       summary: The report
-      description: The nine sections of the beta report. `?format=markdown` renders it for export.
+      description: |
+        The nine sections of the beta report, plus an ordered action plan.
+        `?format=markdown` renders it for export.
+
+        `?audience=` selects the presentation layer. **The analysis behind all
+        three is the same one** — same rules, same evidence, same status ladder
+        — so two audiences can never disagree about what was found. What
+        changes is grouping and emphasis:
+
+        * `company` (default) — the findings as they stand.
+        * `private` — the same, written for someone reading about their own
+          affairs. Note that the shipped rule set contains no rules for private
+          individuals, so this currently returns an analysis of a company.
+        * `accountant` — adds `control_review`: what must be checked before
+          filing, what might be improved, what was checked and cleared, and
+          what is worth raising with the client.
+
+        An unrecognised value is a 400 rather than a silent fall back to the
+        default: a caller asking for `accountant` and quietly receiving the
+        company view would ship a review with no control section in it.
       parameters:
         - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
         - { name: format, in: query, required: false, schema: { type: string, enum: [json, markdown] } }
+        - name: audience
+          in: query
+          required: false
+          schema: { type: string, enum: [private, company, accountant], default: company }
       responses:
         "200":
           description: The report.
@@ -1262,6 +1285,11 @@ paths:
               schema: { type: object }
             text/markdown:
               schema: { type: string }
+        "400":
+          description: The audience is not one this build knows.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409":
@@ -1583,6 +1611,7 @@ components:
             - the_session_cannot_be_refreshed
             - the_upload_does_not_match_its_ticket
             - unauthorized
+            - unknown_audience
             - unknown_push_provider
             - unknown_role
             - unknown_value

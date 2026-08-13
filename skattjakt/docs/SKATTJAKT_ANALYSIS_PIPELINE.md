@@ -335,3 +335,57 @@ guessed at.
 
 Current golden dataset: **57 true positives, 0 false positives, 0 false
 negatives. Precision 1.000, recall 1.000.**
+
+---
+
+## 10. One engine, three presentation layers
+
+The product serves three readers — a private individual, a company, an
+accounting assistant reviewing a client's closing. They are **not** three
+products. `report::Audience` selects a rendering of one analysis; the rules, the
+evidence, the confidence and the status ladder are identical in all three, and
+`every_audience_reads_the_same_analysis` fails the build if they ever diverge.
+
+Three products would mean three rule sets to keep in step, and the one that fell
+behind would be the one nobody noticed.
+
+### What each layer adds
+
+Everyone gets the **action plan**: every finding's recommended action, ordered
+by priority band and then by the top of its money range, deduplicated on the
+action text, and marked `Kontroll` or `Möjlighet`. A report is not a
+deliverable; a decision is, and seven findings each carrying "recommended
+action" leaves the reader to do the ranking the product exists to do.
+
+`accountant` adds `control_review`, in four bands:
+
+| Band | What is in it |
+|---|---|
+| Måste kontrolleras | Findings the engine could not settle — status `warning` or `investigate` |
+| Möjlig förbättring | Everything else that was presented, with a range where one could be computed |
+| Ser korrekt ut | Rules evaluated against values we actually read, which did not apply |
+| Värt att ta upp med kunden | Findings with a computed amount, largest first |
+
+### Why "ser korrekt ut" is not simply "did not fire"
+
+A rule that did not fire is not automatically a clean bill of health. A rule
+whose trigger fact was never found in the documents decided nothing, and
+reporting it as checked would be the most damaging kind of wrong: reassurance in
+place of a look. Only a rule whose referenced facts were all readable is
+cleared; the rest surface as missing information.
+
+The one case that looks like a hole and is not: a rule keyed on a profile
+answer references no document fact at all, so the readable-facts test passes
+vacuously. That is correct, because Kleene logic (§3) means an *unanswered*
+profile question yields `Indeterminate`, never `NotApplicable` — a profile-driven
+rule reaching `NotApplicable` means somebody answered and the answer excluded it.
+Both directions are asserted in `a_profile_driven_rule_may_be_cleared_without_reading_a_document`.
+
+### What the layers deliberately do not change
+
+- **No point estimates.** A talking point carries a `MoneyRange`, like
+  everything else that expresses money. An assistant who quotes a single figure
+  to a client owns that figure; the product will not hand them one.
+- **No lifted ceiling.** `accountant` does not unlock `identified`. The gate in
+  §9 applies to every audience, so a review for a professional is capped by the
+  same unverified rule set as a report for a consumer.

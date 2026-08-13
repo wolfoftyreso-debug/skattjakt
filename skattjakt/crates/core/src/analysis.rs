@@ -122,6 +122,26 @@ pub struct CoveredArea {
     pub findings: usize,
 }
 
+/// A rule that was evaluated against real values and did not fire.
+///
+/// The distinction this type exists to protect: "we checked this and it does
+/// not apply to you" and "we could not see enough to check this" are different
+/// answers, and only the first is worth showing as a green line. A rule whose
+/// trigger fact was never found in the documents is *not* cleared — it is
+/// unchecked, and it belongs in `missing_information` instead.
+///
+/// Nothing consumed this before. For an accounting assistant reviewing a
+/// closing, the checks that passed are half the value: a review that lists only
+/// problems cannot be distinguished from a review that did not run.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ClearedCheck {
+    pub rule_id: String,
+    pub title: String,
+    pub category: String,
+    /// Why it does not apply, in the rule's own words.
+    pub reason: String,
+}
+
 /// Something the system cannot determine, stated plainly (section 28, part 9).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Limitation {
@@ -138,6 +158,10 @@ pub struct AnalysisResult {
     pub warnings: Vec<Warning>,
     pub missing_information: Vec<MissingInformation>,
     pub covered_areas: Vec<CoveredArea>,
+    /// Rules that were evaluated against values from the documents and did not
+    /// fire. Empty for an analysis where nothing could be read.
+    #[serde(default)]
+    pub cleared: Vec<ClearedCheck>,
     pub recommended_actions: Vec<String>,
     pub limitations: Vec<Limitation>,
     /// Findings the skeptic pass removed. Not shown by default, kept for audit.
@@ -175,6 +199,7 @@ impl AnalysisResult {
         warnings: Vec<Warning>,
         missing_information: Vec<MissingInformation>,
         covered_areas: Vec<CoveredArea>,
+        cleared: Vec<ClearedCheck>,
         limitations: Vec<Limitation>,
         rejected: Vec<Opportunity>,
     ) -> Self {
@@ -224,6 +249,7 @@ impl AnalysisResult {
             warnings,
             missing_information,
             covered_areas,
+            cleared,
             recommended_actions,
             limitations,
             rejected,
@@ -317,6 +343,7 @@ mod tests {
             AnalysisId::new(),
             CompanyId::new(),
             opportunities,
+            vec![],
             vec![],
             vec![],
             vec![],

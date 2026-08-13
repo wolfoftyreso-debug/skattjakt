@@ -20,4 +20,7 @@ pub mod report;
 
 pub use facts::{build_fact_set, DocumentInput};
 pub use pipeline::{AnalysisInput, AnalysisPipeline, PipelineConfig, PipelineError};
-pub use report::{build as build_report, to_markdown, Report};
+pub use report::{
+    build as build_report, build_for as build_report_for, to_markdown, ActionStep, Audience,
+    ControlReview, Report,
+};

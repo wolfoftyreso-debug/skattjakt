@@ -43,6 +43,13 @@ pub struct ReportSections {
     pub next_steps: Vec<String>,
     /// 9. What the system cannot determine.
     pub limitations: Vec<String>,
+    /// Who this rendering was written for.
+    pub audience: String,
+    /// The ordered "do this now" list, across all findings.
+    pub action_plan: Vec<ActionStep>,
+    /// Present only for `Audience::Accountant`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub control_review: Option<ControlReview>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -119,8 +126,129 @@ pub struct EvidenceSummary {
     pub assumptions: Vec<String>,
 }
 
+/// Who the report is being written for.
+///
+/// One engine, three presentation layers — not three products. The analysis is
+/// identical in all three: the same rules, the same evidence, the same status
+/// ladder. What changes is what gets emphasised, what gets grouped, and what a
+/// reader is assumed to already know.
+///
+/// Splitting this into separate products would mean three rule sets to keep in
+/// step, and the one that fell behind would be the one nobody noticed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Audience {
+    /// Someone reading about their own affairs, who does not know the
+    /// vocabulary and needs the next step spelled out.
+    Private,
+    /// A company owner or director reading about their own company.
+    Company,
+    /// An accounting assistant reviewing a client's closing before it is filed.
+    /// Reads the same findings as a checklist, and — the part that makes this a
+    /// different product rather than a different font — wants the checks that
+    /// *passed* as well as the ones that did not.
+    Accountant,
+}
+
+impl Audience {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Audience::Private => "private",
+            Audience::Company => "company",
+            Audience::Accountant => "accountant",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        Some(match value {
+            "private" => Audience::Private,
+            "company" => Audience::Company,
+            "accountant" => Audience::Accountant,
+            _ => return None,
+        })
+    }
+}
+
+/// One step in the ordered "do this now" list.
+///
+/// The list exists because a report is not a deliverable — a decision is. Seven
+/// findings each with a "recommended action" leaves the reader to work out what
+/// to do first; this says it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ActionStep {
+    /// 1-based, and the order is the point.
+    pub order: usize,
+    pub action: String,
+    /// The finding it came from, so a reader can go back to the evidence.
+    pub title: String,
+    /// `high`, `should_investigate`, `needs_more_evidence`.
+    pub priority_band: String,
+    /// Present when the finding carries a computed effect. A range, never a
+    /// single figure — see `EconomicPotential`.
+    pub impact: Option<MoneyRange>,
+    /// True when the step is a control rather than an opportunity: something to
+    /// check before filing, not money to go and get.
+    pub is_control: bool,
+}
+
+/// What an accounting assistant sees instead of a list of opportunities.
+///
+/// The four bands are the review they would otherwise write by hand. The last
+/// one is the reason a firm would pay for this: a review that only lists
+/// problems creates work; a review that also says "these four are worth raising
+/// with the client" creates billable work.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ControlReview {
+    /// Must be checked before filing. Findings the engine could not settle.
+    pub must_check: Vec<Highlight>,
+    /// A possible improvement, with an amount where one could be computed.
+    pub possible_improvement: Vec<Highlight>,
+    /// Checked against values from the documents, and did not apply.
+    ///
+    /// Deliberately **not** everything that failed to fire: a rule whose
+    /// trigger fact was never found decided nothing, and listing it here would
+    /// be reassurance in place of a look. Those appear under what is missing.
+    pub looks_correct: Vec<ClearedLine>,
+    /// Areas worth raising with the client, most valuable first.
+    pub worth_raising: Vec<TalkingPoint>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ClearedLine {
+    pub title: String,
+    pub category: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TalkingPoint {
+    pub area: String,
+    pub summary: String,
+    /// A range. An accountant quoting a single figure to a client owns that
+    /// figure.
+    pub impact: MoneyRange,
+    pub impact_display: String,
+}
+
 /// Builds the report from a finished analysis.
 pub fn build(
+    result: &AnalysisResult,
+    company_name: &str,
+    fiscal_year: &str,
+    rule_set_version: &str,
+) -> Report {
+    build_for(
+        Audience::Company,
+        result,
+        company_name,
+        fiscal_year,
+        rule_set_version,
+    )
+}
+
+/// Builds the report for a particular reader.
+pub fn build_for(
+    audience: Audience,
     result: &AnalysisResult,
     company_name: &str,
     fiscal_year: &str,
@@ -182,6 +310,13 @@ pub fn build(
 
     let total = result.summary.estimated_total;
 
+    // Computed before the list is moved into the report.
+    let action_plan = action_plan(&opportunities);
+    let control_review = match audience {
+        Audience::Accountant => Some(control_review(&opportunities, result)),
+        _ => None,
+    };
+
     Report {
         analysis_id: result.analysis_id,
         company_name: company_name.to_string(),
@@ -224,10 +359,104 @@ pub fn build(
                 .iter()
                 .map(|l| l.statement.clone())
                 .collect(),
+            audience: audience.as_str().to_string(),
+            action_plan,
+            control_review,
         },
         disclaimer: result.disclaimer.clone(),
         generated_at: result.generated_at,
     }
+}
+
+/// Orders every finding's recommended action into one list.
+///
+/// Ranked by priority band, then by the top of the money range. Ties keep the
+/// order the pipeline produced, which is already sorted by priority score — so
+/// two findings in the same band with no computed amount stay in the engine's
+/// order rather than in an arbitrary one.
+///
+/// Deduplicated on the action text: several rules can land on the same next
+/// step ("ask your accountant about X"), and a numbered list that says the same
+/// thing twice reads as though the machine was not paying attention.
+fn action_plan(opportunities: &[Highlight]) -> Vec<ActionStep> {
+    fn band_rank(band: &str) -> u8 {
+        match band {
+            "high" => 0,
+            "should_investigate" => 1,
+            "needs_more_evidence" => 2,
+            _ => 3,
+        }
+    }
+
+    let mut ranked: Vec<&Highlight> = opportunities.iter().collect();
+    ranked.sort_by(|a, b| {
+        band_rank(&a.priority_band)
+            .cmp(&band_rank(&b.priority_band))
+            .then(b.impact.high.ore().cmp(&a.impact.high.ore()))
+    });
+
+    let mut seen = std::collections::BTreeSet::new();
+    let mut steps = Vec::new();
+    for highlight in ranked {
+        let action = highlight.recommended_action.trim();
+        if action.is_empty() || !seen.insert(action.to_string()) {
+            continue;
+        }
+        steps.push(ActionStep {
+            order: steps.len() + 1,
+            action: action.to_string(),
+            title: highlight.title.clone(),
+            priority_band: highlight.priority_band.clone(),
+            impact: (!highlight.impact.is_zero()).then_some(highlight.impact),
+            // A warning or a finding the engine could not settle is something to
+            // check before filing; the rest is money to go and look for. The
+            // distinction is what lets a reader tell "you may be owed this" from
+            // "do not file until you have looked at this".
+            is_control: highlight.status == "warning" || highlight.status == "investigate",
+        });
+    }
+    steps
+}
+
+/// The four bands an accounting assistant reviews a closing by.
+fn control_review(opportunities: &[Highlight], result: &AnalysisResult) -> ControlReview {
+    let mut review = ControlReview::default();
+
+    for highlight in opportunities {
+        match highlight.status.as_str() {
+            "warning" | "investigate" => review.must_check.push(highlight.clone()),
+            _ => review.possible_improvement.push(highlight.clone()),
+        }
+    }
+
+    review.looks_correct = result
+        .cleared
+        .iter()
+        .map(|check| ClearedLine {
+            title: check.title.clone(),
+            category: check.category.clone(),
+            reason: check.reason.clone(),
+        })
+        .collect();
+
+    // What is worth a phone call, biggest first. Only findings with a computed
+    // amount: "we found something, no idea how much" is not a conversation an
+    // assistant can charge for, and putting it here would dilute the ones that
+    // are.
+    let mut points: Vec<TalkingPoint> = opportunities
+        .iter()
+        .filter(|h| !h.impact.is_zero())
+        .map(|h| TalkingPoint {
+            area: h.category.clone(),
+            summary: h.title.clone(),
+            impact: h.impact,
+            impact_display: h.impact.to_string(),
+        })
+        .collect();
+    points.sort_by(|a, b| b.impact.high.ore().cmp(&a.impact.high.ore()));
+    review.worth_raising = points;
+
+    review
 }
 
 fn highlight(opportunity: &skattjakt_core::Opportunity) -> Highlight {
@@ -444,14 +673,88 @@ pub fn to_markdown(report: &Report) -> String {
     }
     out.push('\n');
 
-    out.push_str("## 8. Nästa steg\n\n");
-    if s.next_steps.is_empty() {
+    out.push_str("## 8. Gör detta nu\n\n");
+    if s.action_plan.is_empty() {
         out.push_str("Inga åtgärder föreslås på det här underlaget.\n\n");
     }
-    for (i, step) in s.next_steps.iter().enumerate() {
-        out.push_str(&format!("{}. {}\n", i + 1, step));
+    for step in &s.action_plan {
+        // The marker distinguishes "look at this before you file" from "there
+        // may be money here". A numbered list that mixes the two silently makes
+        // the reader rank them, which is the work the list exists to do.
+        let marker = if step.is_control {
+            "Kontroll"
+        } else {
+            "Möjlighet"
+        };
+        let amount = match step.impact {
+            Some(range) => format!(" — {range}"),
+            None => String::new(),
+        };
+        out.push_str(&format!(
+            "{}. **{}** ({}{})\n   {}\n",
+            step.order, step.title, marker, amount, step.action
+        ));
     }
     out.push('\n');
+
+    if let Some(review) = &s.control_review {
+        out.push_str("## 8b. Kontroll av bokslutet\n\n");
+
+        out.push_str(&format!(
+            "### Måste kontrolleras ({})\n\n",
+            review.must_check.len()
+        ));
+        for item in &review.must_check {
+            out.push_str(&format!(
+                "- **{}** — {}\n",
+                item.title, item.recommended_action
+            ));
+        }
+        if review.must_check.is_empty() {
+            out.push_str("Inget som måste kontrolleras på det här underlaget.\n");
+        }
+        out.push('\n');
+
+        out.push_str(&format!(
+            "### Möjlig förbättring ({})\n\n",
+            review.possible_improvement.len()
+        ));
+        for item in &review.possible_improvement {
+            out.push_str(&format!(
+                "- **{}** — {} ({})\n",
+                item.title, item.impact_display, item.status_label
+            ));
+        }
+        out.push('\n');
+
+        out.push_str(&format!(
+            "### Ser korrekt ut ({})\n\n",
+            review.looks_correct.len()
+        ));
+        for line in &review.looks_correct {
+            out.push_str(&format!("- **{}** — {}\n", line.title, line.reason));
+        }
+        if review.looks_correct.is_empty() {
+            out.push_str(
+                "Ingen regel kunde prövas mot avlästa värden och avfärdas. Det betyder \
+                 inte att något är fel — det betyder att underlaget inte räckte för att \
+                 friskförklara något.\n",
+            );
+        }
+        out.push('\n');
+
+        out.push_str(&format!(
+            "### Värt att ta upp med kunden ({})\n\n",
+            review.worth_raising.len()
+        ));
+        for point in &review.worth_raising {
+            out.push_str(&format!(
+                "- {} — {} ({})\n",
+                point.summary, point.impact_display, point.area
+            ));
+        }
+        out.push('\n');
+    }
 
     out.push_str("## 9. Begränsningar\n\n");
     for limitation in &s.limitations {
@@ -480,6 +783,7 @@ mod tests {
                 rules_evaluated: 5,
                 findings: 0,
             }],
+            vec![],
             vec![skattjakt_core::analysis::Limitation {
                 statement: "Underlaget är preliminärt.".into(),
             }],
@@ -521,7 +825,7 @@ mod tests {
             "## 5. Saknad information",
             "## 6. Ekonomisk potential",
             "## 7. Evidens",
-            "## 8. Nästa steg",
+            "## 8. Gör detta nu",
             "## 9. Begränsningar",
         ] {
             assert!(markdown.contains(heading), "missing {heading}");

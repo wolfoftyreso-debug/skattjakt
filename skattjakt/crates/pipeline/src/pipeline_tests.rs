@@ -997,3 +997,244 @@ async fn a_forged_fence_is_reported_even_though_wrapping_escaped_it() {
         "a forged fence was escaped and then forgotten"
     );
 }
+
+// --- the three presentation layers -----------------------------------------
+
+#[tokio::test]
+async fn a_rule_checked_against_real_values_and_cleared_is_reported_as_checked() {
+    // The green line an accounting assistant is paying for. Without it, a
+    // review that lists only problems is indistinguishable from a review that
+    // did not run.
+    let (result, _) = pipeline(silent_provider())
+        .run(&input(vec![document(INCOME_STATEMENT)]), &SilentObserver)
+        .await
+        .unwrap();
+
+    assert!(
+        !result.cleared.is_empty(),
+        "no rule was evaluated against real values and cleared"
+    );
+    for check in &result.cleared {
+        assert!(
+            !check.reason.trim().is_empty(),
+            "{} clears with no reason",
+            check.title
+        );
+        // A cleared check must not also be a finding: it either applied or it
+        // did not.
+        assert!(
+            !result
+                .opportunities
+                .iter()
+                .any(|o| o.rule_ids.contains(&check.rule_id)),
+            "{} is both cleared and reported as a finding",
+            check.rule_id
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_rule_whose_trigger_fact_was_never_read_is_not_cleared() {
+    // The distinction the type exists for. A document with no taxable result
+    // cannot settle the periodiseringsfond rule either way, so that rule must
+    // appear in neither the findings nor the cleared list — silence is the
+    // honest answer, and "looks correct" would be reassurance in place of a
+    // look.
+    let without_result = "RESULTATRÄKNING\nNettoomsättning 1 000 000\nPersonalkostnader -400 000\n";
+    let (result, _) = pipeline(silent_provider())
+        .run(&input(vec![document(without_result)]), &SilentObserver)
+        .await
+        .unwrap();
+
+    let engine = RuleEngine::load_embedded().unwrap();
+    for check in &result.cleared {
+        let rule = engine.rule(&check.rule_id).unwrap();
+        assert!(
+            !rule
+                .referenced_facts()
+                .contains(&skattjakt_core::FactKind::TaxableResult),
+            "{} was cleared although the taxable result was never read",
+            check.rule_id
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_profile_driven_rule_may_be_cleared_without_reading_a_document() {
+    // The case that looks like a hole and is not. A rule keyed on a profile
+    // answer — "does the company have vehicles" — references no fact from any
+    // document. It can still be genuinely checked, because three-valued logic
+    // means an *unanswered* profile question yields `Indeterminate`, never
+    // `NotApplicable`. So a profile-driven rule reaching `NotApplicable` means
+    // somebody answered and the answer excluded it.
+    let mut analysis = input(vec![document(INCOME_STATEMENT)]);
+    analysis.company.has_vehicles = Some(false);
+
+    let (answered, _) = pipeline(silent_provider())
+        .run(&analysis, &SilentObserver)
+        .await
+        .unwrap();
+    assert!(
+        answered
+            .cleared
+            .iter()
+            .any(|c| c.rule_id.contains("personbil")),
+        "an answered profile question did not clear the rule it decides"
+    );
+
+    // And with the question unanswered it must not be cleared.
+    analysis.company.has_vehicles = None;
+    let (unanswered, _) = pipeline(silent_provider())
+        .run(&analysis, &SilentObserver)
+        .await
+        .unwrap();
+    assert!(
+        !unanswered
+            .cleared
+            .iter()
+            .any(|c| c.rule_id.contains("personbil")),
+        "an unanswered profile question was reported as a passed check"
+    );
+}
+
+#[tokio::test]
+async fn the_action_plan_puts_the_highest_priority_first_and_says_nothing_twice() {
+    let (result, _) = pipeline(silent_provider())
+        .run(&input(vec![document(INCOME_STATEMENT)]), &SilentObserver)
+        .await
+        .unwrap();
+    let report = crate::report::build_for(
+        crate::report::Audience::Company,
+        &result,
+        "Testbolaget AB",
+        "2025",
+        "se-2025.1",
+    );
+
+    let plan = &report.sections.action_plan;
+    assert!(!plan.is_empty(), "the action plan is empty");
+
+    let rank = |band: &str| match band {
+        "high" => 0,
+        "should_investigate" => 1,
+        "needs_more_evidence" => 2,
+        _ => 3,
+    };
+    for pair in plan.windows(2) {
+        assert!(
+            rank(&pair[0].priority_band) <= rank(&pair[1].priority_band),
+            "step {} ({}) came before step {} ({})",
+            pair[0].order,
+            pair[0].priority_band,
+            pair[1].order,
+            pair[1].priority_band
+        );
+    }
+
+    let mut actions: Vec<&str> = plan.iter().map(|s| s.action.as_str()).collect();
+    let before = actions.len();
+    actions.sort_unstable();
+    actions.dedup();
+    assert_eq!(before, actions.len(), "the plan repeats an action");
+
+    for (index, step) in plan.iter().enumerate() {
+        assert_eq!(step.order, index + 1, "the numbering skips");
+    }
+}
+
+#[tokio::test]
+async fn the_accountant_view_separates_what_must_be_checked_from_what_might_be_earned() {
+    let (result, _) = pipeline(silent_provider())
+        .run(&input(vec![document(INCOME_STATEMENT)]), &SilentObserver)
+        .await
+        .unwrap();
+    let report = crate::report::build_for(
+        crate::report::Audience::Accountant,
+        &result,
+        "Testbolaget AB",
+        "2025",
+        "se-2025.1",
+    );
+
+    let review = report.sections.control_review.expect("no control review");
+
+    // Every presented finding lands in exactly one of the two action bands.
+    let banded = review.must_check.len() + review.possible_improvement.len();
+    assert_eq!(banded, report.sections.opportunities.len());
+
+    for item in &review.must_check {
+        assert!(
+            item.status == "warning" || item.status == "investigate",
+            "{} is in must-check with status {}",
+            item.title,
+            item.status
+        );
+    }
+
+    // Talking points are ordered by what they are worth, and carry a range
+    // rather than a figure — an assistant quoting a single number to a client
+    // owns that number.
+    for pair in review.worth_raising.windows(2) {
+        assert!(pair[0].impact.high.ore() >= pair[1].impact.high.ore());
+    }
+    for point in &review.worth_raising {
+        assert!(!point.impact.is_zero(), "a talking point with no amount");
+        assert!(
+            point.impact_display.contains('–') || point.impact.low == point.impact.high,
+            "{} is presented as a single figure: {}",
+            point.summary,
+            point.impact_display
+        );
+    }
+}
+
+#[tokio::test]
+async fn only_the_accountant_gets_the_control_review() {
+    let (result, _) = pipeline(silent_provider())
+        .run(&input(vec![document(INCOME_STATEMENT)]), &SilentObserver)
+        .await
+        .unwrap();
+
+    for audience in [
+        crate::report::Audience::Private,
+        crate::report::Audience::Company,
+    ] {
+        let report =
+            crate::report::build_for(audience, &result, "Testbolaget AB", "2025", "se-2025.1");
+        assert!(report.sections.control_review.is_none());
+        assert_eq!(report.sections.audience, audience.as_str());
+        // The action plan is for everyone: it is the difference between a
+        // report and a decision.
+        assert!(!report.sections.action_plan.is_empty());
+    }
+}
+
+#[tokio::test]
+async fn every_audience_reads_the_same_analysis() {
+    // The claim the architecture rests on. If the three views could disagree
+    // about what was found, they would be three products with three rule sets
+    // to keep in step.
+    let (result, _) = pipeline(silent_provider())
+        .run(&input(vec![document(INCOME_STATEMENT)]), &SilentObserver)
+        .await
+        .unwrap();
+
+    let views: Vec<_> = [
+        crate::report::Audience::Private,
+        crate::report::Audience::Company,
+        crate::report::Audience::Accountant,
+    ]
+    .into_iter()
+    .map(|a| crate::report::build_for(a, &result, "Testbolaget AB", "2025", "se-2025.1"))
+    .collect();
+
+    for view in &views[1..] {
+        assert_eq!(view.sections.opportunities, views[0].sections.opportunities);
+        assert_eq!(
+            view.sections.economic_potential,
+            views[0].sections.economic_potential
+        );
+        assert_eq!(view.sections.evidence, views[0].sections.evidence);
+        assert_eq!(view.disclaimer, views[0].disclaimer);
+    }
+}

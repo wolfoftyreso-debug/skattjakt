@@ -130,6 +130,7 @@ exists is not their business.
 
 | Status | Meaning | What the client does |
 |---|---|---|
+| 400 | A parameter names something this build does not know — e.g. `?audience=`, `title: unknown_audience` | A bug in the client or a server older than it. Do not retry; do not fall back to a default, or you will render the wrong view without noticing |
 | 401 | Access token expired or revoked | Refresh once, retry once. On a second 401, sign out |
 | 403 | The role does not carry the permission | Show the message; do not retry. This is an advisor hitting an owner-only action |
 | 404 | Does not exist, or belongs to another tenant — **deliberately the same answer** | Treat as gone |

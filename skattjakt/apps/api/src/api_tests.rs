@@ -787,6 +787,7 @@ fn the_error_codes_are_the_set_the_contract_promises() {
         "the_upload_does_not_match_its_ticket",
         "too_many_simulations_at_once",
         "unauthorized",
+        "unknown_audience",
         "unknown_push_provider",
         "unknown_role",
         "unknown_value",

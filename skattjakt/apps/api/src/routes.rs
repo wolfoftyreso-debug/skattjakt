@@ -633,6 +633,11 @@ pub async fn get_opportunity(
 pub struct ReportQuery {
     #[serde(default)]
     pub format: Option<String>,
+    /// Which presentation layer: `private`, `company` (the default) or
+    /// `accountant`. The analysis behind all three is the same one — this
+    /// selects how it is written up, not what was checked.
+    #[serde(default)]
+    pub audience: Option<String>,
 }
 
 pub async fn get_report(
@@ -664,7 +669,21 @@ pub async fn get_report(
         });
     };
 
-    let report = skattjakt_pipeline::build_report(
+    // An unknown audience is rejected rather than quietly served as the
+    // default: a caller asking for `accountant` and silently getting the
+    // company view would not notice, and would ship a review with no control
+    // section in it.
+    let audience = match query.audience.as_deref() {
+        None => skattjakt_pipeline::Audience::Company,
+        Some(value) => skattjakt_pipeline::Audience::parse(value).ok_or_else(|| Problem {
+            status: StatusCode::BAD_REQUEST,
+            title: "unknown audience".into(),
+            detail: format!("{value:?} is not one of: private, company, accountant"),
+        })?,
+    };
+
+    let report = skattjakt_pipeline::build_report_for(
+        audience,
         &result,
         &profile.name,
         &profile.fiscal_year.label(),
