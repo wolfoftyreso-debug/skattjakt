@@ -199,7 +199,7 @@ fn price_row(product: Product, vat_registered: bool) -> String {
     )
 }
 
-fn product_title(product: Product) -> &'static str {
+pub(crate) fn product_title(product: Product) -> &'static str {
     match product {
         Product::PrivateAnalysis => "Privatanalys",
         Product::CompanyAnalysis => "Bolagsanalys",
@@ -207,7 +207,7 @@ fn product_title(product: Product) -> &'static str {
     }
 }
 
-fn product_description(product: Product) -> &'static str {
+pub(crate) fn product_description(product: Product) -> &'static str {
     match product {
         Product::PrivateAnalysis => {
             "För dig som privatperson. Du laddar upp ditt eget underlag — \

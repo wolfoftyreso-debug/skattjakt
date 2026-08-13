@@ -109,6 +109,34 @@
   .hint { color: var(--muted); font-size: .82rem; margin-top: 1rem; }
   .hidden { display: none; }
 
+  /* The checkout's radio and checkbox rows. A label wrapping the control means
+     the whole line is a hit target, which matters most on the phone where the
+     purchase actually happens. */
+  .choice { display: flex; gap: .6rem; align-items: flex-start; margin: .5rem 0;
+            font-size: .92rem; color: var(--ink); cursor: pointer; }
+  .choice input { width: auto; margin-top: .25rem; flex: none; }
+  fieldset { border: 1px solid var(--border); border-radius: var(--radius);
+             padding: .8rem 1rem; margin: 0 0 1rem; }
+  legend { padding: 0 .4rem; }
+
+  /* A link that has to read as a button — the Swish app switch. Styled from the
+     same tokens as `button` so the two cannot drift apart. */
+  a.button {
+    display: inline-block; padding: .65rem 1.1rem; border-radius: 8px;
+    border: 1px solid var(--accent); background: var(--accent); color: var(--bg);
+    text-decoration: none; font: inherit;
+  }
+
+  /* One product, selectable. `aria-pressed` carries the state for a screen
+     reader; the border carries it for everyone else. */
+  .product { display: block; width: 100%; text-align: left; margin-bottom: .5rem;
+             padding: .8rem 1rem; border: 1px solid var(--border);
+             border-radius: var(--radius); background: var(--surface);
+             color: var(--ink); cursor: pointer; font: inherit; }
+  .product[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
+  .product[disabled] { cursor: not-allowed; color: var(--muted); }
+  .product .price { float: right; font-weight: 600; }
+
 
 /* Utility classes, and the reason they exist rather than `style="..."`.
  *

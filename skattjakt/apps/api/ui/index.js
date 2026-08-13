@@ -185,7 +185,272 @@ function showError(message) {
   go("upload");
 }
 
-async function analyse() {
+/* ------------------------------------------------------------------ checkout
+ *
+ * Everything here is built from `/v1/shop`. The prices, what is for sale and
+ * the consent wording are the server's, because a price typed into this file is
+ * a price that can disagree with the one the customer is charged.
+ *
+ * The client never decides that a payment happened. It creates an order, shows
+ * the Swish token, and then asks the server how it went — and the server asks
+ * Swish. */
+let shop = null;
+let chosenProduct = null;
+let currentOrder = null;
+let pollTimer = null;
+
+async function loadShop() {
+  if (shop) return shop;
+  const response = await fetch("/v1/shop", { headers: authHeaders() });
+  if (!response.ok) throw new Error(`butiken svarade ${response.status}`);
+  shop = await response.json();
+  return shop;
+}
+
+/* Whether this deployment charges at all. A build with payments off runs the
+ * analysis directly, exactly as before — the checkout is not shown, rather than
+ * shown and skipped. */
+function paymentsRequired() {
+  return Boolean(shop && shop.payments_required);
+}
+
+function renderProducts() {
+  const list = el("products");
+  list.innerHTML = "";
+  chosenProduct = null;
+
+  for (const product of shop.products) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "product";
+    button.setAttribute("aria-pressed", "false");
+    button.dataset.product = product.id;
+
+    if (product.available) {
+      button.innerHTML =
+        `<span class="price">${escape(product.price)}</span>` +
+        `<strong>${escape(product.title)}</strong>` +
+        `<p class="meta flush">${escape(product.description)}</p>`;
+      button.onclick = () => chooseProduct(product.id);
+    } else {
+      // Listed and closed rather than hidden. A service described on /tjanster
+      // and missing here reads as an oversight, not as a decision.
+      button.disabled = true;
+      button.innerHTML =
+        `<strong>${escape(product.title)}</strong>` +
+        `<p class="meta flush">Inte öppen för köp ännu.</p>`;
+    }
+    list.appendChild(button);
+  }
+
+  // The common case is one available product; preselecting it saves a tap and
+  // cannot surprise anyone, because there is nothing else to pick.
+  const available = shop.products.filter(p => p.available);
+  if (available.length === 1) chooseProduct(available[0].id);
+}
+
+function chooseProduct(id) {
+  chosenProduct = id;
+  document.querySelectorAll(".product").forEach(b =>
+    b.setAttribute("aria-pressed", String(b.dataset.product === id)));
+  updateBuyButton();
+}
+
+/* Immediate delivery needs the acknowledgement, so the button is disabled until
+ * it is given. Disabled rather than refused on click: a customer should see
+ * what is missing before they act, not after. */
+function updateBuyButton() {
+  const immediate = document.querySelector('input[name="delivery"]:checked')?.value === "immediate";
+  el("consent-block").classList.toggle("hidden", !immediate);
+  el("buy-btn").disabled = !chosenProduct || (immediate && !el("consent").checked);
+}
+
+async function openCheckout() {
+  try {
+    await loadShop();
+  } catch (error) {
+    el("shop-error").textContent = `Kunde inte läsa priserna: ${error.message}`;
+    el("shop-error").classList.remove("hidden");
+    return;
+  }
+  el("cancellation-days").textContent = String(shop.cancellation_period_days);
+  el("consent-wording").textContent = shop.consent.wording;
+  el("consent-version").textContent = `Ordalydelse version ${shop.consent.version}.`;
+  renderProducts();
+  updateBuyButton();
+  go("checkout");
+}
+
+async function buy() {
+  const immediate = document.querySelector('input[name="delivery"]:checked').value === "immediate";
+  el("buy-btn").disabled = true;
+  el("shop-error").classList.add("hidden");
+
+  try {
+    const response = await authedFetch("/v1/orders", {
+      method: "POST",
+      body: JSON.stringify({
+        product: chosenProduct,
+        delivery: immediate ? "immediate" : "after_cancellation_period",
+        accepts_loss_of_cancellation_right: immediate && el("consent").checked,
+      }),
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      el("shop-error").textContent =
+        `${payload.title ?? "Köpet kunde inte startas"}: ${payload.detail ?? ""}`;
+      el("shop-error").classList.remove("hidden");
+      return;
+    }
+    currentOrder = payload;
+    showPayment(payload);
+  } catch (error) {
+    el("shop-error").textContent = `Kunde inte nå tjänsten: ${error.message}`;
+    el("shop-error").classList.remove("hidden");
+  } finally {
+    updateBuyButton();
+  }
+}
+
+function showPayment(order) {
+  el("pay-amount").textContent = `${order.amount} för ${order.product === "control_review"
+    ? "Skattjakt Kontroll" : order.product === "private_analysis"
+    ? "Privatanalys" : "Bolagsanalys"}.`;
+  el("pay-error").classList.add("hidden");
+  el("pay-status").textContent = "Väntar på att betalningen bekräftas…";
+
+  // The app switch on a phone, the QR code elsewhere. Both are the same token;
+  // neither is evidence that anything was paid.
+  const token = order.swish_token;
+  const onPhone = /Android|iPhone|iPad/.test(navigator.userAgent);
+  if (token && onPhone) {
+    el("swish-link").href = `swish://paymentrequest?token=${encodeURIComponent(token)}`;
+    el("swish-app").classList.remove("hidden");
+    el("swish-qr").classList.add("hidden");
+  } else if (token) {
+    el("qr").textContent = token;
+    el("swish-qr").classList.remove("hidden");
+    el("swish-app").classList.add("hidden");
+  }
+
+  go("paying");
+  pollOrder(order.order_id);
+}
+
+/* Asks the server how the payment went, and the server asks Swish.
+ *
+ * Polling reads a database row rather than calling Swish, so polling faster
+ * does not drive traffic at the payment provider. It still stops: a payment
+ * nobody completes must not leave a browser asking forever. */
+function pollOrder(orderId) {
+  clearInterval(pollTimer);
+  let attempts = 0;
+
+  pollTimer = setInterval(async () => {
+    attempts += 1;
+    if (attempts > 150) {           // about five minutes at two seconds
+      clearInterval(pollTimer);
+      el("pay-status").textContent =
+        "Betalningen har inte bekräftats. Du kan stänga sidan — " +
+        "har pengarna dragits hör av dig, och analysen körs eller betalas tillbaka.";
+      return;
+    }
+
+    try {
+      const response = await authedFetch(`/v1/orders/${orderId}`);
+      if (!response.ok) return;
+      const order = await response.json();
+      currentOrder = order;
+
+      if (order.state === "paid" || order.state === "consumed") {
+        clearInterval(pollTimer);
+        // A buyer who kept their right to cancel bought an analysis that starts
+        // later. Saying so is the whole point of having offered the choice.
+        if (order.keeps_right_to_cancel && new Date(order.deliverable_from) > new Date()) {
+          el("pay-status").textContent =
+            `Betalt. Analysen startar ${new Date(order.deliverable_from)
+              .toLocaleDateString("sv-SE")}, när ångerfristen löpt ut. ` +
+            "Fram till dess kan du ångra köpet.";
+          return;
+        }
+        analyse(order.order_id);
+      } else if (order.state === "declined" || order.state === "failed") {
+        clearInterval(pollTimer);
+        el("pay-error").textContent =
+          order.note || "Betalningen gick inte igenom. Inget har debiterats.";
+        el("pay-error").classList.remove("hidden");
+        el("pay-status").textContent = "";
+      }
+    } catch {
+      // A failed poll is a failed question, not a failed payment. The next one
+      // asks again.
+    }
+  }, 2000);
+}
+
+/* The paid path: store the document, draw the analysis against the order, wait.
+ *
+ * Returns the report, or `null` having already shown why it could not be had.
+ * The waiting case is not an error — a buyer who kept their right to cancel
+ * bought an analysis that starts in a fortnight, and saying so is the point of
+ * having offered them the choice. */
+async function paidAnalysis(document_, accountsState, orderId) {
+  const stored = await authedFetch("/v1/documents", {
+    method: "POST",
+    body: JSON.stringify({ ...document_, kind: "annual_accounts" }),
+  });
+  const storedPayload = await stored.json();
+  if (!stored.ok) {
+    showError(`${storedPayload.title ?? "Underlaget kunde inte sparas"}: ${storedPayload.detail ?? ""}`);
+    return null;
+  }
+
+  const started = await authedFetch("/v1/analyses/stored", {
+    method: "POST",
+    body: JSON.stringify({
+      document_version_ids: [storedPayload.document_version_id],
+      accounts_state: accountsState,
+      order_id: orderId,
+    }),
+  });
+  const startedPayload = await started.json();
+  if (!started.ok) {
+    showError(`${startedPayload.title ?? "Analysen kunde inte startas"}: ${startedPayload.detail ?? ""}`);
+    return null;
+  }
+
+  // Poll until it finishes. The server reports the stage it is actually on;
+  // nothing here invents progress.
+  const id = startedPayload.analysis_id;
+  for (let attempt = 0; attempt < 300; attempt += 1) {
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    const status = await authedFetch(`/v1/analyses/${id}`);
+    if (!status.ok) continue;
+    const state = await status.json();
+    if (state.status === "succeeded") {
+      const report = await authedFetch(`/v1/analyses/${id}/report`);
+      if (report.ok) return report.json();
+      showError("Analysen blev klar men rapporten kunde inte hämtas.");
+      return null;
+    }
+    if (state.status === "failed") {
+      showError(state.error || "Analysen misslyckades. Köpet återbetalas.");
+      return null;
+    }
+  }
+  showError("Analysen tar ovanligt lång tid. Den fortsätter i bakgrunden — ladda om sidan om en stund.");
+  return null;
+}
+
+/* Runs the analysis.
+ *
+ * Two paths, and the difference is not cosmetic. Without payments the stateless
+ * route takes the documents inline and answers with the finished report. With
+ * payments the documents are stored first, the analysis is drawn against the
+ * paid order, and the result is polled — because the paid route is asynchronous
+ * and the order has to be redeemed inside the transaction that creates the
+ * analysis. */
+async function analyse(orderId) {
   el("upload-error").classList.add("hidden");
   el("analyse-btn").disabled = true;
 
@@ -231,6 +496,13 @@ async function analyse() {
   }, 260);
 
   try {
+    if (orderId) {
+      const report = await paidAnalysis(document_, body.accounts_state, orderId);
+      clearInterval(ticker);
+      if (!report) return;
+      render(report);
+      return go("result");
+    }
     const response = await authedFetch("/v1/analyses", {
       method: "POST",
       body: JSON.stringify(body),
@@ -388,3 +660,58 @@ function render(result) {
   el("limitations").innerHTML = (result.limitations || [])
     .map(l => `<div class="meta">${escape(l.statement)}</div>`).join("");
 }
+
+
+/* ------------------------------------------------------------- wiring it up
+ *
+ * Every handler is attached here rather than written as `onclick="..."` in the
+ * markup, and that is not a style preference.
+ *
+ * The Content-Security-Policy these pages are served under is
+ * `script-src 'self'` with no `unsafe-inline`, which blocks inline event
+ * handlers exactly as it blocks inline <script>. The page carried nine of them,
+ * so in a real browser its buttons did nothing at all: sign in, continue, start
+ * the analysis, go back — every one refused with
+ *
+ *     Refused to execute inline event handler because it violates the following
+ *     Content Security Policy directive: "script-src 'self'"
+ *
+ * The tests did not catch it because they audited this page statically and only
+ * clicked on the simulation page, which had never used inline handlers.
+ * `tests/e2e/interface.mjs` now clicks through this one and fails on any
+ * console violation, so a handler written back into the markup breaks the build
+ * rather than the product. */
+
+/** Where the "Starta Skattjakten" button goes.
+ *
+ * Straight into the analysis when this deployment does not charge, and into the
+ * checkout when it does. Asked of the server rather than assumed, because a
+ * client that assumed wrong would either show a checkout nobody needs or run an
+ * analysis nobody paid for. */
+async function startAnalysis() {
+  try {
+    await loadShop();
+  } catch {
+    // The shop is unreachable. Fall through to the free path: it will refuse
+    // with the server's own reason if payment is in fact required, which is a
+    // better answer than a checkout built from nothing.
+    return analyse();
+  }
+  return paymentsRequired() ? openCheckout() : analyse();
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  el("signin-button")?.addEventListener("click", signIn);
+  el("analyse-btn")?.addEventListener("click", startAnalysis);
+  el("buy-btn")?.addEventListener("click", buy);
+
+  // Plain navigation between steps, declared on the element it belongs to.
+  document.querySelectorAll("[data-go]").forEach(button =>
+    button.addEventListener("click", () => go(button.dataset.go)));
+
+  // The consent gate: the buy button stays disabled until an immediate delivery
+  // has been acknowledged.
+  document.querySelectorAll('input[name="delivery"]').forEach(radio =>
+    radio.addEventListener("change", updateBuyButton));
+  el("consent")?.addEventListener("change", updateBuyButton);
+});

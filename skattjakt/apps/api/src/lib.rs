@@ -350,6 +350,7 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/documents", post(routes::upload_document))
         .route("/v1/documents", get(routes::list_documents))
         .route("/v1/orders", post(payment_routes::create_order))
+        .route("/v1/shop", get(payment_routes::shop))
         .route("/v1/orders/{id}", get(payment_routes::get_order))
         .route("/v1/orders/{id}/cancel", post(payment_routes::cancel_order))
         // Unauthenticated on purpose: it carries no authority. See the module
@@ -860,6 +861,28 @@ async fn analyse(
     Json(request): Json<AnalysisRequest>,
 ) -> Result<Response, Problem> {
     authorise(&state, &headers).await?;
+
+    // The whole product, free, through the endpoint the interface itself calls.
+    //
+    // The payment gate was on `/v1/analyses/stored` alone, and this route runs
+    // the same pipeline over inline documents — so a deployment with payments
+    // required gave every analysis away to anyone who posted here instead. It
+    // is not an obscure corner: it is the route `ui/index.js` used.
+    //
+    // Refused outright rather than gated on an order, because this route exists
+    // for a deployment with no database, and orders live in the database. A
+    // deployment that charges has persistence, and the paid path is the stored
+    // one. Half a payment gate on a route that cannot hold an order would be
+    // worse than none.
+    if state.payments.required() {
+        return Err(Problem {
+            status: StatusCode::PAYMENT_REQUIRED,
+            title: "payment_required".into(),
+            detail: "this deployment requires payment: upload the documents and draw the \
+                     analysis against a paid order with POST /v1/analyses/stored"
+                .into(),
+        });
+    }
 
     if request.documents.is_empty() {
         return Err(Problem::bad_request(

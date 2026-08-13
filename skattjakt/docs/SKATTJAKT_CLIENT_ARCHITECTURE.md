@@ -210,6 +210,41 @@ path a failed upload took.
 
 ---
 
+## 5A. Buying an analysis, and the rule about inline handlers
+
+Every client builds its checkout from `GET /v1/shop`: the prices, the list of
+what is for sale, the consent wording and its version, and whether this
+deployment charges at all. Nothing about a price is compiled into a client. A
+price typed into an app is a price that can disagree with the one the customer
+is charged, and the app is the copy that gets updated last.
+
+The flow is the same on every platform:
+
+1. `GET /v1/shop` — what is for sale, and whether payment is required at all.
+2. `POST /v1/orders` with the product, the delivery choice, and — for immediate
+   delivery — `accepts_loss_of_cancellation_right`. A client must not send that
+   flag unless the person has actually acted; see `SKATTJAKT_PAYMENTS.md` §11.
+3. Show the `swish_token`: an app switch on a phone, a QR code elsewhere.
+4. Poll `GET /v1/orders/{id}`. This reads a database row and does **not** call
+   Swish, so polling faster does not drive traffic at the payment provider.
+5. On `paid`, draw the analysis against the order with
+   `POST /v1/analyses/stored`.
+
+A client never decides that a payment happened. It asks, and the server asks
+Swish.
+
+### The web client's own lesson
+
+The web interface was written with `onclick="..."` attributes, and it is served
+under `script-src 'self'` with no `unsafe-inline` — which blocks inline event
+handlers exactly as it blocks inline `<script>`. Every button on the main page
+was inert in a real browser, for as long as the page had existed. The header was
+asserted in a unit test; the markup it protects had never been clicked.
+
+So: **handlers are attached from the script, never written into the markup**,
+and `tests/e2e/interface.sh` clicks through the page and fails on any console
+refusal. A page that renders is not a page that works.
+
 ## 6. Offline (§20)
 
 Analysed rather than implemented, because implementing it speculatively is how

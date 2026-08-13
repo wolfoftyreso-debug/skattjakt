@@ -112,6 +112,23 @@ try {
   await auditContrast("the main interface", "dark");
   await page.emulateMedia({ colorScheme: "light" });
 
+  // --- the checkout -----------------------------------------------------
+  //
+  // The step where money changes hands, and the one carrying the consent a
+  // consumer gives up a legal right by. A radio group or a checkbox without an
+  // accessible name is not a nuisance here; it is a person agreeing to
+  // something they were not told.
+  await page.evaluate(() => window.openCheckout());
+  await page.waitForTimeout(400);
+  await audit("the checkout");
+  await auditContrast("the checkout", "dark");
+  await page.emulateMedia({ colorScheme: "light" });
+
+  // With immediate delivery chosen, which reveals the consent block.
+  await page.check('input[name="delivery"][value="immediate"]');
+  await page.waitForTimeout(200);
+  await audit("the checkout, with the consent shown");
+
   // --- the shop pages ---------------------------------------------------
   //
   // These are the most public pages the product has: anyone can reach them

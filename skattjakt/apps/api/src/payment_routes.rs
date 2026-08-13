@@ -80,6 +80,47 @@ fn order_json(order: &Order, token: Option<&str>) -> serde_json::Value {
     })
 }
 
+/// What this deployment sells, at what price, on what terms.
+///
+/// Public and unauthenticated, because it is the shop window: the interface
+/// needs it before anyone has signed in, and everything in it is already
+/// published on `/priser` and `/angerratt` in prose.
+///
+/// It exists so the interface does not carry its own copy of the prices, the
+/// consent wording or the list of what is for sale. Three copies of a price is
+/// two chances for a customer to be shown one thing and charged another.
+pub async fn shop(State(state): State<AppState>) -> Response {
+    let products: Vec<serde_json::Value> = Product::ALL
+        .iter()
+        .map(|p| {
+            json!({
+                "id": p.as_str(),
+                "title": crate::shopfront::product_title(*p),
+                "description": crate::shopfront::product_description(*p),
+                "price": p.price().to_string(),
+                "price_ore": p.price().ore(),
+                "audience": p.audience_key(),
+                // Whether it can actually be bought here. A product with no
+                // rules behind it is listed and closed rather than hidden —
+                // see `SKATTJAKT_PAYMENTS.md` §6.
+                "available": state.engine.set().covers_audience(p.audience_key()),
+            })
+        })
+        .collect();
+
+    Json(json!({
+        "payments_required": state.payments.required(),
+        "can_take_payment": state.payments.callback_url().is_some(),
+        "products": products,
+        "cancellation_period_days": skattjakt_payments::CANCELLATION_PERIOD_DAYS,
+        "consent": {
+            "wording": skattjakt_payments::CONSENT_WORDING,
+            "version": skattjakt_payments::CONSENT_WORDING_VERSION,
+        },
+    }))
+    .into_response()
+}
+
 /// Creates an order and starts a Swish payment for it.
 pub async fn create_order(
     State(state): State<AppState>,

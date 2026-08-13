@@ -253,6 +253,17 @@ grep -qF "69,00 kr" <<<"$PRICE_PAGE" \
 check "a product with no rules behind it cannot be ordered" 503 \
     "$(code POST /v1/orders "$TOKEN_A" '{"product":"private_analysis"}')"
 
+# The gate has to be on every route that runs the pipeline, not on the one that
+# was written first. `/v1/analyses` takes inline documents and produces the same
+# report — and it is the route the interface itself calls, so a gap here is not
+# an obscure corner, it is the front door.
+check "the inline route does not give the analysis away" 402 \
+    "$(code POST /v1/analyses "$TOKEN_A" \
+        '{"company":{"name":"Betalbolaget AB","org_number":"556016-0680",
+           "fiscal_year":{"start":"2025-01-01","end":"2025-12-31"}},
+          "documents":[{"filename":"b.txt","mime_type":"text/plain","text":"Nettoomsättning 1 000 000"}],
+          "accounts_state":"preliminary"}')"
+
 check "an analysis with no order is refused" 402 \
     "$(code POST /v1/analyses/stored "$TOKEN_A" "{\"document_version_ids\":[\"$DV\"],\"accounts_state\":\"preliminary\"}")"
 

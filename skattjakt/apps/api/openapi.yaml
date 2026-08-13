@@ -148,6 +148,52 @@ paths:
               schema: { $ref: "#/components/schemas/RuleSetSummary" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /v1/shop:
+    get:
+      tags: [Payments]
+      summary: What this deployment sells, at what price, on what terms
+      description: |
+        Public and unauthenticated: it is the shop window, the interface needs
+        it before anyone has signed in, and everything in it is already
+        published in prose on `/priser` and `/angerratt`.
+
+        It exists so no client carries its own copy of the prices, the consent
+        wording or the list of what is for sale. Three copies of a price is two
+        chances to show a customer one thing and charge another.
+
+        `available` is false for a product this build has no rules for — it is
+        listed and closed rather than hidden, because a service described on
+        `/tjanster` and missing here reads as an oversight rather than a
+        decision. Ordering one is refused with `503 product_not_available`.
+      responses:
+        "200":
+          description: The catalogue.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  payments_required: { type: boolean }
+                  can_take_payment: { type: boolean }
+                  cancellation_period_days: { type: integer }
+                  consent:
+                    type: object
+                    properties:
+                      wording: { type: string }
+                      version: { type: string }
+                  products:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        title: { type: string }
+                        description: { type: string }
+                        price: { type: string }
+                        price_ore: { type: integer }
+                        audience: { type: string, enum: [private, company, accountant] }
+                        available: { type: boolean }
+
   /v1/orders:
     post:
       tags: [Payments]

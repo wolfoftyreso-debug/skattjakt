@@ -35,7 +35,7 @@
   <p id="signin-error" class="notice error" hidden></p>
 
   <div class="actions">
-    <button id="signin-button" onclick="signIn()">Logga in</button>
+    <button id="signin-button">Logga in</button>
   </div>
 
   <p class="hint">
@@ -84,8 +84,8 @@
   </div>
 
   <div class="actions">
-    <button onclick="go('upload')">Fortsätt</button>
-    <button class="secondary" onclick="go('start')">Tillbaka</button>
+    <button data-go="upload">Fortsätt</button>
+    <button class="secondary" data-go="start">Tillbaka</button>
   </div>
 </section>
 
@@ -120,10 +120,91 @@ Summa eget kapital och skulder      2 400 000</textarea>
   </select>
 
   <div class="actions">
-    <button id="analyse-btn" onclick="analyse()">Starta Skattjakten</button>
-    <button class="secondary" onclick="go('company')">Tillbaka</button>
+    <button id="analyse-btn">Starta Skattjakten</button>
+    <button class="secondary" data-go="company">Tillbaka</button>
   </div>
   <div id="upload-error" class="notice error hidden"></div>
+</section>
+
+<!-- KASSA -->
+<!--
+  The purchase step. Shown only when this deployment charges for analyses, and
+  built entirely from `/v1/shop` — the prices, the list of what is for sale and
+  the consent wording all come from the server, because three copies of a price
+  is two chances to show one thing and charge another.
+-->
+<section id="checkout" class="step">
+  <h1>Köp analysen</h1>
+  <p class="lede">Per analys. Ingen prenumeration, ingen registrering utöver det
+     konto du redan loggat in med.</p>
+
+  <div id="shop-error" class="notice error hidden"></div>
+
+  <h2>Välj analys</h2>
+  <div id="products"></div>
+
+  <h2>När ska analysen starta?</h2>
+  <fieldset id="delivery">
+    <legend class="meta">Ditt val påverkar din ångerrätt.</legend>
+    <label class="choice">
+      <input type="radio" name="delivery" value="after_cancellation_period" checked>
+      <span><strong>Vänta ut ångerfristen.</strong>
+      Analysen startar om <span id="cancellation-days">14</span> dagar. Fram till
+      dess kan du ångra köpet och få hela beloppet tillbaka.</span>
+    </label>
+    <label class="choice">
+      <input type="radio" name="delivery" value="immediate">
+      <span><strong>Starta direkt.</strong>
+      Analysen körs så snart betalningen är bekräftad.</span>
+    </label>
+  </fieldset>
+
+  <!-- Shown only for immediate delivery, and the button stays disabled until it
+       is ticked. The wording is the server's, verbatim, because it is the text
+       recorded against the order. -->
+  <div id="consent-block" class="notice hidden">
+    <label class="choice">
+      <input type="checkbox" id="consent">
+      <span id="consent-wording"></span>
+    </label>
+    <p class="meta" id="consent-version"></p>
+  </div>
+
+  <div class="actions">
+    <button id="buy-btn">Till betalning</button>
+    <button class="secondary" data-go="upload">Tillbaka</button>
+  </div>
+
+  <p class="hint">
+    Genom att köpa godkänner du <a href="/villkor">köpvillkoren</a>. Läs om
+    <a href="/angerratt">ångerrätt och återbetalning</a>.
+  </p>
+</section>
+
+<!-- BETALNING -->
+<section id="paying" class="step">
+  <h1>Betala med Swish</h1>
+  <p class="lede" id="pay-amount"></p>
+
+  <div id="swish-app" class="actions hidden">
+    <a id="swish-link" class="button" href="#">Öppna Swish</a>
+  </div>
+  <div id="swish-qr" class="hidden">
+    <p>Öppna Swish på telefonen och skanna:</p>
+    <div id="qr"></div>
+  </div>
+
+  <p class="meta" id="pay-status">Väntar på att betalningen bekräftas…</p>
+  <div id="pay-error" class="notice error hidden"></div>
+
+  <div class="actions">
+    <button class="secondary" data-go="checkout">Avbryt</button>
+  </div>
+
+  <p class="hint">
+    Betalningen bekräftas av Swish, inte av den här sidan. Stäng inte fönstret
+    förrän statusen ändrats.
+  </p>
 </section>
 
 <!-- ANALYS -->
@@ -171,7 +252,7 @@ Summa eget kapital och skulder      2 400 000</textarea>
   <div id="limitations"></div>
 
   <div class="actions">
-    <button class="secondary" onclick="go('upload')">Ny körning</button>
+    <button class="secondary" data-go="upload">Ny körning</button>
   </div>
 </section>
 
