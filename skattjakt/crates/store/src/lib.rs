@@ -16,6 +16,7 @@ pub mod governance;
 pub mod identity;
 pub mod notifications;
 pub mod page;
+pub mod payments;
 pub mod s3;
 pub mod simulations;
 pub mod sources;

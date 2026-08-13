@@ -70,6 +70,7 @@ building it — not rewriting the core (§32, §36).
 | **Authorization** | ✓ | ✓ | ✓ 3 roles × 12 permissions | ✓ | ✓ |
 | **ID verification** | — | ✓ | — no provider reachable | — | — |
 | **File storage** | ✓ | ✓ | ✓ S3 + filesystem, presigned URLs | ✓ 7 live ops + full e2e on MinIO | ✓ |
+| **Payments** | ✓ | ✓ | ✓ Swish Commerce, orders, gate, sweep | ✓ 25 checks incl. a 10-way race on one order | ◐ **never spoken to Swish** — no merchant agreement yet |
 | **Notifications** | — | ✓ | ✓ outbox, email, in-app | ✓ 15 checks incl. a real SMTP server | ◐ push has no provider |
 | **Background jobs** | ✓ | ✓ | ✓ leases, retries, DLQ | ✓ failure 24/24 | ✓ |
 | **Simulation / probability** | ✓ | ✓ | ✓ 11 distributions, expression model, 12 endpoints | ✓ 109 unit + 69 live checks | ✓ |
@@ -282,7 +283,7 @@ that eventually matters is the one no current data exercises.
 Verified in this environment, in this session:
 
 ```
-653 unit and integration tests          golden dataset  precision 1.000 recall 1.000
+686 unit and integration tests          golden dataset  precision 1.000 recall 1.000
  61 session checks (live API)            10 tenant isolation checks (real Postgres)
  39 security checks (live API)           24 failure-injection checks (real Postgres)
  20 end-to-end product steps              5 S3 checks against a real MinIO
@@ -293,6 +294,7 @@ Verified in this environment, in this session:
     earlier version
   9 container image assertions          305 SBOM components, all checksummed
  20 documentation coupling checks        27 source-verification checks against
+ 25 payment-gate checks (real DB + API)
  41 NetworkPolicy semantic checks           a real Postgres and a real server
     per environment                        16 unit tests on the check itself
 ```

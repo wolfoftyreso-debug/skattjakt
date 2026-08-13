@@ -363,6 +363,12 @@ pub struct StartAnalysisRequest {
     pub document_version_ids: Vec<Uuid>,
     #[serde(default)]
     pub accounts_state: Option<String>,
+    /// The paid order this analysis is drawn against.
+    ///
+    /// Required when the deployment takes payment. Redeemed inside the same
+    /// transaction that creates the analysis, so an order buys exactly one.
+    #[serde(default)]
+    pub order_id: Option<uuid::Uuid>,
 }
 
 /// Starts an analysis over stored documents and returns immediately.
@@ -440,6 +446,34 @@ pub async fn start_analysis(
         )
         .await
         .map_err(internal)?;
+
+    // The payment gate, and it is here rather than at the top of the handler on
+    // purpose: redeeming the order and creating the analysis happen in one
+    // transaction, so an order cannot be spent on an analysis that then fails
+    // to be created, and two requests racing on the same order cannot both win.
+    // `redeem_order` is a single conditional UPDATE — see its documentation.
+    if state.payments.required() {
+        let Some(order_id) = request.order_id else {
+            return Err(Problem {
+                status: StatusCode::PAYMENT_REQUIRED,
+                title: "payment_required".into(),
+                detail: "this analysis must be drawn against a paid order".into(),
+            });
+        };
+        tenant
+            .redeem_order(order_id, analysis_id)
+            .await
+            .map_err(|e| match e {
+                skattjakt_store::StoreError::NotFound => Problem {
+                    status: StatusCode::PAYMENT_REQUIRED,
+                    title: "order_not_payable".into(),
+                    detail: "that order does not exist, is not paid, or has already been used"
+                        .into(),
+                },
+                other => internal(other),
+            })?;
+    }
+
     tenant.commit().await.map_err(internal)?;
 
     // Hand the work to the durable queue rather than to a background task in

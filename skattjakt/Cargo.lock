@@ -1861,6 +1861,7 @@ dependencies = [
  "skattjakt-gateway",
  "skattjakt-jobs",
  "skattjakt-model",
+ "skattjakt-payments",
  "skattjakt-pipeline",
  "skattjakt-rules",
  "skattjakt-simulate",
@@ -1887,6 +1888,7 @@ dependencies = [
  "skattjakt-identity",
  "skattjakt-jobs",
  "skattjakt-model",
+ "skattjakt-payments",
  "skattjakt-pipeline",
  "skattjakt-rules",
  "skattjakt-simulate",
@@ -2012,6 +2014,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "skattjakt-payments"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "skattjakt-core",
+ "skattjakt-telemetry",
+ "thiserror",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "skattjakt-pipeline"
 version = "0.1.0"
 dependencies = [
@@ -2066,6 +2084,7 @@ dependencies = [
  "skattjakt-core",
  "skattjakt-identity",
  "skattjakt-model",
+ "skattjakt-payments",
  "skattjakt-rules",
  "skattjakt-simulate",
  "skattjakt-telemetry",

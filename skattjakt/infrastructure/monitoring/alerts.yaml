@@ -256,3 +256,37 @@ spec:
           labels: { severity: warning }
           annotations:
             summary: No source verification sweep has completed in twelve hours
+
+    - name: skattjakt.payments
+      interval: 60s
+      rules:
+        # Money taken and nothing delivered. A payment the provider called
+        # successful and we refused means either the amount did not match, the
+        # reference did not match, or somebody is trying something. All three
+        # need a person the same day.
+        - alert: SkattjaktPaymentsRefusedAfterSuccess
+          expr: increase(skattjakt_payments_settled_total{outcome="failed"}[15m]) > 0
+          labels: { severity: critical }
+          annotations:
+            summary: A payment was reported successful by the provider and refused
+            runbook: SKATTJAKT_RUNBOOK.md#a-payment-was-refused-after-the-provider-called-it-successful
+
+        # Customers who have paid and are waiting. The sweep resolves these
+        # within a minute in normal operation, so a sustained backlog means the
+        # provider is unreachable or the sweep is not running.
+        - alert: SkattjaktPaymentsUnsettled
+          expr: skattjakt_payments_unsettled > 0
+          for: 10m
+          labels: { severity: warning }
+          annotations:
+            summary: Payments have been awaiting resolution for ten minutes
+
+        # Not fatal on its own — anyone can post at an unauthenticated
+        # endpoint. Sustained, it is either Swish having changed the callback
+        # shape or somebody probing, and the first of those breaks settlement
+        # speed for every customer.
+        - alert: SkattjaktPaymentCallbacksUnreadable
+          expr: increase(skattjakt_payment_callbacks_total{outcome="unreadable"}[1h]) > 10
+          labels: { severity: warning }
+          annotations:
+            summary: Payment callbacks are arriving in a shape this build cannot read

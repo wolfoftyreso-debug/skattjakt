@@ -13,6 +13,8 @@ pub mod auth_routes;
 pub mod cookies;
 pub mod headers;
 pub mod observe;
+pub mod payment_routes;
+pub mod payments;
 pub mod routes;
 pub mod simulation_routes;
 mod upload_routes;
@@ -87,6 +89,10 @@ pub struct AppState {
     /// and returned, never stored.
     pub store: Option<Store>,
     pub blobs: Arc<dyn BlobStore>,
+    /// Taking money, and refusing to run an analysis nobody paid for.
+    /// `Payments::unconfigured()` when no provider is set up, which refuses
+    /// rather than letting analyses through free.
+    pub payments: Arc<crate::payments::Payments>,
     /// The durable queue. Present exactly when persistence is: a queue without
     /// a database has nowhere to put a job.
     pub queue: Option<skattjakt_jobs::Queue>,
@@ -189,6 +195,11 @@ impl AppState {
             )
         });
 
+        // Read before anything else that could fail, so a half-configured
+        // payment setup is a refusal to start rather than a service that takes
+        // orders it can never collect on.
+        let payments = crate::payments::Payments::from_env()?;
+
         Ok(Self {
             engine,
             provider,
@@ -214,6 +225,7 @@ impl AppState {
             model_configured,
             store,
             blobs: skattjakt_store::blob::from_env(&blob_root)?,
+            payments: Arc::new(payments),
             queue,
             metrics: registry,
         })
@@ -309,6 +321,15 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/companies/me", get(routes::get_company))
         .route("/v1/documents", post(routes::upload_document))
         .route("/v1/documents", get(routes::list_documents))
+        .route("/v1/orders", post(payment_routes::create_order))
+        .route("/v1/orders/{id}", get(payment_routes::get_order))
+        // Unauthenticated on purpose: it carries no authority. See the module
+        // documentation — the body is read for one field and the truth comes
+        // from asking Swish.
+        .route(
+            "/v1/payments/swish/callback",
+            post(payment_routes::swish_callback),
+        )
         .route("/v1/analyses/stored", post(routes::start_analysis))
         .route("/v1/analyses/stored", get(routes::list_analyses))
         .route("/v1/analyses/{id}", get(routes::get_analysis))

@@ -52,6 +52,9 @@ fn state() -> AppState {
         blobs: Arc::new(skattjakt_store::FilesystemBlobStore::new(
             std::env::temp_dir().join("skattjakt-tests"),
         )),
+        // Unconfigured: the stateless surface has no database to hold an order
+        // in, and a provider that refuses is the honest state for it.
+        payments: Arc::new(crate::payments::Payments::unconfigured()),
         // No database, so no queue: the stateless surface computes inline.
         queue: None,
         metrics: {
@@ -727,7 +730,11 @@ fn the_error_codes_are_the_set_the_contract_promises() {
     let mut sources = Vec::new();
     for entry in std::fs::read_dir(&directory).expect("the source directory is readable") {
         let path = entry.expect("a readable entry").path();
-        if path.extension().and_then(|e| e.to_str()) == Some("rs") {
+        // This file is skipped: it is the scanner, and its own marker
+        // literals would register as error codes. Nothing here serves a route,
+        // so nothing here can raise one.
+        let is_this_file = path.file_name().and_then(|n| n.to_str()) == Some("api_tests.rs");
+        if path.extension().and_then(|e| e.to_str()) == Some("rs") && !is_this_file {
             sources.push(std::fs::read_to_string(&path).expect("a readable source file"));
         }
     }
@@ -737,19 +744,57 @@ fn the_error_codes_are_the_set_the_contract_promises() {
         sources.len()
     );
 
+    // Both ways a Problem is built. Scanning only the struct literal was the
+    // second version of this hole: every code raised through the bad-request
+    // constructor was invisible, so four real codes never reached the contract
+    // and nobody noticed. The same failure the comment above describes, one
+    // construction form along.
+    //
+    // The constructor is matched across whitespace, because the argument is
+    // usually on the next line and a scan that only handled the one-line form
+    // would be a third version of the same hole.
+    // Comment lines are dropped before scanning. A word-count heuristic was
+    // tried first and ate `the_upload_does_not_match_its_ticket`, which is
+    // seven words and entirely real — a filter that guesses at prose will
+    // eventually guess wrong about code.
+    let code_only: Vec<String> = sources
+        .iter()
+        .map(|source| {
+            source
+                .lines()
+                .filter(|line| !line.trim_start().starts_with("//"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .collect();
+
     let mut found: Vec<String> = Vec::new();
-    for source in &sources {
-        let mut rest = source.as_str();
-        while let Some(at) = rest.find("title: \"") {
-            rest = &rest[at + 8..];
-            if let Some(end) = rest.find('"') {
-                let title = &rest[..end];
-                let problem = Problem {
-                    status: StatusCode::BAD_REQUEST,
-                    title: title.to_string(),
-                    detail: String::new(),
+    for source in &code_only {
+        for (marker, skip_whitespace) in [("title: \"", false), ("bad_request(", true)] {
+            let mut rest = source.as_str();
+            while let Some(at) = rest.find(marker) {
+                rest = &rest[at + marker.len()..];
+                let body = if skip_whitespace {
+                    let trimmed = rest.trim_start();
+                    match trimmed.strip_prefix('"') {
+                        Some(body) => body,
+                        // A call whose first argument is not a literal — a
+                        // variable, or a `format!`. Nothing to record.
+                        None => continue,
+                    }
+                } else {
+                    rest
                 };
-                found.push(problem.code());
+                if let Some(stop) = body.find('"') {
+                    found.push(
+                        Problem {
+                            status: StatusCode::BAD_REQUEST,
+                            title: body[..stop].to_string(),
+                            detail: String::new(),
+                        }
+                        .code(),
+                    );
+                }
             }
         }
     }
@@ -760,21 +805,35 @@ fn the_error_codes_are_the_set_the_contract_promises() {
         "account_temporarily_locked",
         "admin_credential_required",
         "already_exists",
+        "ambiguous_document",
         "analysis_failed",
         "analysis_is_not_finished",
         "authentication_unavailable",
+        "content_does_not_match_its_declared_type",
         "document_too_large",
+        "empty_document",
         "insufficient_permission",
         "internal_error",
+        "invalid_accounts_state",
+        "invalid_base64",
         "invalid_credentials",
         "invalid_cursor",
+        "invalid_fiscal_year",
+        "invalid_idempotency_key",
+        "invalid_organisationsnummer",
         "invalid_request",
         "invalid_simulation_model",
         "no_company",
+        "no_documents",
         "not_a_session",
         "not_found",
         "nothing_was_uploaded",
+        "order_not_payable",
         "password_rejected",
+        "payment_provider_unavailable",
+        "payment_rejected",
+        "payment_required",
+        "payments_not_configured",
         "persistence_is_not_configured",
         "provider_required",
         "rate_limited",
@@ -782,15 +841,19 @@ fn the_error_codes_are_the_set_the_contract_promises() {
         "simulation_cannot_run",
         "simulation_too_slow_to_answer_directly",
         "storage_failure",
+        "tax_year_not_covered",
         "the_job_queue_is_not_configured",
         "the_session_cannot_be_refreshed",
         "the_upload_does_not_match_its_ticket",
         "too_many_simulations_at_once",
         "unauthorized",
         "unknown_audience",
+        "unknown_document",
+        "unknown_product",
         "unknown_push_provider",
         "unknown_role",
         "unknown_value",
+        "unreadable_document",
         "unsupported_document_type",
         "wrong_credential",
     ];

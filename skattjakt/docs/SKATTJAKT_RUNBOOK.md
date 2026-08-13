@@ -580,6 +580,59 @@ figure in the arithmetic.
 
 ---
 
+## 15B. A payment was refused after the provider called it successful
+
+`SkattjaktPaymentsRefusedAfterSuccess`. Swish said a payment completed and this
+system declined to accept it. **Money has moved and nothing was delivered**, so
+this is a same-day problem.
+
+There are exactly three reasons it can happen, and the note on the order says
+which.
+
+```bash
+kubectl -n $NS exec deploy/skattjakt-postgres -- \
+  psql -U skattjakt -c "SELECT id, product, amount_ore, state, note, updated_at
+                        FROM orders WHERE state = 'failed'
+                        AND updated_at > now() - interval '1 day'"
+```
+
+| Note says | What it means | What to do |
+|---|---|---|
+| `the payment was X but the order was for Y` | The amount paid is not the amount asked for | Usually a price change between order and payment. Refund or complete manually; then check whether a deploy changed a price with orders in flight |
+| `the payment carries reference … not …` | The payment names a different order | Someone is attempting to settle one order with another's payment, **or** two deployments share a Swish number. Check the second before assuming the first |
+| `the payment was in X, not SEK` | Currency mismatch | Should be impossible with Swish. Treat as a provider or configuration fault and stop taking payments until it is understood |
+
+**Refunds are not automated** — see the `skattjakt-payments` crate
+documentation. Mark the order so the obligation is recorded rather than
+remembered:
+
+```sql
+UPDATE orders SET state = 'refund_owed', note = '<who, when, why>'
+WHERE id = '<order>';
+```
+
+Then make the refund in the Swish merchant portal.
+
+### The related alerts
+
+- **`SkattjaktPaymentsUnsettled`** — customers who paid and are waiting. The
+  sweep resolves these within a minute normally, so ten minutes means the
+  worker is down (§4) or Swish is unreachable from the worker. Check the
+  worker's egress first: the NetworkPolicy allows 443 to public addresses, and
+  a policy change is the usual cause.
+- **`SkattjaktPaymentCallbacksUnreadable`** — callbacks in a shape this build
+  cannot parse. Settlement still works through the sweep, so this is slow
+  rather than broken. Compare a callback body in the logs against
+  `swish::WirePayment`; if Swish changed the field names, that struct is the one
+  place to change.
+
+**What never to do:** do not mark an order `paid` by hand to unblock a
+customer. The order is what the analysis gate reads, and a hand-written `paid`
+is indistinguishable from a real one afterwards. Complete the payment properly,
+or create a new order and settle it, or refund.
+
+---
+
 ## 16. Alert index
 
 | Alert | Section |
@@ -596,4 +649,5 @@ figure in the arithmetic.
 | `SkattjaktBackupMissing`, `SkattjaktBackupFailed`, `SkattjaktRestoreTestFailed`, `SkattjaktRestoreTestStale` | §11 |
 | `SkattjaktRateLimiting` | §13 |
 | `SkattjaktSourceContradictsRules`, `SkattjaktSourcesUnreachable`, `SkattjaktSourceSweepStopped` | §15A |
+| `SkattjaktPaymentsRefusedAfterSuccess`, `SkattjaktPaymentsUnsettled`, `SkattjaktPaymentCallbacksUnreadable` | §15B |
 | `SkattjaktDiskFilling` | Expand the PVC; check the retention job is running |

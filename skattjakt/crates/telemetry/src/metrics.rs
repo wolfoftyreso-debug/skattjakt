@@ -389,6 +389,20 @@ pub mod names {
     /// earlier.
     pub const SOURCE_STATES: &str = "skattjakt_cited_sources";
 
+    // Payments
+    /// Payment requests sent to the provider, by outcome.
+    pub const PAYMENTS_STARTED: &str = "skattjakt_payments_started_total";
+    /// Payments that reached a terminal state, by outcome. A rise in `failed`
+    /// with no rise in provider errors means we are refusing payments the
+    /// provider called successful — an attack, or a bug in the amount handling.
+    pub const PAYMENTS_SETTLED: &str = "skattjakt_payments_settled_total";
+    /// Callbacks received. `unreadable` above zero means either Swish changed
+    /// the shape or somebody is posting rubbish at the endpoint.
+    pub const PAYMENT_CALLBACKS: &str = "skattjakt_payment_callbacks_total";
+    /// Payments the sweep found still unresolved. Sustained above zero means
+    /// callbacks are not arriving and customers are waiting.
+    pub const PAYMENTS_UNSETTLED: &str = "skattjakt_payments_unsettled";
+
     // Monte Carlo simulation
     pub const SIMULATIONS_STARTED: &str = "skattjakt_simulations_started_total";
     pub const SIMULATIONS_FINISHED: &str = "skattjakt_simulations_finished_total";
@@ -521,6 +535,10 @@ pub fn register_all(registry: &Registry) {
         SOURCE_STATES,
         "Cited legal sources by how far each has been checked.",
     );
+    registry.register_counter(PAYMENTS_STARTED, "Payment requests sent, by outcome.");
+    registry.register_counter(PAYMENTS_SETTLED, "Payments settled, by outcome.");
+    registry.register_counter(PAYMENT_CALLBACKS, "Payment callbacks received, by outcome.");
+    registry.register_gauge(PAYMENTS_UNSETTLED, "Payments still awaiting a resolution.");
     registry.register_counter(DOCUMENTS_UPLOADED, "Documents accepted, by mime type.");
     registry.register_counter(
         EXTRACTION_FACTS,

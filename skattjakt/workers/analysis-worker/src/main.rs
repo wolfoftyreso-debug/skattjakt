@@ -11,6 +11,7 @@
 //! the difficulty — leases, retries, backoff, dead letters — is in
 //! `skattjakt-jobs`, where it is testable without a worker.
 
+mod payments;
 mod runner;
 mod simulation;
 mod sources;
@@ -74,6 +75,19 @@ async fn main() -> anyhow::Result<()> {
     let blobs = skattjakt_store::blob::from_env(&blob_root).map_err(anyhow::Error::msg)?;
 
     let engine = Arc::new(RuleEngine::load_embedded().context("the embedded rule set is invalid")?);
+
+    // The worker needs the provider to *ask* about payments, never to create
+    // them: creating is a request-path action. An unconfigured deployment gets
+    // a provider that refuses, and the sweep then finds nothing to resolve
+    // because nothing was ever started.
+    let payment_provider: Arc<dyn skattjakt_payments::PaymentProvider> =
+        match skattjakt_payments::swish::SwishConfig::from_env().map_err(anyhow::Error::msg)? {
+            Some(config) => Arc::new(
+                skattjakt_payments::swish::SwishProvider::new(config)
+                    .map_err(anyhow::Error::msg)?,
+            ),
+            None => Arc::new(skattjakt_payments::UnconfiguredProvider),
+        };
 
     // A missing model provider is not fatal, for the same reason it is not
     // fatal in the API: the rule engine produces evidence-backed findings on
@@ -154,6 +168,12 @@ async fn main() -> anyhow::Result<()> {
     // and a lease that goes unreaped for that long is a job nobody is
     // working on.
     let source_sweep = spawn_source_sweep(store.clone(), engine, metrics_registry.clone());
+    // Payments resolve themselves whether or not the callback arrives.
+    let payment_sweep = spawn_payment_sweep(
+        store.clone(),
+        payment_provider.clone(),
+        metrics_registry.clone(),
+    );
 
     let shutdown = shutdown_signal();
     tokio::pin!(shutdown);
@@ -238,6 +258,7 @@ async fn main() -> anyhow::Result<()> {
 
     maintenance.abort();
     source_sweep.abort();
+    payment_sweep.abort();
     LogRecord::info("analysis worker stopped").emit();
     Ok(())
 }
@@ -317,6 +338,29 @@ fn spawn_maintenance(queue: Queue, store: Store) -> tokio::task::JoinHandle<()> 
             }
 
             let _ = queue.publish_depth().await;
+        }
+    })
+}
+
+/// Resolves payments the callback did not, forever.
+///
+/// Its own timer for the same reason the source sweep has one: a customer who
+/// has paid must not wait on an analysis finishing, and an analysis must not
+/// wait on a payment provider answering.
+fn spawn_payment_sweep(
+    store: Store,
+    provider: std::sync::Arc<dyn skattjakt_payments::PaymentProvider>,
+    metrics: Registry,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut ticker = tokio::time::interval(payments::SWEEP_INTERVAL);
+        loop {
+            ticker.tick().await;
+            if let Err(error) = payments::sweep(&store, provider.as_ref(), &metrics).await {
+                LogRecord::warn("the payment sweep failed")
+                    .internal("error", error.to_string())
+                    .emit();
+            }
         }
     })
 }

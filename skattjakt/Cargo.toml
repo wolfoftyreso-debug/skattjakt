@@ -13,6 +13,7 @@ members = [
     "crates/simulate",
     "crates/store",
     "crates/jobs",
+    "crates/payments",
     "apps/api",
     "workers/analysis-worker",
     "workers/notification-worker",
@@ -38,6 +39,7 @@ skattjakt-pipeline = { path = "crates/pipeline" }
 skattjakt-simulate = { path = "crates/simulate" }
 skattjakt-store = { path = "crates/store" }
 skattjakt-jobs = { path = "crates/jobs" }
+skattjakt-payments = { path = "crates/payments" }
 skattjakt-api = { path = "apps/api" }
 
 anyhow = "1"

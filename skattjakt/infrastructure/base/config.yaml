@@ -50,3 +50,23 @@ data:
   # OTLP over HTTP with JSON, on 4318. The gRPC port is 4317 and would need a
   # protobuf stack for no benefit at this volume — see crates/telemetry/src/otlp.rs.
   OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector.observability.svc.cluster.local:4318"
+
+  # --- Payments -------------------------------------------------------------
+  #
+  # Empty here on purpose. The Swish number and the callback URL are per
+  # deployment, and the certificate is a mounted Secret rather than a value —
+  # see SKATTJAKT_PAYMENTS.md for what the bank supplies and where each piece
+  # goes.
+  #
+  # `SKATTJAKT_SWISH_PAYEE_ALIAS` empty means payments are off: the order
+  # routes refuse rather than pretending, and analyses run without one. Setting
+  # `SKATTJAKT_PAYMENTS_REQUIRED` with no provider is a refusal to start, so a
+  # half-configured deployment cannot take orders it can never collect on.
+  SKATTJAKT_PAYMENTS_REQUIRED: "0"
+  SKATTJAKT_SWISH_PAYEE_ALIAS: ""
+  # The test environment until an operator says otherwise. Getting this wrong
+  # in this direction fails a TLS handshake; the other way moves real money.
+  SKATTJAKT_SWISH_BASE_URL: "https://mss.cpc.getswish.net/swish-cpcapi"
+  SKATTJAKT_SWISH_CLIENT_PEM: "/etc/skattjakt/swish/client.pem"
+  SKATTJAKT_SWISH_CA_PEM: "/etc/skattjakt/swish/swish-ca.pem"
+  SKATTJAKT_SWISH_CALLBACK_URL: ""

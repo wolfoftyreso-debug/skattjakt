@@ -1,0 +1,20 @@
+[package]
+name = "skattjakt-payments"
+version = "0.1.0"
+edition = "2021"
+description = "Taking payment for one analysis, and refusing to run one that was not paid for."
+
+[dependencies]
+skattjakt-core.workspace = true
+skattjakt-telemetry.workspace = true
+
+async-trait.workspace = true
+chrono.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true

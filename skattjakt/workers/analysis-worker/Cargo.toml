@@ -17,6 +17,7 @@ skattjakt-extract.workspace = true
 skattjakt-gateway.workspace = true
 skattjakt-jobs.workspace = true
 skattjakt-model.workspace = true
+skattjakt-payments.workspace = true
 skattjakt-pipeline.workspace = true
 skattjakt-rules.workspace = true
 skattjakt-simulate.workspace = true

@@ -148,6 +148,99 @@ paths:
               schema: { $ref: "#/components/schemas/RuleSetSummary" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /v1/orders:
+    post:
+      tags: [Payments]
+      summary: Buy one analysis
+      description: |
+        Creates an order at the product's current price and starts a Swish
+        payment for it. The response carries a `swish_token`, which a phone
+        turns into an app switch and a desktop into a QR code.
+
+        The order is written **before** Swish is called, so a request that dies
+        between the two leaves a record of what was attempted rather than a
+        payment this system knows nothing about.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [product]
+              properties:
+                product:
+                  type: string
+                  enum: [private_analysis, company_analysis, control_review]
+                payer_alias:
+                  type: [string, "null"]
+                  description: |
+                    The payer's Swish number, for a payment started somewhere
+                    other than the payer's own phone. Omit for the app-switch
+                    flow, where the payer identifies themselves in the app.
+      responses:
+        "201":
+          description: The order, and the token that starts the payment.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "400": { description: "Unknown product.", content: { application/json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "502":
+          description: The payment provider could not be reached. Worth retrying.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Problem" } } }
+        "503":
+          description: This deployment cannot take payments.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Problem" } } }
+
+  /v1/orders/{id}:
+    get:
+      tags: [Payments]
+      summary: How far an order has got
+      description: |
+        Poll this while the payer is in the Swish app. It reads the order and
+        does **not** call Swish, so polling faster does not drive traffic at the
+        payment provider; the callback and a background sweep are what move it.
+
+        `state` reaches `paid` when the payment has been confirmed **with
+        Swish** — never on the strength of a callback body alone.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The order.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/payments/swish/callback:
+    post:
+      tags: [Payments]
+      summary: Swish reporting that a payment changed
+      description: |
+        **Not for clients.** Registered with Swish against the merchant's
+        number, and called by them.
+
+        Deliberately unauthenticated, because it carries no authority. The body
+        is read for one field — the payment reference — and everything else is
+        discarded; the outcome is then established by asking Swish directly. A
+        forged or replayed callback therefore causes one outbound lookup and no
+        state change.
+
+        Always answers 200. Swish retries anything else, and a retry cannot fix
+        what a retry would encounter: anything unsettled here is picked up by
+        the reconciliation sweep within a minute.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        "200":
+          description: Received. Says nothing about what was concluded.
+
   /v1/analyses:
     post:
       tags: [Analysis]
@@ -1589,32 +1682,55 @@ components:
             - account_temporarily_locked
             - admin_credential_required
             - already_exists
+            - ambiguous_document
             - analysis_failed
             - analysis_is_not_finished
             - authentication_unavailable
+            - content_does_not_match_its_declared_type
             - document_too_large
+            - empty_document
             - insufficient_permission
             - internal_error
+            - invalid_accounts_state
+            - invalid_base64
             - invalid_credentials
             - invalid_cursor
+            - invalid_fiscal_year
+            - invalid_idempotency_key
+            - invalid_organisationsnummer
             - invalid_request
+            - invalid_simulation_model
             - no_company
+            - no_documents
             - not_a_session
             - not_found
             - nothing_was_uploaded
+            - order_not_payable
             - password_rejected
+            - payment_provider_unavailable
+            - payment_rejected
+            - payment_required
+            - payments_not_configured
             - persistence_is_not_configured
             - provider_required
             - rate_limited
+            - simulation_cancelled
+            - simulation_cannot_run
+            - simulation_too_slow_to_answer_directly
             - storage_failure
+            - tax_year_not_covered
             - the_job_queue_is_not_configured
             - the_session_cannot_be_refreshed
             - the_upload_does_not_match_its_ticket
+            - too_many_simulations_at_once
             - unauthorized
             - unknown_audience
+            - unknown_document
+            - unknown_product
             - unknown_push_provider
             - unknown_role
             - unknown_value
+            - unreadable_document
             - unsupported_document_type
             - wrong_credential
         title: { type: string }
@@ -1696,6 +1812,45 @@ components:
           type: array
           description: Why the service is not ready. Empty when it is.
           items: { type: string }
+
+    Order:
+      type: object
+      required: [order_id, product, amount_ore, amount, currency, state, audience]
+      properties:
+        order_id: { type: string, format: uuid }
+        product:
+          type: string
+          enum: [private_analysis, company_analysis, control_review]
+        amount_ore:
+          type: integer
+          description: The price charged, in öre. Copied onto the order when it was
+            created, so a later price change never rewrites what somebody was asked
+            to pay.
+        amount: { type: string, example: "69,00 kr" }
+        currency: { type: string, const: SEK }
+        state:
+          type: string
+          enum: [created, awaiting_payment, paid, declined, failed, consumed, refund_owed]
+          description: |
+            * `paid` — confirmed with Swish, not yet used.
+            * `consumed` — it bought the analysis named in `analysis_id`. One
+              order buys exactly one, enforced by the database rather than by a
+              handler.
+            * `refund_owed` — paid, and what it bought could not be delivered. A
+              person owes the customer money; the system cannot make a refund
+              and says so rather than pretending.
+        audience:
+          type: string
+          description: Which presentation layer this product buys.
+          enum: [private, company, accountant]
+        analysis_id: { type: [string, "null"], format: uuid }
+        note: { type: [string, "null"] }
+        swish_token:
+          type: [string, "null"]
+          description: |
+            Present only in the response that created the order. Turn it into an
+            app switch (`swish://paymentrequest?token=…`) on a phone, or a QR
+            code on a desktop.
 
     RuleSetSummary:
       type: object

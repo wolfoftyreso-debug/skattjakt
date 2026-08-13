@@ -124,12 +124,31 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            # The Swish client certificate and its private key. A file rather
+            # than an environment variable: a private key in the environment is
+            # a private key in every crash dump, every `kubectl describe` and
+            # every process listing that shows the environment.
+            #
+            # `optional: true` because a deployment without payments is a
+            # supported state — the API then refuses to take orders rather than
+            # failing to start. `SKATTJAKT_PAYMENTS_REQUIRED` is what makes a
+            # missing certificate fatal, and that belongs in the overlay that
+            # actually sells something.
+            - name: swish-certificates
+              mountPath: /etc/skattjakt/swish
+              readOnly: true
       volumes:
         # The root filesystem is read-only, so anything that needs to write
         # gets an explicit, size-bounded emptyDir.
         - name: tmp
           emptyDir:
             sizeLimit: 256Mi
+        - name: swish-certificates
+          secret:
+            secretName: skattjakt-swish
+            optional: true
+            # Readable by the container's user and nobody else.
+            defaultMode: 0400
       terminationGracePeriodSeconds: 30
 ---
 apiVersion: v1
