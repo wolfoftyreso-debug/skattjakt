@@ -15,6 +15,7 @@ pub mod condition;
 pub mod engine;
 pub mod expr;
 pub mod rule;
+pub mod verify;
 
 pub use condition::{CmpOp, Condition, EvalContext, ProfileFlag, ProfileNumber, Truth};
 pub use engine::{context, RuleEngine, RuleSet, RuleSetError};
@@ -23,6 +24,7 @@ pub use rule::{
     CalculationInputRecord, CalculationRecord, Exception, ImpactSpec, Retrieval, ReviewState, Rule,
     RuleEvaluation, RuleOutcome, RuleSource, Source, SourceState,
 };
+pub use verify::CheckOutcome;
 
 #[cfg(test)]
 mod embedded_tests {
@@ -89,7 +91,7 @@ mod embedded_tests {
         for (id, source) in &engine.set().sources {
             match source.state() {
                 SourceState::Verified => panic!(
-                    "{id} claims to be verified. If tools/verify-sources.py actually \
+                    "{id} claims to be verified. If a retrieval actually \
                      retrieved it, update this test and the documents that say the rule \
                      set is unsourced — deliberately, together."
                 ),

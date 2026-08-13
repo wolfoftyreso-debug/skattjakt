@@ -156,6 +156,11 @@ async fn run_case(case: &GoldenCase) -> AnalysisResult {
             "unknown" => AccountsState::Unknown,
             _ => AccountsState::Preliminary,
         },
+        // Empty on purpose: the golden dataset measures the rule engine, and
+        // pinning the source states here would make its precision and recall
+        // depend on what a verification sweep happened to find. The embedded
+        // records stand in, and they say nothing has been checked.
+        source_states: Default::default(),
     };
 
     pipeline

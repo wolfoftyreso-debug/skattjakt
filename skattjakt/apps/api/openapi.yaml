@@ -1737,8 +1737,13 @@ components:
       type: string
       enum: [unretrieved, unreachable, mismatch, verified]
       description: |
-        How far a source has been checked, weakest first. A rule's own
-        `source_state` is the weakest of the sources it cites.
+        How far a source has been checked, weakest first.
+
+        A rule's own `source_state` is the weakest of the sources it cites,
+        with one exception: `mismatch` dominates. A rule citing one contradicted
+        paragraph and one unreachable one reports `mismatch`, not `unreachable`
+        — otherwise a network failure would hide evidence that the rule is
+        wrong.
 
         * `unretrieved` — nobody has fetched it.
         * `unreachable` — a fetch was attempted and failed. A fact about the
@@ -1749,7 +1754,11 @@ components:
         * `verified` — it was fetched and does. Recorded with a timestamp and a
           hash of the retrieved text.
 
-        Every source in the shipped set is currently `unretrieved`.
+        The state is read from the retrieval record the verification sweep
+        writes, not from what the binary was built with, so it answers "has
+        anybody checked this" as of now. Every source in the shipped set is
+        currently `unretrieved`: the statute hosts are unreachable from the
+        build environment.
 
     AnalysisRequest:
       type: object

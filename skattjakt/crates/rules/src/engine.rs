@@ -36,24 +36,50 @@ impl RuleSet {
         self.sources.get(id)
     }
 
-    /// The weakest state among a rule's sources.
+    /// How far a rule's sources have been checked, taken together.
     ///
-    /// The weakest rather than the best, and rather than an average: a rule
-    /// resting on two paragraphs is only as checked as the less checked of
-    /// them, and reporting the stronger one would describe the rule as better
-    /// established than it is.
+    /// See [`combine`] for the rule and why it is not simply the minimum.
     pub fn source_state_of(&self, rule: &Rule) -> SourceState {
-        rule.sources
-            .iter()
-            .map(|id| {
-                self.sources
-                    .get(id)
-                    .map(Source::state)
-                    .unwrap_or(SourceState::Unretrieved)
-            })
-            .min()
-            .unwrap_or(SourceState::Unretrieved)
+        combine(rule.sources.iter().map(|id| {
+            self.sources
+                .get(id)
+                .map(Source::state)
+                .unwrap_or(SourceState::Unretrieved)
+        }))
     }
+}
+
+/// Folds several sources' states into the one a rule reports.
+///
+/// Two rules, and the second is the one that is easy to get wrong.
+///
+/// **The weakest wins.** A rule resting on two paragraphs is only as checked as
+/// the less checked of them; reporting the stronger would describe the rule as
+/// better established than it is.
+///
+/// **Except that a contradiction dominates everything.** `Mismatch` sits above
+/// `Unreachable` on the ladder, because the ladder measures how far a check
+/// *got*, and a mismatch got all the way. But a mismatch is not merely a
+/// well-progressed check — it is positive evidence that the rule's basis is
+/// wrong, and the minimum would bury it: a rule citing one contradicted
+/// paragraph and one unreachable one would report `unreachable`, the gate would
+/// see no contradiction, and the finding would be capped at "verify" instead of
+/// dropped to "investigate". The bad news would be hidden by worse news about
+/// the network.
+///
+/// So a contradiction is sticky. Anything else takes the weakest.
+pub fn combine(states: impl IntoIterator<Item = SourceState>) -> SourceState {
+    let mut weakest: Option<SourceState> = None;
+    for state in states {
+        if state == SourceState::Mismatch {
+            return SourceState::Mismatch;
+        }
+        weakest = Some(match weakest {
+            Some(current) => current.min(state),
+            None => state,
+        });
+    }
+    weakest.unwrap_or(SourceState::Unretrieved)
 }
 
 #[derive(Debug, Error)]
@@ -215,7 +241,7 @@ impl RuleEngine {
                 if source.retrieval.sha256.as_deref().unwrap_or("").is_empty() {
                     problems.push(format!(
                         "source `{id}` claims to be verified with no hash of what was read; \
-                         only tools/verify-sources.py may grant that state"
+                         only a retrieval may grant that state"
                     ));
                 }
                 if source.retrieval.at.as_deref().unwrap_or("").is_empty() {
@@ -862,6 +888,54 @@ mod tests {
         })
         .unwrap_err();
         assert!(err.to_string().contains("not in the registry"), "{err}");
+    }
+
+    #[test]
+    fn a_contradiction_is_not_buried_by_a_network_failure() {
+        // The shape that got through review and was caught by running it: a
+        // rule citing one paragraph that contradicts it and one that could not
+        // be fetched. Taking the minimum reports `unreachable`, the gate sees
+        // no contradiction, and the finding is capped at "verify" instead of
+        // being dropped to "investigate" — the bad news hidden by worse news
+        // about the network.
+        assert_eq!(
+            combine([SourceState::Mismatch, SourceState::Unreachable]),
+            SourceState::Mismatch
+        );
+        assert_eq!(
+            combine([SourceState::Unretrieved, SourceState::Mismatch]),
+            SourceState::Mismatch
+        );
+        assert_eq!(
+            combine([SourceState::Verified, SourceState::Mismatch]),
+            SourceState::Mismatch
+        );
+    }
+
+    #[test]
+    fn without_a_contradiction_the_weakest_source_decides() {
+        assert_eq!(
+            combine([SourceState::Verified, SourceState::Unretrieved]),
+            SourceState::Unretrieved
+        );
+        assert_eq!(
+            combine([SourceState::Verified, SourceState::Unreachable]),
+            SourceState::Unreachable
+        );
+        assert_eq!(
+            combine([SourceState::Verified, SourceState::Verified]),
+            SourceState::Verified
+        );
+    }
+
+    #[test]
+    fn a_rule_citing_nothing_is_unchecked_rather_than_perfect() {
+        // `min()` of an empty iterator is None, and the tempting default for a
+        // "how good is this" fold is the best value. Validation rejects a rule
+        // with no sources, so this is unreachable in a loaded set — asserted
+        // anyway, because the day validation changes this is the failure that
+        // would silently promote every rule.
+        assert_eq!(combine([]), SourceState::Unretrieved);
     }
 
     #[test]

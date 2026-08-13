@@ -66,6 +66,7 @@ fn input(documents: Vec<DocumentInput>) -> AnalysisInput {
         company: profile(),
         documents,
         accounts_state: AccountsState::Preliminary,
+        source_states: Default::default(),
     }
 }
 
@@ -289,6 +290,152 @@ async fn an_unreachable_source_is_treated_as_unchecked_not_as_checked() {
                 "{} was established on a source in state {state:?}",
                 opportunity.title
             );
+        }
+    }
+}
+
+/// A retrieval record as a sweep would have written it.
+fn retrieval(state: skattjakt_rules::SourceState) -> skattjakt_rules::Retrieval {
+    skattjakt_rules::Retrieval {
+        state,
+        at: Some("2026-08-13T06:00:00+00:00".into()),
+        sha256: match state {
+            skattjakt_rules::SourceState::Verified | skattjakt_rules::SourceState::Mismatch => {
+                Some("b".repeat(64))
+            }
+            _ => None,
+        },
+        note: None,
+    }
+}
+
+/// Every source in the shipped registry, in one state, as live database rows.
+fn live_states(
+    state: skattjakt_rules::SourceState,
+) -> BTreeMap<String, skattjakt_rules::Retrieval> {
+    RuleEngine::load_embedded()
+        .unwrap()
+        .set()
+        .sources
+        .keys()
+        .map(|id| (id.clone(), retrieval(state)))
+        .collect()
+}
+
+#[tokio::test]
+async fn a_sweep_can_ground_a_rule_the_shipped_registry_calls_unchecked() {
+    // The whole point of moving retrieval state into the database. The binary
+    // still carries `unretrieved` for all 24 sources — that is what it was
+    // built with — and a worker that has since fetched them can say so without
+    // anybody deploying a new binary.
+    let mut analysis = input(vec![document(INCOME_STATEMENT)]);
+    analysis.source_states = live_states(skattjakt_rules::SourceState::Verified);
+
+    let (result, _) = pipeline(silent_provider())
+        .run(&analysis, &SilentObserver)
+        .await
+        .unwrap();
+
+    assert!(
+        result
+            .opportunities
+            .iter()
+            .any(|o| o.status == OpportunityStatus::Identified),
+        "a live verified state unlocked nothing"
+    );
+}
+
+#[tokio::test]
+async fn a_sweep_can_take_grounding_away_from_a_registry_that_shipped_verified() {
+    // The direction that matters more. A build whose registry said `verified`
+    // must not keep that standing after a sweep finds the paragraph no longer
+    // says what the rule assumes — otherwise the embedded record is a claim the
+    // running system cannot retract.
+    let engine = engine_with_all_sources(skattjakt_rules::SourceState::Verified);
+    let mut analysis = input(vec![document(INCOME_STATEMENT)]);
+    analysis.source_states = live_states(skattjakt_rules::SourceState::Mismatch);
+
+    let (result, _) = pipeline_with(engine, PipelineConfig::default())
+        .run(&analysis, &SilentObserver)
+        .await
+        .unwrap();
+
+    assert!(!result.opportunities.is_empty());
+    for opportunity in &result.opportunities {
+        assert_ne!(
+            opportunity.status,
+            OpportunityStatus::Identified,
+            "{} kept its standing after its source was found to contradict it",
+            opportunity.title
+        );
+    }
+}
+
+#[tokio::test]
+async fn the_citations_a_reader_sees_carry_the_live_state_not_the_built_one() {
+    // The gate is invisible; the citation is what the customer reads. If the
+    // two disagreed, a finding could be capped at "verify" while its evidence
+    // said the source was checked, and a reader could not tell which to trust.
+    let mut analysis = input(vec![document(INCOME_STATEMENT)]);
+    analysis.source_states = live_states(skattjakt_rules::SourceState::Verified);
+
+    let (result, _) = pipeline(silent_provider())
+        .run(&analysis, &SilentObserver)
+        .await
+        .unwrap();
+
+    let mut seen = 0;
+    for opportunity in &result.opportunities {
+        for item in opportunity.evidence.items() {
+            if let skattjakt_core::EvidenceItem::Rule { citations, .. } = item {
+                for citation in citations {
+                    assert_eq!(citation.state, "verified");
+                    assert_eq!(
+                        citation.retrieved_at.as_deref(),
+                        Some("2026-08-13T06:00:00+00:00")
+                    );
+                    seen += 1;
+                }
+            }
+        }
+    }
+    assert!(seen > 0, "no citation was checked");
+}
+
+#[tokio::test]
+async fn a_source_the_sweep_has_not_reached_falls_back_to_what_shipped() {
+    // A partial sweep is the normal state of the world: 23 rows written, one
+    // host down. The rule with the unswept source must not be treated as
+    // checked because its neighbours were.
+    let engine = engine_with_all_sources(skattjakt_rules::SourceState::Verified);
+    let mut states = live_states(skattjakt_rules::SourceState::Verified);
+    // Drop one row entirely, as though the sweep had never got to it. The
+    // embedded record for it says verified, so the fallback is what decides.
+    let dropped = states.keys().next().unwrap().clone();
+    states.remove(&dropped);
+
+    let mut analysis = input(vec![document(INCOME_STATEMENT)]);
+    analysis.source_states = states;
+
+    let (result, _) = pipeline_with(engine, PipelineConfig::default())
+        .run(&analysis, &SilentObserver)
+        .await
+        .unwrap();
+
+    // The embedded record is `verified` for the dropped source, so nothing is
+    // downgraded — the assertion is that the fallback was consulted at all
+    // rather than the source being treated as unknown.
+    for opportunity in &result.opportunities {
+        for item in opportunity.evidence.items() {
+            if let skattjakt_core::EvidenceItem::Rule { citations, .. } = item {
+                for citation in citations {
+                    assert_ne!(
+                        citation.state, "unretrieved",
+                        "a source missing from the sweep was treated as unknown \
+                         rather than falling back to the record it shipped with"
+                    );
+                }
+            }
         }
     }
 }

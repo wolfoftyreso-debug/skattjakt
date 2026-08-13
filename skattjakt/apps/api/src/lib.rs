@@ -655,6 +655,38 @@ async fn openapi() -> impl IntoResponse {
 async fn rules(State(state): State<AppState>, headers: HeaderMap) -> Result<Response, Problem> {
     authorise(&state, &headers).await?;
 
+    // The live record where a sweep has produced one. Without this the endpoint
+    // reports what the binary was built with, which is the one answer nobody
+    // asking this question wants: "has anybody checked this" is a question
+    // about now, not about release time.
+    let live: std::collections::BTreeMap<String, skattjakt_rules::Retrieval> = match &state.store {
+        Some(store) => store
+            .source_retrievals()
+            .await
+            .map(|rows| {
+                rows.into_iter()
+                    .map(|row| (row.source_id.clone(), row.as_retrieval()))
+                    .collect()
+            })
+            .unwrap_or_default(),
+        None => Default::default(),
+    };
+    let standing = |id: &str| -> skattjakt_rules::Retrieval {
+        live.get(id).cloned().unwrap_or_else(|| {
+            state
+                .engine
+                .set()
+                .source_by_id(id)
+                .map(|source| source.retrieval.clone())
+                .unwrap_or(skattjakt_rules::Retrieval {
+                    state: skattjakt_rules::SourceState::Unretrieved,
+                    at: None,
+                    sha256: None,
+                    note: None,
+                })
+        })
+    };
+
     let rules: Vec<serde_json::Value> = state
         .engine
         .rules()
@@ -676,17 +708,25 @@ async fn rules(State(state): State<AppState>, headers: HeaderMap) -> Result<Resp
                 // somebody has actually read", which was not a question this
                 // endpoint could answer.
                 "sources": rule.sources.iter().filter_map(|id| {
-                    state.engine.set().source_by_id(id).map(|source| json!({
-                        "id": id,
-                        "reference": source.citation(),
-                        "authority": source.authority,
-                        "url": source.url,
-                        "claim": source.asserted_claim,
-                        "state": source.state().as_str(),
-                        "retrieved_at": source.retrieval.at,
-                    }))
+                    state.engine.set().source_by_id(id).map(|source| {
+                        let retrieval = standing(id);
+                        json!({
+                            "id": id,
+                            "reference": source.citation(),
+                            "authority": source.authority,
+                            "url": source.url,
+                            "claim": source.asserted_claim,
+                            "state": retrieval.state.as_str(),
+                            "retrieved_at": retrieval.at,
+                        })
+                    })
                 }).collect::<Vec<_>>(),
-                "source_state": state.engine.set().source_state_of(rule).as_str(),
+                // Folded by the same function the gate uses, so the state a
+                // caller reads and the state that capped the finding cannot
+                // disagree.
+                "source_state": skattjakt_rules::engine::combine(
+                    rule.sources.iter().map(|id| standing(id).state)
+                ).as_str(),
                 "reviewed": reviewed,
                 "review_note": note,
             })
@@ -793,11 +833,29 @@ async fn analyse(
         state.config.clone(),
     );
 
+    // The stateless route runs with or without a database, so the live state is
+    // read when there is one and the embedded records stand in when there is
+    // not. Those say `unretrieved`, which is what a deployment that has never
+    // swept has actually established.
+    let source_states = match &state.store {
+        Some(store) => store
+            .source_retrievals()
+            .await
+            .map(|rows| {
+                rows.into_iter()
+                    .map(|row| (row.source_id.clone(), row.as_retrieval()))
+                    .collect()
+            })
+            .unwrap_or_default(),
+        None => Default::default(),
+    };
+
     let input = AnalysisInput {
         analysis_id: AnalysisId::new(),
         company,
         documents,
         accounts_state,
+        source_states,
     };
 
     match pipeline.run(&input, &SilentObserver).await {

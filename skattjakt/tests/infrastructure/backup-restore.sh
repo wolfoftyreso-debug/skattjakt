@@ -42,12 +42,17 @@ if [[ -z "${SKATTJAKT_PG_REEXEC:-}" ]]; then
         -p "127.0.0.1:$MINIO_PORT:9000" \
         -e MINIO_ROOT_USER=backuptest -e MINIO_ROOT_PASSWORD=backuptest123 \
         mirror.gcr.io/minio/minio:latest server /data >/dev/null
-    for _ in $(seq 1 60); do
-        curl -fsS "http://127.0.0.1:$MINIO_PORT/minio/health/live" >/dev/null 2>&1 && break
+    # `/minio/health/live` answers 200 while the pool is still being formatted,
+    # and S3 operations return 503 until it finishes. Wait for a request of the
+    # kind the test actually makes.
+    for _ in $(seq 1 120); do
+        curl -fsS -o /dev/null "http://127.0.0.1:$MINIO_PORT/" \
+            --user "backuptest:backuptest123" --aws-sigv4 "aws:amz:us-east-1:s3" 2>/dev/null && break
         sleep 0.5
     done
-    curl -fsS "http://127.0.0.1:$MINIO_PORT/minio/health/live" >/dev/null || {
-        echo "minio did not start"; docker logs "$CONTAINER" | tail -20; exit 1; }
+    curl -fsS -o /dev/null "http://127.0.0.1:$MINIO_PORT/" \
+        --user "backuptest:backuptest123" --aws-sigv4 "aws:amz:us-east-1:s3" || {
+        echo "minio did not become ready"; docker logs "$CONTAINER" | tail -20; exit 1; }
     echo "minio ready on :$MINIO_PORT"
 fi
 

@@ -13,6 +13,7 @@
 
 mod runner;
 mod simulation;
+mod sources;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -41,6 +42,16 @@ const MAINTENANCE_INTERVAL: Duration = Duration::from_secs(15);
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // One subcommand, and it is here rather than in a tool of its own for a
+    // reason worth stating: the source check that runs on a schedule inside
+    // this process and the source check an operator runs by hand have to be the
+    // *same* check. Two implementations of "does this paragraph still say 25
+    // per cent" drift, and the one that drifts is always the one nobody runs.
+    let arguments: Vec<String> = std::env::args().skip(1).collect();
+    if arguments.first().map(String::as_str) == Some("verify-sources") {
+        return verify_sources_command(&arguments[1..]).await;
+    }
+
     logging::init("skattjakt=info,sqlx=warn");
 
     let metrics_registry = Registry::new();
@@ -103,7 +114,7 @@ async fn main() -> anyhow::Result<()> {
     // The pipeline holds the gateway, not the provider. Every model call it
     // makes is therefore priced, budgeted, fence-checked and fallback-checked.
     let pipeline = Arc::new(AnalysisPipeline::new(
-        engine,
+        engine.clone(),
         gateway.clone(),
         PipelineConfig::default(),
     ));
@@ -138,6 +149,11 @@ async fn main() -> anyhow::Result<()> {
     // Maintenance runs on its own timer so a long analysis does not stop lost
     // leases from being reaped.
     let maintenance = spawn_maintenance(queue.clone(), store.clone());
+    // Source verification runs on a timer of its own rather than inside
+    // maintenance: a full sweep spaces 24 requests out over half a minute,
+    // and a lease that goes unreaped for that long is a job nobody is
+    // working on.
+    let source_sweep = spawn_source_sweep(store.clone(), engine, metrics_registry.clone());
 
     let shutdown = shutdown_signal();
     tokio::pin!(shutdown);
@@ -221,6 +237,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     maintenance.abort();
+    source_sweep.abort();
     LogRecord::info("analysis worker stopped").emit();
     Ok(())
 }
@@ -302,6 +319,118 @@ fn spawn_maintenance(queue: Queue, store: Store) -> tokio::task::JoinHandle<()> 
             let _ = queue.publish_depth().await;
         }
     })
+}
+
+/// Re-checks the cited legal sources, forever.
+///
+/// The interval and the locking live in `sources`; this is only the timer and
+/// the failure handling. A sweep that errors is logged and retried on the next
+/// tick rather than taking the worker down: the product runs perfectly well on
+/// a stale verification — every finding simply keeps the ceiling that an
+/// unchecked source earns it — and a crash loop here would stop analyses too.
+fn spawn_source_sweep(
+    store: Store,
+    engine: Arc<RuleEngine>,
+    metrics: Registry,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut ticker = tokio::time::interval(sources::SWEEP_POLL);
+        loop {
+            ticker.tick().await;
+            match sources::sweep_if_due(&store, &engine, &metrics).await {
+                Ok(Some(outcome)) if outcome.mismatched > 0 => {
+                    LogRecord::error("the rule set no longer agrees with its sources")
+                        .internal("mismatched", outcome.mismatched.to_string())
+                        .internal("of", outcome.total().to_string())
+                        .emit();
+                }
+                // `None` is the common case: not due, or another worker has it.
+                Ok(_) => {}
+                Err(error) => LogRecord::warn("could not sweep the source registry")
+                    .internal("error", error.to_string())
+                    .emit(),
+            }
+        }
+    })
+}
+
+/// `skattjakt-analysis-worker verify-sources [--ruleset PATH] [--write]`
+///
+/// Fetches every source the rule set cites and reports whether it still says
+/// what the rules assume. Without `--write` it changes nothing, which is the
+/// mode to run when you want an answer rather than a decision.
+///
+/// Exit codes are meant for a pipeline: 0 everything verified, 1 a source
+/// contradicted the rule set, 2 nothing could be retrieved. The middle one is
+/// the interesting failure — it means the law moved or the rule was wrong, and
+/// a build should stop rather than ship findings that cite it.
+async fn verify_sources_command(arguments: &[String]) -> anyhow::Result<()> {
+    let mut ruleset: Option<String> = None;
+    let mut write = false;
+    let mut rest = arguments.iter();
+    while let Some(argument) = rest.next() {
+        match argument.as_str() {
+            "--write" => write = true,
+            "--ruleset" => ruleset = Some(rest.next().context("--ruleset needs a path")?.clone()),
+            other => anyhow::bail!("unknown argument {other}"),
+        }
+    }
+
+    let engine = match &ruleset {
+        Some(path) => {
+            let json =
+                std::fs::read_to_string(path).with_context(|| format!("could not read {path}"))?;
+            RuleEngine::from_json(&json).context("the rule set is not valid")?
+        }
+        None => RuleEngine::load_embedded().context("the embedded rule set is invalid")?,
+    };
+
+    let metrics_registry = Registry::new();
+    metrics::register_all(&metrics_registry);
+
+    // Writing needs somewhere to write. Reporting does not, so an operator can
+    // ask the question from a laptop with no database in reach.
+    let store = match (write, std::env::var("DATABASE_URL")) {
+        (true, Ok(url)) if !url.is_empty() => Some(
+            Store::connect(&url)
+                .await
+                .context("could not connect to the database")?,
+        ),
+        (true, _) => anyhow::bail!("--write needs DATABASE_URL"),
+        (false, _) => None,
+    };
+
+    let report = sources::check_all(&engine, store.as_ref(), &metrics_registry).await?;
+    for line in &report.lines {
+        println!("{line}");
+    }
+    println!(
+        "\n{} verified, {} contradicted, {} unreachable, of {} sources",
+        report.outcome.verified,
+        report.outcome.mismatched,
+        report.outcome.unreachable,
+        report.outcome.total()
+    );
+    if let Some(store) = &store {
+        let _ = store;
+        println!("recorded to source_retrievals");
+    }
+
+    if report.outcome.mismatched > 0 {
+        println!(
+            "\nA source contradicted the rule set. Either the law has changed or the rule \
+             set was wrong when it was written; both need a person before anything ships."
+        );
+        std::process::exit(1);
+    }
+    if report.outcome.verified == 0 {
+        println!(
+            "\nNothing could be retrieved, so nothing is verified. The rules keep the \
+             status ceiling that unchecked sources earn them."
+        );
+        std::process::exit(2);
+    }
+    Ok(())
 }
 
 /// Waits for SIGTERM or Ctrl-C.

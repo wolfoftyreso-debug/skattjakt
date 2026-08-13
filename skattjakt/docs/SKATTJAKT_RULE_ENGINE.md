@@ -109,11 +109,13 @@ Every rule and every figure points into one registry at the top of
 is the operative words and figures the rule depends on — the strings whose
 absence means either the law moved or the rule was wrong when it was written.
 
-`tools/verify-sources.py` fetches each `machine_url`, strips the markup, and
-checks four things: the document is the one cited (the SFS number appears), the
-cited locator appears, every `must_contain` string appears, and — on success —
-records a timestamp and a SHA-256 of the text it read. `--write` puts the result
-back into the registry.
+The check itself lives in `crates/rules/src/verify.rs` and is pure: it is handed
+text and returns a verdict. It confirms four things — the document is the one
+cited (the SFS number appears in it), the cited locator appears, every
+`must_contain` string appears, and it records a SHA-256 of the text it read.
+Markup is stripped first, and `script` and `style` contents are dropped rather
+than flattened: a page whose only "25 procent" sits inside a `<script>` does not
+say 25 procent.
 
 The states form a ladder, weakest first:
 
@@ -124,23 +126,61 @@ The states form a ladder, weakest first:
 | `mismatch` | it was fetched and it does **not** say what the rule assumes |
 | `verified` | it was fetched and it does |
 
-A rule's state is the **weakest** of its sources: a rule resting on one checked
-paragraph and one unchecked one is unchecked.
+A rule's state is the **weakest** of its sources — a rule resting on one checked
+paragraph and one unchecked one is unchecked — with one exception:
+`engine::combine` makes a `mismatch` dominate. Taking the plain minimum reports
+`unreachable` for a rule citing one contradicted paragraph and one that could
+not be fetched, which hides the contradiction behind a network failure and lets
+the gate pass a rule we hold evidence against.
 
-Three properties are enforced rather than intended:
+### Where the state lives, and why not in the file
+
+The registry above ships inside the binary. Its `retrieval` block is only the
+**default**: the live record is a row in `source_retrievals`, written by the
+worker and read by every analysis. `migrations/0008_source_retrievals.sql`
+explains the reasoning, which is short — a verification that can only be
+recorded at build time can only be as current as the last build, and the law
+does not change on our release schedule.
+
+So the claim (which paragraph, what it is assumed to say, which strings must
+appear) is versioned with the code, and the check (when, what hash, what
+verdict) is not.
+
+### How it runs
+
+- **Continuously.** The analysis worker sweeps every six hours, considering it
+  every five minutes so a fresh deployment converges quickly. Requests are
+  spaced 750 ms apart, and a Postgres advisory lock stops two workers sweeping
+  at once — the guard holds its connection, because a lock released through a
+  pool can land on a different connection and silently fail.
+- **On demand.** `skattjakt-analysis-worker verify-sources [--ruleset PATH]
+  [--write]` runs the same check and prints a report. Exit codes are for a
+  pipeline: 0 all verified, 1 a source contradicted the rule set, 2 nothing
+  could be retrieved.
+
+One check, called from two places. Two implementations of "does this paragraph
+still say 25 per cent" drift, and the one that drifts is the one nobody runs.
+
+### What is enforced rather than intended
 
 - `RuleEngine::validate` rejects any source claiming `verified` without both a
-  hash and a timestamp, so the state cannot be granted by editing the file.
-- `--write` never promotes an unreachable source, and never clears an earlier
-  successful retrieval on a failed fetch — a proxy outage today is not evidence
-  about the law.
-- `tests/tools/verify-sources.sh` serves fixture pages over localhost and
-  asserts the verifier reaches the right verdict on each: a page that agrees, a
-  page whose rate has moved, the wrong statute, a missing paragraph, a figure
-  that appears only inside a `<script>`, a 404, and a refused connection. The
-  verifier has never returned `verified` against a real Swedish source from this
-  environment, so without those fixtures its checking logic would ship having
-  never run.
+  hash and a timestamp, and the `verified_carries_its_evidence` constraint
+  rejects the same row in the database. The state cannot be granted by editing
+  a file.
+- A failed fetch **never** clears an earlier successful retrieval. A proxy
+  outage today is not evidence about the law, and discarding last week's
+  verified hash because a gateway said no would make the record less true.
+- `tests/integration/source-verification.sh` runs the whole path against a real
+  Postgres and a real HTTP server: fixtures that agree, a rate that has moved, a
+  404, a refused connection, the hash changing when the page does, the failure
+  streak accumulating, and — the one that matters most — a verified source
+  surviving a later unreachable check. It finishes by starting the API and
+  asserting it reports what the sweep found rather than what the binary was
+  built with. 27 checks.
+- 16 unit tests in `verify.rs` cover the judgement itself, including the ones a
+  fixture server cannot easily produce: a paragraph number matching a longer
+  one, a chapter and paragraph too far apart to be the same citation, entities,
+  and an unterminated `<script>`.
 
 **Current state: 0 verified, 0 mismatched, 24 unretrieved.** Every statute host
 (`riksdagen.se`, `data.riksdagen.se`, `rkrattsbaser.gov.se`) is blocked by the

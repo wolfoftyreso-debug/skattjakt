@@ -1853,6 +1853,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
+ "reqwest",
  "serde",
  "serde_json",
  "skattjakt-core",
@@ -2033,6 +2034,7 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
+ "sha2",
  "skattjakt-core",
  "thiserror",
  "uuid",
@@ -2064,6 +2066,7 @@ dependencies = [
  "skattjakt-core",
  "skattjakt-identity",
  "skattjakt-model",
+ "skattjakt-rules",
  "skattjakt-simulate",
  "skattjakt-telemetry",
  "sqlx",

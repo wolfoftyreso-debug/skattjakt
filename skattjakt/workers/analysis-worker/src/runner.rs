@@ -240,11 +240,34 @@ impl Runner {
                 .increment(names::DOCUMENTS_UPLOADED, LabelSet::new());
         }
 
+        // Read once, at the start of the analysis, so every finding in one run
+        // reports the same standing. Reading per finding would let a sweep
+        // landing mid-analysis produce a report where two rules disagree about
+        // whether the same paragraph has been checked.
+        //
+        // A failure here is not a failure of the analysis: the embedded records
+        // are the fallback, and they say `unretrieved`, which is the cautious
+        // answer. Losing the database would otherwise stop analyses over a
+        // question about paperwork.
+        let source_states = match self.store.source_retrievals().await {
+            Ok(rows) => rows
+                .into_iter()
+                .map(|row| (row.source_id.clone(), row.as_retrieval()))
+                .collect(),
+            Err(error) => {
+                LogRecord::warn("could not read source retrieval state; using what shipped")
+                    .internal("error", error.to_string())
+                    .emit();
+                Default::default()
+            }
+        };
+
         let input = AnalysisInput {
             analysis_id,
             company: profile.clone(),
             documents,
             accounts_state: stored.accounts_state,
+            source_states,
         };
 
         let facts =

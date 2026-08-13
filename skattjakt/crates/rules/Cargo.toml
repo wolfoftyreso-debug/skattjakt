@@ -10,6 +10,7 @@ description = "Versioned Swedish tax rule engine with deterministic calculations
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 skattjakt-core.workspace = true
 thiserror.workspace = true
 

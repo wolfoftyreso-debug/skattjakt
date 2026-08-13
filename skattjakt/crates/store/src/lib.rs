@@ -18,6 +18,7 @@ pub mod notifications;
 pub mod page;
 pub mod s3;
 pub mod simulations;
+pub mod sources;
 pub mod uploads;
 
 use std::collections::BTreeMap;

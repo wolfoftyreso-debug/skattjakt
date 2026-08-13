@@ -379,6 +379,16 @@ pub mod names {
     pub const DOCUMENTS_UPLOADED: &str = "skattjakt_documents_uploaded_total";
     pub const EXTRACTION_FACTS: &str = "skattjakt_extracted_facts_total";
 
+    /// How many cited legal sources stand in each retrieval state.
+    ///
+    /// The one metric in this file that describes whether the product's answers
+    /// rest on anything. `state="mismatch"` above zero means a paragraph the
+    /// rules depend on stopped saying what they assume — every finding on that
+    /// rule has just been capped at "investigate", and somebody needs to read
+    /// the law. `state="verified"` falling is the same event seen a moment
+    /// earlier.
+    pub const SOURCE_STATES: &str = "skattjakt_cited_sources";
+
     // Monte Carlo simulation
     pub const SIMULATIONS_STARTED: &str = "skattjakt_simulations_started_total";
     pub const SIMULATIONS_FINISHED: &str = "skattjakt_simulations_finished_total";
@@ -507,6 +517,10 @@ pub fn register_all(registry: &Registry) {
         FOUND_NOTHING,
         "Analyses that completed with no presented finding.",
     );
+    registry.register_gauge(
+        SOURCE_STATES,
+        "Cited legal sources by how far each has been checked.",
+    );
     registry.register_counter(DOCUMENTS_UPLOADED, "Documents accepted, by mime type.");
     registry.register_counter(
         EXTRACTION_FACTS,
@@ -551,6 +565,32 @@ pub fn register_all(registry: &Registry) {
         RETENTION_DELETED,
         "Objects deleted by the retention job, by kind.",
     );
+}
+
+/// Publishes the standing of the cited legal sources after a verification
+/// sweep.
+///
+/// All four states are written every time, including the zeroes. A gauge that
+/// only appears when it is non-zero cannot be alerted on: `mismatch > 0` never
+/// fires if the series does not exist until the bad day, and by then the alert
+/// has no history to compare against.
+pub fn set_source_states(
+    registry: &Registry,
+    verified: usize,
+    mismatched: usize,
+    unreachable: usize,
+) {
+    for (state, count) in [
+        ("verified", verified),
+        ("mismatch", mismatched),
+        ("unreachable", unreachable),
+    ] {
+        registry.set(
+            names::SOURCE_STATES,
+            LabelSet::new().enumerated("state", state),
+            count as u64,
+        );
+    }
 }
 
 #[cfg(test)]

@@ -522,6 +522,64 @@ deleted and when.
 
 ---
 
+## 15A. A source contradicts the rule set
+
+`SkattjaktSourceContradictsRules`. The analysis worker fetched a paragraph the
+rule set cites and it no longer contains what the rule assumes.
+
+**This is not an outage.** Nothing is down, no customer request is failing, and
+the engine has already done the safe thing: every finding resting on that rule
+is capped at "investigate" rather than presented. What it needs is somebody who
+can read a statute.
+
+1. **Find out which source, and what changed.**
+
+   ```bash
+   kubectl -n $NS exec deploy/skattjakt-postgres -- \
+     psql -U skattjakt -c "SELECT source_id, note, retrieved_at, sha256
+                           FROM source_retrievals WHERE state = 'mismatch'"
+   ```
+
+   `note` names the specific string that went missing — usually a figure, e.g.
+   "the source does not contain: 25 procent".
+
+2. **Read the paragraph.** The registry entry in `rules/se-ruleset.json` has the
+   `url` a person can open and the `asserted_claim` the rule set believed.
+
+3. **Decide which of the three it is.**
+
+   | What you find | What to do |
+   |---|---|
+   | The law changed | Update the rule and its `must_contain`, bump the rule version, re-run the golden dataset. The old version stays in the evidence graph — earlier analyses cited it honestly |
+   | The rule was always wrong | Same, plus check `graph.affected_findings` for analyses that rested on it and decide whether customers need telling |
+   | The publisher reformatted the page | The claim still holds; adjust `must_contain` to a phrasing that survives the new layout, and say so in the commit |
+
+4. **Re-check without waiting six hours for the sweep.**
+
+   ```bash
+   kubectl -n $NS exec deploy/skattjakt-analysis-worker -- \
+     skattjakt-analysis-worker verify-sources --write
+   ```
+
+**What not to do:** do not edit `source_retrievals` to clear the state. The row
+is written by a retrieval and the database refuses a `verified` without a hash
+and a timestamp. Marking it by hand would remove the alert and leave the wrong
+figure in the arithmetic.
+
+### The related alerts
+
+- **`SkattjaktSourcesUnreachable`** — six hours of failed fetches. Check egress
+  first (`curl` the `machine_url` from a worker pod); a moved document shows as
+  a 404 in `note`, a blocked path as a connection failure. An earlier verified
+  retrieval is deliberately *kept* through this, so nothing is downgraded — but
+  the verification is ageing.
+- **`SkattjaktSourceSweepStopped`** — the metric series is absent, meaning no
+  sweep has finished in twelve hours. Usually the worker is down (§4 covers
+  that) or the advisory lock is held by a pod that is wedged rather than dead.
+  Check `pg_locks` for the sweep lock, and restart the holder.
+
+---
+
 ## 16. Alert index
 
 | Alert | Section |
@@ -537,4 +595,5 @@ deleted and when.
 | `SkattjaktPromptInjectionSpike` | §10 |
 | `SkattjaktBackupMissing`, `SkattjaktBackupFailed`, `SkattjaktRestoreTestFailed`, `SkattjaktRestoreTestStale` | §11 |
 | `SkattjaktRateLimiting` | §13 |
+| `SkattjaktSourceContradictsRules`, `SkattjaktSourcesUnreachable`, `SkattjaktSourceSweepStopped` | §15A |
 | `SkattjaktDiskFilling` | Expand the PVC; check the retention job is running |

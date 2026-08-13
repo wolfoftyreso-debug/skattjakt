@@ -35,7 +35,8 @@ pub struct RuleSource {
 /// been fetched, so "cited" meant only that somebody had typed a chapter and a
 /// paragraph.
 ///
-/// `Verified` is granted **only** by `tools/verify-sources.py`, which fetches
+/// `Verified` is granted **only** by a retrieval — the worker's sweep, or
+/// `skattjakt-analysis-worker verify-sources` run by hand — which fetches
 /// the document and records a hash of what it read. The rule set is rejected at
 /// load if anything claims `Verified` without one, so the state cannot be
 /// awarded by editing a file.
@@ -144,7 +145,6 @@ impl Source {
         self.retrieval.state
     }
 
-    /// A citation as a person would write it.
     /// The citation as a reader would write it.
     ///
     /// A paragraph reference is set directly against the document —

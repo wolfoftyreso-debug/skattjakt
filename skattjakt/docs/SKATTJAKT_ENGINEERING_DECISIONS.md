@@ -38,8 +38,17 @@ eventual signature nobody could re-check. So the rules and every constant were
 re-cited against a registry of 24 primary sources — statute paragraphs at
 `riksdagen.se`, Skatteverket's published positions — each carrying the claim the
 rule makes of it and the operative strings that claim depends on.
-`tools/verify-sources.py` fetches them and checks. `verified` now satisfies the
-gate alongside `reviewed`; `mismatch` overrides both and forces `investigate`.
+The analysis worker fetches them on a six-hour sweep and checks; the same check
+runs on demand as `skattjakt-analysis-worker verify-sources`. `verified` now
+satisfies the gate alongside `reviewed`; `mismatch` overrides both and forces
+`investigate`.
+
+The retrieval state lives in the database rather than in the rule set, and that
+is the part worth arguing. The rules are embedded in the binary on purpose — a
+build must carry the rule set it was tested against. But a verification recorded
+at build time can only ever be as current as the last build, and the law does
+not change on our release schedule. So the *claim* is versioned with the code
+and the *check* is not.
 
 This is strictly more falsifiable than what it supplements. A signature cannot
 be re-checked without repeating the review and says nothing once the law
@@ -51,8 +60,9 @@ retrieval establishes that the paragraph says what the rule assumes, not that
 the rule computes the right base to apply it to.
 
 **Status.** 0 of 24 sources retrieved. Every statute host is blocked by this
-environment's egress proxy, so the machinery is proven against localhost
-fixtures (`tests/tools/verify-sources.sh`, 24 checks) and has never returned
+environment's egress proxy, so the machinery is proven against a real Postgres
+and a real HTTP server
+(`tests/integration/source-verification.sh`, 27 checks) and has never returned
 `verified` for a real Swedish source. The registry says `unretrieved` rather
 than being filled in from a language model's memory of the statute, which would
 have made every downstream check meaningless while looking green.

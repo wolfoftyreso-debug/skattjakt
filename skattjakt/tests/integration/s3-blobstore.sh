@@ -41,13 +41,20 @@ docker run -d --name "$CONTAINER" \
     -e "MINIO_ROOT_PASSWORD=$SECRET_KEY" \
     mirror.gcr.io/minio/minio:latest server /data >/dev/null
 
-for _ in $(seq 1 60); do
-    if curl -fsS "http://127.0.0.1:$PORT/minio/health/live" >/dev/null 2>&1; then break; fi
+# MinIO answers `/minio/health/live` with 200 while it is still formatting its
+# pool, and rejects S3 operations with 503 until that finishes. Waiting on the
+# health endpoint therefore returns too early and the next request fails —
+# intermittently, depending on how busy the disk is. So wait for the operation
+# the test actually needs instead: a bucket listing is the cheapest request that
+# exercises the same path as everything after it.
+for _ in $(seq 1 120); do
+    curl -fsS -o /dev/null "http://127.0.0.1:$PORT/" \
+        --user "$ACCESS_KEY:$SECRET_KEY" --aws-sigv4 "aws:amz:us-east-1:s3" 2>/dev/null && break
     sleep 0.5
 done
-curl -fsS "http://127.0.0.1:$PORT/minio/health/live" >/dev/null || {
-    echo "minio did not start"; docker logs "$CONTAINER" | tail -20; exit 1;
-}
+curl -fsS -o /dev/null "http://127.0.0.1:$PORT/" \
+    --user "$ACCESS_KEY:$SECRET_KEY" --aws-sigv4 "aws:amz:us-east-1:s3" || {
+    echo "minio did not become ready"; docker logs "$CONTAINER" | tail -20; exit 1; }
 echo "minio ready on :$PORT"
 
 # The bucket, created with MinIO's own client so the test does not depend on the

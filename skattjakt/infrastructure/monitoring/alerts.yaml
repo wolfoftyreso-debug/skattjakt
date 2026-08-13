@@ -219,3 +219,40 @@ spec:
           labels: { severity: warning }
           annotations:
             summary: "{{ $labels.persistentvolumeclaim }} is over 85% full"
+
+    - name: skattjakt.sources
+      interval: 60s
+      rules:
+        # The alert that says the product's answers stopped resting on anything.
+        # A cited paragraph was fetched and no longer contains the figure the
+        # rule multiplies by: either the law changed or the rule was wrong when
+        # it was written. Every finding on that rule has already been capped at
+        # "investigate" by the engine, so this is not an outage — it is a
+        # request for a person to read the statute.
+        - alert: SkattjaktSourceContradictsRules
+          expr: skattjakt_cited_sources{state="mismatch"} > 0
+          for: 10m
+          labels: { severity: critical }
+          annotations:
+            summary: A cited legal source no longer says what the rule set assumes
+            runbook: SKATTJAKT_RUNBOOK.md#a-source-contradicts-the-rule-set
+
+        # Not an error on its own — the statute hosts have outages like anyone.
+        # Sustained, it means a moved document or a blocked egress path, and the
+        # verification quietly stops being current while looking scheduled.
+        - alert: SkattjaktSourcesUnreachable
+          expr: skattjakt_cited_sources{state="unreachable"} > 0
+          for: 6h
+          labels: { severity: warning }
+          annotations:
+            summary: A cited legal source has been unreachable for six hours
+
+        # The sweep publishes all four states every run, so the series going
+        # absent means no sweep has completed — which looks identical to
+        # "everything is fine" on every other dashboard.
+        - alert: SkattjaktSourceSweepStopped
+          expr: absent(skattjakt_cited_sources)
+          for: 12h
+          labels: { severity: warning }
+          annotations:
+            summary: No source verification sweep has completed in twelve hours

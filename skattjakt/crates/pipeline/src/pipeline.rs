@@ -43,8 +43,8 @@ pub struct PipelineConfig {
     /// Whether a rule whose every cited source has been machine-verified may
     /// satisfy the gate above without a reviewer's signature.
     ///
-    /// What verification establishes, precisely: `tools/verify-sources.py`
-    /// fetched each cited paragraph from the authority that publishes it, and
+    /// What verification establishes, precisely: a retrieval fetched each
+    /// cited paragraph from the authority that publishes it, and
     /// the operative words and figures the rule depends on were present in the
     /// retrieved text. It recorded a timestamp and a hash, so the check is
     /// repeatable and the day the law moves the check fails.
@@ -83,6 +83,20 @@ pub struct AnalysisInput {
     pub company: CompanyProfile,
     pub documents: Vec<DocumentInput>,
     pub accounts_state: AccountsState,
+    /// How far each cited source had been checked when this analysis ran,
+    /// keyed by registry id.
+    ///
+    /// An input rather than engine configuration, because it is part of what
+    /// the answer rested on: the same accounts analysed before and after a
+    /// verification sweep are two different analyses, and the evidence chain
+    /// has to be able to say which one a reader is looking at.
+    ///
+    /// Empty means "nothing known beyond what shipped", and the embedded
+    /// registry's own retrieval record is used. That is the honest default: a
+    /// deployment with no database, or one whose worker has never swept, has
+    /// not checked anything, and the embedded records say `unretrieved`.
+    #[allow(clippy::doc_markdown)]
+    pub source_states: BTreeMap<String, skattjakt_rules::Retrieval>,
 }
 
 #[derive(Debug, Error)]
@@ -167,6 +181,24 @@ impl AnalysisPipeline {
 
     pub fn rule_set_version(&self) -> &str {
         self.engine.version()
+    }
+
+    /// How far a rule's sources have been checked, live state first.
+    ///
+    /// The folding rule — weakest wins, except that a contradiction dominates —
+    /// lives in `skattjakt_rules::engine::combine` so the pipeline, the engine
+    /// and the API cannot answer this question three different ways.
+    fn source_state_of(&self, rule: &Rule, input: &AnalysisInput) -> SourceState {
+        skattjakt_rules::engine::combine(rule.sources.iter().map(|id| {
+            match input.source_states.get(id) {
+                Some(live) => live.state,
+                None => self
+                    .engine
+                    .set()
+                    .source_by_id(id)
+                    .map_or(SourceState::Unretrieved, |source| source.state()),
+            }
+        }))
     }
 
     /// Runs a complete analysis.
@@ -624,12 +656,18 @@ impl AnalysisPipeline {
                     .source_by_id(id)
                     .map(|source| (id, source))
             })
-            .map(|(_, source)| skattjakt_core::Citation {
-                reference: source.citation(),
-                url: source.url.clone(),
-                claim: source.asserted_claim.clone(),
-                state: source.state().as_str().to_string(),
-                retrieved_at: source.retrieval.at.clone(),
+            .map(|(id, source)| {
+                // The live record when a sweep has produced one, the embedded
+                // record otherwise. The registry supplies what the source *is*;
+                // the database supplies how far anyone has got with it.
+                let retrieval = input.source_states.get(id).unwrap_or(&source.retrieval);
+                skattjakt_core::Citation {
+                    reference: source.citation(),
+                    url: source.url.clone(),
+                    claim: source.asserted_claim.clone(),
+                    state: retrieval.state.as_str().to_string(),
+                    retrieved_at: retrieval.at.clone(),
+                }
             })
             .collect();
 
@@ -742,7 +780,7 @@ impl AnalysisPipeline {
             )
         };
 
-        let status = self.status_for(rule, evaluation, verdict, &evidence, confidence);
+        let status = self.status_for(rule, evaluation, verdict, &evidence, confidence, input);
 
         let mut missing = evaluation
             .missing_facts
@@ -791,6 +829,7 @@ impl AnalysisPipeline {
         verdict: Option<&Verdict>,
         evidence: &EvidenceChain,
         confidence: Confidence,
+        input: &AnalysisInput,
     ) -> OpportunityStatus {
         if verdict.is_some_and(|v| !v.survives) {
             return OpportunityStatus::Rejected;
@@ -809,7 +848,7 @@ impl AnalysisPipeline {
         // no evidence — it is evidence pointing the other way, and it outranks
         // both the review state and the flag below. Either the law changed or
         // the rule was wrong when it was written; both need a person.
-        let sources = self.engine.set().source_state_of(rule);
+        let sources = self.source_state_of(rule, input);
         if sources == SourceState::Mismatch {
             return OpportunityStatus::Investigate;
         }

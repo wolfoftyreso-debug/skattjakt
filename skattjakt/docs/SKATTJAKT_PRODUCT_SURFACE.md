@@ -242,8 +242,9 @@ A signature is a weak guarantee: unfalsifiable, unchecked by anyone afterwards,
 and worthless the moment the law moves. So every rule and every constant was
 re-cited against a registry of 24 primary sources — statute paragraphs, each
 with the claim the rule makes of it and the operative strings that claim depends
-on — and `tools/verify-sources.py` fetches them and checks the text still says
-it.
+on — and the analysis worker fetches them on a six-hour sweep and checks the
+text still says it, writing the verdict to `source_retrievals` where every
+analysis reads it.
 
 **None of them could be fetched.** `riksdagen.se`, `data.riksdagen.se` and
 `rkrattsbaser.gov.se` are all blocked by this environment's egress proxy; the
@@ -252,16 +253,27 @@ records `unretrieved`. Writing the statute text from memory and marking it
 verified was available and was not done: it would have turned every downstream
 check green while making all of them meaningless.
 
-What *was* verified is the machinery, against pages whose contents we control:
-`tests/tools/verify-sources.sh` serves fixtures over localhost and asserts the
-verifier's verdict on a page that agrees, a page whose rate has moved, the wrong
-statute, a missing paragraph, a figure present only inside a `<script>`, a 404
-and a refused connection — plus that `--write` never invents a `verified` state
-and never erases an earlier retrieval on a network failure. 24 checks. Without
-those, the verifier's checking logic would ship having never once run.
+What *was* verified is the machinery, against a real database and a real HTTP
+server. `tests/integration/source-verification.sh` migrates a Postgres, serves
+fixtures over localhost and asserts the whole path: a page that agrees, a rate
+that has moved, a 404, a refused connection, the hash changing when the page
+does, the failure streak accumulating, and — the one that matters most — a
+verified source surviving a later unreachable check, because a proxy outage is a
+fact about the network and not about the law. It finishes by starting the API
+and asserting it reports what the sweep found rather than what the binary was
+built with. 27 checks, and 16 unit tests on the judgement itself.
+
+That suite earned its keep immediately. It caught a defect in how a rule's
+several sources are folded into one state: a rule citing one contradicted
+paragraph and one unreachable one reported `unreachable`, because the fold took
+the minimum of a ladder on which `mismatch` outranks `unreachable`. The gate saw
+no contradiction and capped the finding at "verify" instead of dropping it to
+"investigate" — the bad news hidden behind worse news about the network. A
+contradiction is now sticky, and `engine::combine` is the one place all three
+readers (engine, pipeline, API) ask.
 
 The gate consumes the result: `identified` now requires a review **or** every
-cited source verified, and a `mismatch` forces `investigate` regardless. Five
+cited source verified, and a `mismatch` forces `investigate` regardless. Nine
 pipeline tests construct each state and assert the ladder, because the branch
 that eventually matters is the one no current data exercises.
 
@@ -270,7 +282,7 @@ that eventually matters is the one no current data exercises.
 Verified in this environment, in this session:
 
 ```
-624 unit and integration tests          golden dataset  precision 1.000 recall 1.000
+653 unit and integration tests          golden dataset  precision 1.000 recall 1.000
  61 session checks (live API)            10 tenant isolation checks (real Postgres)
  39 security checks (live API)           24 failure-injection checks (real Postgres)
  20 end-to-end product steps              5 S3 checks against a real MinIO
@@ -280,9 +292,9 @@ Verified in this environment, in this session:
     and upgrade-with-data from every       verified with 7 violations
     earlier version
   9 container image assertions          305 SBOM components, all checksummed
- 20 documentation coupling checks        24 source-verifier checks against
- 41 NetworkPolicy semantic checks           localhost fixture pages
-    per environment
+ 20 documentation coupling checks        27 source-verification checks against
+ 41 NetworkPolicy semantic checks           a real Postgres and a real server
+    per environment                        16 unit tests on the check itself
 ```
 
 Not verified, and not claimed:
