@@ -397,14 +397,21 @@ impl Store {
         provider: &str,
         provider_reference: &str,
     ) -> StoreResult<Option<CompanyId>> {
-        let row = sqlx::query(
-            "SELECT company_id FROM payments WHERE provider = $1 AND provider_reference = $2",
-        )
-        .bind(provider)
-        .bind(provider_reference)
-        .fetch_optional(self.pool())
-        .await?;
-        Ok(row.map(|row| CompanyId::from_uuid(row.get("company_id"))))
+        // Through the SECURITY DEFINER function, not the table.
+        //
+        // `payments` is FORCE RLS keyed on `current_company_id()`, and this runs
+        // before the company is known — finding it is the point. Read directly,
+        // the policy compared `company_id = NULL` and the query returned nothing
+        // every single time, which made settlement structurally impossible. See
+        // `0012_settlement_can_find_its_payment.sql`.
+        let row = sqlx::query("SELECT company_for_payment_reference($1, $2) AS company_id")
+            .bind(provider)
+            .bind(provider_reference)
+            .fetch_optional(self.pool())
+            .await?;
+        Ok(row
+            .and_then(|row| row.get::<Option<uuid::Uuid>, _>("company_id"))
+            .map(CompanyId::from_uuid))
     }
 
     /// Payments nobody has resolved, oldest first.
@@ -422,15 +429,16 @@ impl Store {
         older_than: Duration,
         limit: i64,
     ) -> StoreResult<Vec<(CompanyId, Uuid, String, String)>> {
+        // Through the SECURITY DEFINER function, for the same reason as above:
+        // this is maintenance across every tenant, and read directly it saw
+        // nothing at all. A sweep that silently returns an empty list is a
+        // sweep that looks healthy while every payment goes unsettled.
         let rows = sqlx::query(
-            "SELECT company_id, id, provider, provider_reference
-             FROM payments
-             WHERE state = 'pending' AND updated_at < now() - $1::interval
-             ORDER BY updated_at
-             LIMIT $2",
+            "SELECT company_id, payment_id, provider, provider_reference
+             FROM unsettled_payments($1, $2)",
         )
         .bind(older_than)
-        .bind(limit)
+        .bind(limit as i32)
         .fetch_all(self.pool())
         .await?;
 
@@ -439,7 +447,7 @@ impl Store {
             .map(|row| {
                 (
                     CompanyId::from_uuid(row.get("company_id")),
-                    row.get("id"),
+                    row.get("payment_id"),
                     row.get("provider"),
                     row.get("provider_reference"),
                 )

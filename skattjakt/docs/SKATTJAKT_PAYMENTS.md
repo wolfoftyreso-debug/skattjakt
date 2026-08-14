@@ -316,14 +316,36 @@ collected in the first place.
 |---|---|
 | Provider | Swish Commerce API v2, mutual TLS |
 | Verified against a real Swish endpoint | **No.** No merchant agreement exists yet |
+| Verified against a stand-in over real mutual TLS | Yes — `tests/integration/swish-wire.sh`, 16 checks |
 | Verified against a real database and a real API | Yes — `tests/integration/payments.sh`, 27 checks |
 | Settlement logic | 24 unit tests in `crates/payments` |
 | The six pages the scheme requires | Published — `tests/e2e/shopfront.sh`, 46 checks |
 | Terms reviewed by a lawyer | **No.** Section 10 |
 
 The wire format in `swish.rs` — URLs, field names, status strings — is written
-against the documented v2 Commerce API and **must be checked against the
-specification the bank supplies**. It is concentrated in two structs (`Wire`,
+against the documented v2 Commerce API and **must still be checked against the
+specification the bank supplies**. It is now at least exercised: `swish-stub.py`
+stands in for Swish the way MinIO stands in for S3 in the other suites, over a
+real mutual-TLS handshake with a server that requires a client certificate. That
+cannot tell you Swish agrees with the documentation. It does assert, on every
+run, that the client sends what this repository believes the documentation says.
+
+Two defects surfaced the first time the client was allowed to speak, and neither
+could have been found any other way:
+
+* **The callback resolved nothing.** It read `payeePaymentReference` — *our*
+  order id, echoed back — and looked it up among `provider_reference`, which
+  holds the instruction id. Two different identifiers; the lookup never matched.
+* **Settlement could not see its own payment.** `payments` is FORCE RLS keyed on
+  `current_company_id()`, and both the callback's lookup and the reconciliation
+  sweep run before the company is known. Read directly they compared
+  `company_id = NULL` and returned nothing, always — so settlement was
+  structurally impossible, not merely slow. Every test had marked orders paid
+  with `psql` as a superuser, which bypasses RLS, so the settlement logic was
+  well tested and the lookup that reaches it had never run. Fixed by two narrow
+  SECURITY DEFINER functions in `0012`, the same shape as `0004`'s; the suite
+  now asserts both **as the application role**, because asserting them as a
+  superuser passes whether or not the hole is open. It is concentrated in two structs (`Wire`,
 `WirePayment`) precisely so that checking it is reading two structs rather than
 auditing a client.
 

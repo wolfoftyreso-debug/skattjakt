@@ -285,6 +285,14 @@ pub async fn create_order(
         LabelSet::new().enumerated("outcome", "started"),
     );
 
+    // Re-read rather than reporting the row as it was before the payment was
+    // started: `start_payment` moves the order to `awaiting_payment`, and the
+    // response said `created`. A client that polled immediately saw the state
+    // change for no reason it could observe.
+    let mut tenant = store.tenant(company_id).await.map_err(internal)?;
+    let order = tenant.order(order.id).await.map_err(internal)?;
+    tenant.commit().await.map_err(internal)?;
+
     Ok((
         StatusCode::CREATED,
         Json(order_json(&order, handle.token.as_deref())),
@@ -393,9 +401,22 @@ pub async fn swish_callback(
     State(state): State<AppState>,
     body: String,
 ) -> Result<Response, Problem> {
+    // `id`, not `payeePaymentReference`.
+    //
+    // These are two different identifiers and the callback used the wrong one.
+    // `payeePaymentReference` is *our* reference — the order id we asked Swish
+    // to echo — while `payments.provider_reference` holds the instruction id,
+    // which is what `id` carries. Looking the order id up among instruction ids
+    // never matched, so the callback resolved nothing and settlement only ever
+    // happened when the reconciliation sweep came round a minute later.
+    //
+    // Nothing was lost by it and nothing was paid twice: the sweep is the
+    // guarantee and the callback is the optimisation. But the optimisation was
+    // dead, and every test passed because both a forged callback and a real one
+    // did exactly the same nothing.
     let reference = serde_json::from_str::<skattjakt_payments::swish::WirePayment>(&body)
         .ok()
-        .and_then(|payment| payment.payee_payment_reference);
+        .and_then(|payment| payment.id);
 
     match reference {
         Some(reference) => {

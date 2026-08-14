@@ -156,6 +156,23 @@ pub struct SwishProvider {
     config: SwishConfig,
 }
 
+/// An error and everything under it, joined.
+///
+/// `reqwest::Error` displays as "builder error" and keeps the reason — a
+/// rejected private key, an unparsable certificate — in its source chain. An
+/// operator setting up a real Swish certificate for the first time would get
+/// that bare phrase and nothing to act on, which is the moment this message
+/// matters most.
+fn chain(error: &dyn std::error::Error) -> String {
+    let mut parts = vec![error.to_string()];
+    let mut source = error.source();
+    while let Some(cause) = source {
+        parts.push(cause.to_string());
+        source = cause.source();
+    }
+    parts.join(": ")
+}
+
 impl SwishProvider {
     pub fn new(config: SwishConfig) -> Result<Self, String> {
         let identity = reqwest::Identity::from_pem(&config.client_identity_pem)
@@ -172,7 +189,7 @@ impl SwishProvider {
             // certificate somewhere it was not meant for.
             .redirect(reqwest::redirect::Policy::none())
             .build()
-            .map_err(|e| format!("the Swish HTTP client could not be built: {e}"))?;
+            .map_err(|e| format!("the Swish HTTP client could not be built: {}", chain(&e)))?;
 
         Ok(Self { client, config })
     }
