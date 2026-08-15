@@ -424,7 +424,22 @@ fn control_review(opportunities: &[Highlight], result: &AnalysisResult) -> Contr
 
     for highlight in opportunities {
         match highlight.status.as_str() {
-            "warning" | "investigate" => review.must_check.push(highlight.clone()),
+            // `verify` belongs here, and putting it under "possible
+            // improvement" was the wrong way round.
+            //
+            // The band means *the engine could not settle this*, and `verify`
+            // says exactly that: the rule or the calculation needs checking. It
+            // is not a nuance either — in a build where no legal source has been
+            // retrieved and no rule professionally reviewed, every finding is
+            // capped at `verify`. So an assistant who bought Skattjakt Kontroll
+            // got a review whose "must be checked before filing" section was
+            // empty, and six improvements each resting on an unverified rule.
+            //
+            // That is the precise failure the source-state ladder exists to
+            // prevent, reintroduced one layer above it.
+            "warning" | "investigate" | "verify" => review.must_check.push(highlight.clone()),
+            // Only `identified` — strong evidence, reviewed rule — is an
+            // improvement somebody can act on without checking first.
             _ => review.possible_improvement.push(highlight.clone()),
         }
     }

@@ -361,10 +361,23 @@ action" leaves the reader to do the ranking the product exists to do.
 
 | Band | What is in it |
 |---|---|
-| Måste kontrolleras | Findings the engine could not settle — status `warning` or `investigate` |
-| Möjlig förbättring | Everything else that was presented, with a range where one could be computed |
+| Måste kontrolleras | Findings the engine could not settle — status `warning`, `investigate` or `verify` |
+| Möjlig förbättring | Only `identified`: strong evidence and a reviewed rule |
 | Ser korrekt ut | Rules evaluated against values we actually read, which did not apply |
 | Värt att ta upp med kunden | Findings with a computed amount, largest first |
+
+### Why `verify` is a must-check and not an improvement
+
+`verify` means the rule or the calculation needs checking. It sat under "möjlig
+förbättring" until a real analysis was run through all three layers and
+compared: every one of the six findings was `verify` — because no legal source
+has been retrieved and no rule professionally reviewed, which caps every finding
+in this build — so "måste kontrolleras" was empty while six improvements each
+rested on an unverified rule.
+
+That is the failure the source-state ladder exists to prevent, reintroduced one
+layer above it. A band promising "what must be checked before filing" that is
+empty precisely when everything needs checking is worse than no band at all.
 
 ### Why "ser korrekt ut" is not simply "did not fire"
 

@@ -369,6 +369,86 @@ echo "$MARKDOWN" | grep -q "källa ej kontrollerad" \
     || fail "the markdown report does not say its sources are unchecked"
 echo "  markdown export renders"
 
+# --- 16B. what each of the three products actually delivers -----------------
+#
+# Three presentation layers over one engine, sold at two prices. Nothing had
+# ever checked what a buyer gets for the difference — only that the field
+# exists. This runs the same finished analysis through all three and compares.
+#
+# Reachable here because this deployment does not require payment: with payments
+# on, the layer is fixed at redemption and asking for another is a 403. That is
+# the point of the gate, and it is asserted in `payments.sh`.
+
+step "16B. the three presentation layers"
+REPORT_PRIVATE="$(api GET "/v1/analyses/$ANALYSIS/report?audience=private" "$TOKEN_A")"
+REPORT_COMPANY="$(api GET "/v1/analyses/$ANALYSIS/report?audience=company" "$TOKEN_A")"
+REPORT_ACCOUNTANT="$(api GET "/v1/analyses/$ANALYSIS/report?audience=accountant" "$TOKEN_A")"
+python3 - "$REPORT_PRIVATE" "$REPORT_COMPANY" "$REPORT_ACCOUNTANT" <<'LAYERS' || exit 1
+import json, sys
+
+private, company, accountant = (json.loads(a) for a in sys.argv[1:4])
+
+# The 69-kronor product has to contain something the 29-kronor one does not, or
+# the price difference is for a field name.
+review = accountant["sections"].get("control_review")
+assert review, "the accountant layer carried no control review"
+assert private["sections"].get("control_review") is None, \
+    "the private layer carried the accountant's control review"
+assert company["sections"].get("control_review") is None, \
+    "the company layer carried the accountant's control review"
+
+# And it has to be populated, not merely present. Four bands; a real analysis
+# with findings must land something in at least one of them, and the talking
+# points — the part a firm is actually buying — must carry amounts.
+bands = {k: len(v) for k, v in review.items()}
+assert sum(bands.values()) > 0, f"the control review is empty: {bands}"
+
+# The band that says "check this before filing" must not be empty while findings
+# are unsettled. Every finding this build can produce is capped at `verify` —
+# no legal source has been retrieved — so an empty must-check would mean six
+# improvements each resting on an unverified rule, which is the failure the
+# source-state ladder exists to prevent.
+unsettled = [o for o in accountant["sections"]["opportunities"]
+             if o["status"] != "identified"]
+if unsettled:
+    assert review["must_check"], \
+        f"{len(unsettled)} findings the engine could not settle, and nothing to check"
+for item in review["possible_improvement"]:
+    assert item["status"] == "identified", \
+        f"{item['title']} is offered as an improvement with status {item['status']}"
+for point in review["worth_raising"]:
+    assert point["impact_display"], "a talking point with no amount"
+    assert point["impact"]["high"] >= point["impact"]["low"]
+statuses = {}
+for h in accountant["sections"]["opportunities"]:
+    statuses[h["status"]] = statuses.get(h["status"], 0) + 1
+print(f"  control review: {bands}; finding statuses: {statuses}")
+
+# Everything else is the same report. Stated as an assertion rather than left
+# implied, because the API contract used to describe `private` as "written for
+# someone reading about their own affairs" — a difference that does not exist in
+# the code. Either this fails one day because somebody built it, or it keeps the
+# documentation honest.
+# The report names the layer it was built for, so a saved file can be told
+# apart from another. That label and the control review are the only two things
+# allowed to differ.
+assert (private["sections"]["audience"], company["sections"]["audience"],
+        accountant["sections"]["audience"]) == ("private", "company", "accountant"), \
+    "a report does not name its own layer"
+
+def body(report):
+    sections = dict(report["sections"])
+    sections.pop("control_review", None)
+    sections.pop("audience", None)
+    return {**report, "sections": sections}
+
+assert body(private) == body(company), \
+    "the private and company layers differ, which nothing documents"
+assert body(company) == body(accountant), \
+    "the accountant layer changes more than the control review"
+print("  the three layers differ by the control review and nothing else")
+LAYERS
+
 # --- 17. audit trail --------------------------------------------------------
 
 step "17. audit trail"

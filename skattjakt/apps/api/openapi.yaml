@@ -1473,16 +1473,27 @@ paths:
 
         `?audience=` selects the presentation layer. **The analysis behind all
         three is the same one** — same rules, same evidence, same status ladder
-        — so two audiences can never disagree about what was found. What
-        changes is grouping and emphasis:
+        — so two audiences can never disagree about what was found.
 
-        * `company` (default) — the findings as they stand.
-        * `private` — the same, written for someone reading about their own
-          affairs. Note that the shipped rule set contains no rules for private
-          individuals, so this currently returns an analysis of a company.
-        * `accountant` — adds `control_review`: what must be checked before
-          filing, what might be improved, what was checked and cleared, and
-          what is worth raising with the client.
+        What actually differs, stated plainly because this used to promise more
+        than it delivered:
+
+        * `accountant` adds `control_review` — what must be checked before
+          filing, what might be improved, what was checked and cleared, and what
+          is worth raising with the client. This is the whole of the difference
+          between the products.
+        * `sections.audience` names the layer, so a saved report can be told
+          apart from another.
+        * **Nothing else.** `private` and `company` return byte-identical
+          reports apart from that label. An earlier version of this document
+          described `private` as "written for someone reading about their own
+          affairs", which was never built. `tests/e2e/end-to-end.sh` §16B runs a
+          real analysis through all three and asserts the difference is exactly
+          the control review and the label — so this description cannot drift
+          from the code again in either direction.
+
+        `private` is in any case not sellable by this build: the rule set has no
+        private-individual rules, so `POST /v1/orders` refuses it.
 
         An unrecognised value is a 400 rather than a silent fall back to the
         default: a caller asking for `accountant` and quietly receiving the

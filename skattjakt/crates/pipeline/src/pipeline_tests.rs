@@ -1162,12 +1162,41 @@ async fn the_accountant_view_separates_what_must_be_checked_from_what_might_be_e
     let banded = review.must_check.len() + review.possible_improvement.len();
     assert_eq!(banded, report.sections.opportunities.len());
 
+    // `verify` belongs in must-check: the band means the engine could not
+    // settle the finding, and `verify` says the rule or the calculation needs
+    // checking. It used to fall into "possible improvement", which left the
+    // must-check band empty for every analysis this build can produce — nothing
+    // has a retrieved source, so nothing rises above `verify`.
     for item in &review.must_check {
         assert!(
-            item.status == "warning" || item.status == "investigate",
+            matches!(item.status.as_str(), "warning" | "investigate" | "verify"),
             "{} is in must-check with status {}",
             item.title,
             item.status
+        );
+    }
+    for item in &review.possible_improvement {
+        assert_eq!(
+            item.status, "identified",
+            "{} is offered as an improvement with status {}",
+            item.title, item.status
+        );
+    }
+
+    // The band that exists to say "check this before filing" must not be empty
+    // while findings are unsettled. This is the assertion that would have
+    // caught it: with the shipped rule set every finding is `verify`, so an
+    // empty must-check means the banding is wrong rather than the accounts
+    // being clean.
+    if report
+        .sections
+        .opportunities
+        .iter()
+        .any(|o| o.status != "identified")
+    {
+        assert!(
+            !review.must_check.is_empty(),
+            "findings the engine could not settle, and nothing to check before filing"
         );
     }
 
