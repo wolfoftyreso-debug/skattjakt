@@ -580,6 +580,43 @@ figure in the arithmetic.
 
 ---
 
+## 15C. Payment callbacks resolve nothing
+
+`SkattjaktPaymentCallbacksUnknown`. Callbacks are arriving, they are readable,
+and not one of them names a payment this system can find.
+
+**Not urgent, and not a money problem.** The callback is an optimisation: the
+reconciliation sweep settles every payment within about a minute whether or not
+a callback ever arrives. What this alert means is that settlement is running a
+minute late for every customer, and that something is wrong with the identifier.
+
+The alert requires *zero* accepted callbacks alongside the unknown ones, which
+is what separates "somebody is probing an unauthenticated endpoint" from "the
+callback is broken". Probing produces unknowns while real ones keep resolving.
+
+Two causes, in order of likelihood:
+
+1. **The identifier moved.** This system reads `id` from the callback body and
+   matches it against `payments.provider_reference`, which holds the instruction
+   id it generated. If Swish changes which field carries that, every callback
+   becomes unresolvable at once — which is exactly the shape this alert fires
+   on. It has happened once already, from the other direction: the callback used
+   to read `payeePaymentReference`, our own order id, and matched nothing ever.
+
+   ```bash
+   kubectl -n $NS logs deploy/skattjakt-api | grep payment_callbacks | tail
+   ```
+
+   Compare a callback body against `payments.provider_reference` for the same
+   order. If they are different identifiers, that is the fault.
+
+2. **Somebody is posting rubbish at the endpoint.** Harmless — the endpoint
+   grants nothing, see `SKATTJAKT_PAYMENTS.md` §1 — but if accepted callbacks
+   have also stopped, cause 1 is hiding behind it.
+
+Settlement continues throughout. Nothing needs to be failed over and no customer
+needs to be contacted: they are paying and being served, a minute slower.
+
 ## 15B. A payment was refused after the provider called it successful
 
 `SkattjaktPaymentsRefusedAfterSuccess`. Swish said a payment completed and this

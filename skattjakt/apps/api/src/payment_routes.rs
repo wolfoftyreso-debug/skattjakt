@@ -420,14 +420,27 @@ pub async fn swish_callback(
 
     match reference {
         Some(reference) => {
+            // Three outcomes, not two.
+            //
+            // A callback that named a payment we could not find used to be
+            // counted as `accepted`, which is exactly how a callback that
+            // resolved *nothing at all* — it read the wrong field — produced a
+            // healthy-looking metric for as long as it existed. `unknown` is
+            // what a forged callback looks like, and it is also what a broken
+            // one looks like; a sustained rate of it means one or the other,
+            // and both are worth knowing.
+            let outcome = match settle_by_reference(&state, &reference).await {
+                Ok(Some(_)) => "accepted",
+                Ok(None) => "unknown",
+                // Anything that failed here is picked up by the sweep, so it is
+                // counted rather than reported: the caller is Swish, and there
+                // is nothing useful to tell it.
+                Err(_) => "failed",
+            };
             state.metrics.increment(
                 names::PAYMENT_CALLBACKS,
-                LabelSet::new().enumerated("outcome", "accepted"),
+                LabelSet::new().enumerated("outcome", outcome),
             );
-            // Deliberately ignoring the result: the caller is Swish, not a
-            // customer, and there is nothing useful to tell it. Anything that
-            // failed here is picked up by the sweep.
-            let _ = settle_by_reference(&state, &reference).await;
         }
         None => {
             state.metrics.increment(
@@ -446,7 +459,17 @@ pub async fn swish_callback(
 /// The single settlement path. The callback calls it, the reconciliation sweep
 /// calls it, and a client polling an order does not — because a client must
 /// never be able to drive traffic at the payment provider.
-pub async fn settle_by_reference(state: &AppState, reference: &str) -> Result<OrderState, Problem> {
+/// `None` when the reference names nothing this system knows.
+///
+/// Distinguished from a settled order rather than folded into it, because the
+/// two look identical from outside and one of them is a bug. A callback whose
+/// reference resolved to nothing was counted as `accepted` — which is how a
+/// callback that had never resolved anything at all went unnoticed. See the
+/// note on `swish_callback`.
+pub async fn settle_by_reference(
+    state: &AppState,
+    reference: &str,
+) -> Result<Option<OrderState>, Problem> {
     let store = store(state)?.clone();
     let provider = state.payments.provider();
 
@@ -459,11 +482,11 @@ pub async fn settle_by_reference(state: &AppState, reference: &str) -> Result<Or
     else {
         // An unknown reference is not an error worth reporting upward: it is
         // what a forged callback looks like, and the correct response is to do
-        // nothing.
-        return Ok(OrderState::Created);
+        // nothing. It is still worth *counting* — see the caller.
+        return Ok(None);
     };
 
-    settle_payment(state, company_id, reference).await
+    settle_payment(state, company_id, reference).await.map(Some)
 }
 
 async fn settle_payment(

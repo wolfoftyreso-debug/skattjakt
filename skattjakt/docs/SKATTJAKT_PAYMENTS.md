@@ -316,7 +316,7 @@ collected in the first place.
 |---|---|
 | Provider | Swish Commerce API v2, mutual TLS |
 | Verified against a real Swish endpoint | **No.** No merchant agreement exists yet |
-| Verified against a stand-in over real mutual TLS | Yes — `tests/integration/swish-wire.sh`, 16 checks |
+| Verified against a stand-in over real mutual TLS | Yes — `tests/integration/swish-wire.sh`, 20 checks |
 | Verified against a real database and a real API | Yes — `tests/integration/payments.sh`, 27 checks |
 | Settlement logic | 24 unit tests in `crates/payments` |
 | The six pages the scheme requires | Published — `tests/e2e/shopfront.sh`, 46 checks |
@@ -345,7 +345,18 @@ could have been found any other way:
   well tested and the lookup that reaches it had never run. Fixed by two narrow
   SECURITY DEFINER functions in `0012`, the same shape as `0004`'s; the suite
   now asserts both **as the application role**, because asserting them as a
-  superuser passes whether or not the hole is open. It is concentrated in two structs (`Wire`,
+  superuser passes whether or not the hole is open.
+
+The suite also runs the worker and lets a payment arrive with **no callback at
+all**, which is the claim the whole design rests on — the sweep is the guarantee
+and the callback is the optimisation — and which nothing had ever exercised.
+
+One thing changed because of how the first defect hid: a callback that named a
+payment this system could not find was counted as `accepted`. That is why a
+callback which resolved nothing, ever, produced a healthy metric. It is now
+counted as `unknown`, and `SkattjaktPaymentCallbacksUnknown` fires when unknowns
+arrive and *nothing* resolves — which separates somebody probing an
+unauthenticated endpoint from the identifier having moved. It is concentrated in two structs (`Wire`,
 `WirePayment`) precisely so that checking it is reading two structs rather than
 auditing a client.
 

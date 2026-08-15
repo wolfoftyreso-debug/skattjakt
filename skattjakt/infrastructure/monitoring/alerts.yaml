@@ -290,3 +290,21 @@ spec:
           labels: { severity: warning }
           annotations:
             summary: Payment callbacks are arriving in a shape this build cannot read
+
+        # Readable, and naming a payment this system cannot find.
+        #
+        # This is what a forged callback looks like. It is also what a *broken*
+        # one looks like, and that is why it has its own alert: the callback
+        # once read the wrong identifier and resolved nothing at all, while
+        # counting every one of them as accepted. A dead callback is not
+        # dangerous — the sweep still settles — but it should not be able to
+        # look healthy.
+        - alert: SkattjaktPaymentCallbacksUnknown
+          expr: |
+            increase(skattjakt_payment_callbacks_total{outcome="unknown"}[1h]) > 10
+            and increase(skattjakt_payment_callbacks_total{outcome="accepted"}[1h]) == 0
+          for: 30m
+          labels: { severity: warning }
+          annotations:
+            summary: Payment callbacks resolve nothing, and none resolve anything
+            runbook: SKATTJAKT_RUNBOOK.md#payment-callbacks-resolve-nothing

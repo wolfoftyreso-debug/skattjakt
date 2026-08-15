@@ -55,6 +55,11 @@ API="$ROOT/target/release/skattjakt-api"
 DEBUG_API="$ROOT/target/debug/skattjakt-api"
 [[ -x "$DEBUG_API" && "$DEBUG_API" -nt "$API" ]] && API="$DEBUG_API"
 
+WORKER="$ROOT/target/release/skattjakt-analysis-worker"
+[[ -x "$WORKER" ]] || WORKER="$ROOT/target/debug/skattjakt-analysis-worker"
+DEBUG_WORKER="$ROOT/target/debug/skattjakt-analysis-worker"
+[[ -x "$DEBUG_WORKER" && "$DEBUG_WORKER" -nt "$WORKER" ]] && WORKER="$DEBUG_WORKER"
+
 PGBIN="${PGBIN:-$(dirname "$(command -v initdb || echo /usr/lib/postgresql/16/bin/initdb)")}"
 [[ -x "$PGBIN/initdb" ]] || PGBIN=/usr/lib/postgresql/16/bin
 
@@ -66,8 +71,10 @@ check() { if [[ "$3" == "$2" ]]; then pass "$1"; else fail "$1 (expected $2, got
 
 api_pid=""
 stub_pid=""
+worker_pid=""
 cleanup() {
     [[ -n "$api_pid" ]] && kill "$api_pid" 2>/dev/null || true
+    [[ -n "$worker_pid" ]] && kill "$worker_pid" 2>/dev/null || true
     [[ -n "$stub_pid" ]] && kill "$stub_pid" 2>/dev/null || true
     "$PGBIN/pg_ctl" -D "$PGDATA" -m immediate stop >/dev/null 2>&1 || true
     rm -rf "$WORKDIR"
@@ -75,6 +82,7 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 [[ -x "$API" ]] || { echo "build the API first: cargo build" >&2; exit 1; }
+[[ -x "$WORKER" ]] || { echo "build the worker first: cargo build" >&2; exit 1; }
 
 # --- certificates -----------------------------------------------------------
 #
@@ -309,6 +317,63 @@ check "and it cannot buy an analysis" 402 \
         -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
         -d "{\"document_version_ids\":[\"$DV\"],
              \"accounts_state\":\"preliminary\",\"order_id\":\"$DECLINED_ID\"}")"
+
+# A callback that names nothing must be counted as such, not as accepted. The
+# broken callback this suite found looked perfectly healthy on the dashboard
+# precisely because every unresolvable one was recorded as a success.
+curl -sS -o /dev/null -X POST "http://127.0.0.1:$APIPORT/v1/payments/swish/callback" \
+    -H 'content-type: application/json' \
+    -d '{"id":"FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF","status":"PAID"}'
+METRICS="$(curl -sS "http://127.0.0.1:$APIPORT/metrics")"
+grep -q 'payment_callbacks_total{outcome="unknown"} *[1-9]' <<<"$METRICS" \
+    && pass "a callback naming nothing is counted as unknown, not accepted" \
+    || fail "an unresolvable callback was not counted apart from a real one"
+grep -q 'payment_callbacks_total{outcome="accepted"} *[1-9]' <<<"$METRICS" \
+    && pass "and a real one is still counted as accepted" \
+    || fail "no callback was counted as accepted"
+
+echo
+echo "when the callback never arrives at all"
+# The sweep is the guarantee and the callback is the optimisation — that claim
+# is the reason the callback endpoint needs no authentication, and until now
+# nothing had ever run it. This payment gets no callback of any kind.
+#
+# The payment is backdated past the grace rather than the test waiting thirty
+# seconds for it: a shortcut on the *age of the input*, not on the mechanism,
+# which is the same shape as marking an order paid directly.
+SWEPT_ORDER="$(api POST /v1/orders "$TOKEN" \
+    '{"product":"control_review","delivery":"immediate",
+      "accepts_loss_of_cancellation_right":true}')"
+SWEPT_ID="$(field order_id <<<"$SWEPT_ORDER")"
+SWEPT_REF="$("${PSQL[@]}" -d "$DB" -c \
+    "SELECT provider_reference FROM payments WHERE order_id='$SWEPT_ID'")"
+"${PSQL[@]}" -d "$DB" -c \
+    "UPDATE payments SET created_at = now() - interval '5 minutes' WHERE order_id='$SWEPT_ID'" >/dev/null
+stub -X POST "https://127.0.0.1:$SWISHPORT/_control/$SWEPT_REF/PAID" >/dev/null
+
+# The worker inherits the same Swish configuration; it is the process that owns
+# the sweep. `tokio::time::interval` fires its first tick immediately, so this
+# does not wait out a cycle.
+env DATABASE_URL="postgres://skattjakt_app:sw@127.0.0.1:$PGPORT/$DB" \
+    SKATTJAKT_BLOB_ROOT="$WORKDIR/blobs" \
+    SKATTJAKT_SWISH_PAYEE_ALIAS=1231234567 \
+    SKATTJAKT_SWISH_BASE_URL="https://127.0.0.1:$SWISHPORT" \
+    SKATTJAKT_SWISH_CLIENT_PEM="$CERTS/client.pem" \
+    SKATTJAKT_SWISH_CA_PEM="$CERTS/ca.pem" \
+    SKATTJAKT_SWISH_CALLBACK_URL="https://example.test/v1/payments/swish/callback" \
+    HOSTNAME=swish-worker-1 \
+    "$WORKER" > "$WORKDIR/worker.log" 2>&1 &
+worker_pid=$!
+for _ in $(seq 1 80); do
+    STATE="$("${PSQL[@]}" -d "$DB" -c "SELECT state FROM orders WHERE id='$SWEPT_ID'")"
+    [[ "$STATE" == "paid" ]] && break
+    sleep 0.5
+done
+check "the sweep settles a payment nobody was told about" paid "$STATE"
+
+LOOKUPS="$("${PSQL[@]}" -d "$DB" -c \
+    "SELECT lookups >= 1 FROM payments WHERE order_id='$SWEPT_ID'")"
+check "and it settled by asking, not by assuming" t "$LOOKUPS"
 
 echo
 echo "the paid order buys its analysis"
