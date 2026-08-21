@@ -441,9 +441,11 @@ Stated plainly, because a decisions document that only lists wins is not useful.
   stand-in that speaks the Commerce API v2 wire format over real mutual TLS. It
   has never exchanged a byte with Swish, and will not until the Nordea merchant
   agreement exists.
-- **Privatanalys has no rule to sell.** The 29 kr private tier renders and takes
-  payment in the shop, but every rule in `se-2025.1` is written for an
-  aktiebolag. It must not be offered until a private-individual rule exists.
+- **Privatanalys has no rule to sell.** Every rule in `se-2025.1` is written for
+  an aktiebolag, so the 29 kr private tier is listed with `available: false` and
+  `POST /v1/orders` refuses it with 503. The gate is real — verified against a
+  running shop — but the product does not exist until a private-individual rule
+  is written.
 - **Nothing is deployed.** The image builds and the manifests apply to a
   throwaway cluster; no environment runs this where a customer could reach it.
 
