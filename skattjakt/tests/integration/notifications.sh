@@ -23,6 +23,8 @@ if [[ -z "${SKATTJAKT_PG_REEXEC:-}" ]] && command -v cargo >/dev/null 2>&1; then
 fi
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# Whichever build is newer, never whichever profile is preferred.
+source "$ROOT/tests/lib/newest-binary.sh"
 CONTAINER=skattjakt-mailpit-test
 SMTP_PORT=11025
 HTTP_PORT=18025
@@ -108,7 +110,7 @@ export SKATTJAKT_ADMIN_TOKEN="$ADMIN_TOKEN"
 export SKATTJAKT_BLOB_ROOT="$WORKDIR/documents"
 export RUST_LOG=skattjakt=warn
 
-PORT="$APIPORT" "$ROOT/target/debug/skattjakt-api" > "$WORKDIR/api.log" 2>&1 &
+PORT="$APIPORT" "$(newest_binary skattjakt-api)" > "$WORKDIR/api.log" 2>&1 &
 API_PID=$!
 for _ in $(seq 1 60); do
     curl -fsS "http://127.0.0.1:$APIPORT/health" >/dev/null 2>&1 && break
@@ -117,7 +119,7 @@ done
 curl -fsS "http://127.0.0.1:$APIPORT/health" >/dev/null || {
     echo "the API did not start"; cat "$WORKDIR/api.log"; exit 1; }
 
-HOSTNAME=analysis-1 "$ROOT/target/debug/skattjakt-analysis-worker" \
+HOSTNAME=analysis-1 "$(newest_binary skattjakt-analysis-worker)" \
     > "$WORKDIR/analysis.log" 2>&1 &
 ANALYSIS_PID=$!
 
@@ -127,7 +129,7 @@ SKATTJAKT_SMTP_HOST=127.0.0.1 \
 SKATTJAKT_SMTP_PORT="$SMTP_PORT" \
 SKATTJAKT_SMTP_STARTTLS=0 \
 SKATTJAKT_SMTP_FROM="Skattjakt <ingen-svar@skattjakt.se>" \
-    "$ROOT/target/debug/skattjakt-notification-worker" > "$WORKDIR/notify.log" 2>&1 &
+    "$(newest_binary skattjakt-notification-worker)" > "$WORKDIR/notify.log" 2>&1 &
 NOTIFY_PID=$!
 sleep 1
 kill -0 "$NOTIFY_PID" 2>/dev/null || { echo "the notification worker died"; cat "$WORKDIR/notify.log"; exit 1; }

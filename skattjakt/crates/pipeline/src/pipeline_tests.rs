@@ -1267,3 +1267,87 @@ async fn every_audience_reads_the_same_analysis() {
         assert_eq!(view.disclaimer, views[0].disclaimer);
     }
 }
+
+#[tokio::test]
+async fn what_would_strengthen_a_finding_reaches_the_section_that_asks_for_it() {
+    // The defect this is for: "Detta skulle göra analysen bättre" was empty in
+    // exactly the runs that worked. A complete profile and readable documents
+    // leave nothing in the two sources it drew from, while every finding that
+    // fired carries two or three documents a person could go and fetch.
+    let (result, _) = pipeline(silent_provider())
+        .run(&input(vec![document(INCOME_STATEMENT)]), &SilentObserver)
+        .await
+        .unwrap();
+
+    let per_finding: usize = result
+        .opportunities
+        .iter()
+        .filter(|o| o.status.is_presented())
+        .map(|o| o.missing_information.len())
+        .sum();
+    assert!(per_finding > 0, "no finding asked for anything");
+
+    assert!(
+        !result.missing_information.is_empty(),
+        "{per_finding} requests inside the findings, and nothing in the section \
+         a customer reads to know what to do next"
+    );
+
+    // Every request a presented finding makes is either in the section, or is
+    // there under a better description — an unanswered profile question says
+    // which rule it unlocks, which beats saying which finding it strengthens.
+    let described: std::collections::BTreeSet<&str> = result
+        .missing_information
+        .iter()
+        .map(|m| m.description.as_str())
+        .collect();
+    for opportunity in result
+        .opportunities
+        .iter()
+        .filter(|o| o.status.is_presented())
+    {
+        for item in &opportunity.missing_information {
+            assert!(
+                described.contains(item.as_str()),
+                "{item:?} is asked for by {:?} and appears nowhere in the summary",
+                opportunity.title
+            );
+        }
+    }
+
+    // The ones that unlock most come first: a document that strengthens three
+    // findings is the one to fetch first.
+    let counts: Vec<usize> = result
+        .missing_information
+        .iter()
+        .filter(|m| m.code == "would_strengthen")
+        .map(|m| m.unlocks.matches('"').count() / 2)
+        .collect();
+    for pair in counts.windows(2) {
+        assert!(
+            pair[0] >= pair[1],
+            "the section is not ordered by what it unlocks"
+        );
+    }
+
+    // And each one says what it is for, rather than being a bare noun.
+    for item in &result.missing_information {
+        assert!(
+            !item.unlocks.trim().is_empty(),
+            "{:?} says nothing",
+            item.description
+        );
+    }
+}
+
+#[test]
+fn a_swedish_list_reads_like_a_sentence() {
+    use crate::pipeline::quoted_list;
+    let one = vec!["Periodiseringsfond".to_string()];
+    let two = vec!["A".to_string(), "B".to_string()];
+    let three = vec!["A".to_string(), "B".to_string(), "C".to_string()];
+    assert_eq!(quoted_list(&one), "\"Periodiseringsfond\"");
+    assert_eq!(quoted_list(&two), "\"A\" och \"B\"");
+    assert_eq!(quoted_list(&three), "\"A\", \"B\" och \"C\"");
+    assert_eq!(quoted_list(&[]), "");
+}

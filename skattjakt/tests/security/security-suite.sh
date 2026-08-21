@@ -42,6 +42,8 @@ if [[ "${EUID:-$(id -u)}" -eq 0 && -z "${SKATTJAKT_PG_REEXEC:-}" ]]; then
 fi
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# Whichever build is newer, never whichever profile is preferred.
+source "$ROOT/tests/lib/newest-binary.sh"
 WORKDIR="$(mktemp -d)"
 PGDATA="$WORKDIR/data"
 SOCKET="$WORKDIR/sock"
@@ -105,7 +107,7 @@ done
 psql -d "$DB" -c "ALTER ROLE skattjakt_app LOGIN PASSWORD 'security-suite'" >/dev/null
 echo "database ready"
 
-[[ -x "$ROOT/target/debug/skattjakt-api" ]] || {
+[[ -x "$(newest_binary skattjakt-api)" ]] || {
     echo "build the API first: cargo build --bin skattjakt-api" >&2
     exit 1
 }
@@ -117,7 +119,7 @@ export SKATTJAKT_BLOB_ROOT="$WORKDIR/documents"
 export PORT="$PORT"
 export RUST_LOG=skattjakt=warn
 
-"$ROOT/target/debug/skattjakt-api" > "$LOG" 2>&1 &
+"$(newest_binary skattjakt-api)" > "$LOG" 2>&1 &
 API_PID=$!
 
 for _ in $(seq 1 50); do

@@ -22,6 +22,8 @@ if [[ -z "${SKATTJAKT_PG_REEXEC:-}" ]] && command -v cargo >/dev/null 2>&1; then
 fi
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# Whichever build is newer, never whichever profile is preferred.
+source "$ROOT/tests/lib/newest-binary.sh"
 CONTAINER=skattjakt-otel-test
 OTLP_PORT=14318
 SPOOL=/tmp/skattjakt-otel-spool
@@ -125,7 +127,7 @@ export OTEL_EXPORTER_OTLP_ENDPOINT="http://127.0.0.1:$OTLP_PORT"
 export SKATTJAKT_ENVIRONMENT=test
 
 PORT="$APIPORT" OTEL_SERVICE_NAME=skattjakt-api \
-    "$ROOT/target/debug/skattjakt-api" > "$WORKDIR/api.log" 2>&1 &
+    "$(newest_binary skattjakt-api)" > "$WORKDIR/api.log" 2>&1 &
 API_PID=$!
 for _ in $(seq 1 60); do
     curl -fsS "http://127.0.0.1:$APIPORT/health" >/dev/null 2>&1 && break
@@ -135,7 +137,7 @@ curl -fsS "http://127.0.0.1:$APIPORT/health" >/dev/null || {
     echo "the API did not start"; cat "$WORKDIR/api.log"; exit 1; }
 
 HOSTNAME=tracing-worker OTEL_SERVICE_NAME=skattjakt-analysis-worker \
-    "$ROOT/target/debug/skattjakt-analysis-worker" > "$WORKDIR/worker.log" 2>&1 &
+    "$(newest_binary skattjakt-analysis-worker)" > "$WORKDIR/worker.log" 2>&1 &
 WORKER_PID=$!
 sleep 1
 echo "api and worker running, both exporting to the collector"

@@ -32,6 +32,8 @@ if [[ "${EUID:-$(id -u)}" -eq 0 && -z "${SKATTJAKT_PG_REEXEC:-}" ]]; then
 fi
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# Whichever build is newer, never whichever profile is preferred.
+source "$ROOT/tests/lib/newest-binary.sh"
 WORKDIR="$(mktemp -d)"
 PGDATA="$WORKDIR/data"
 SOCKET="$WORKDIR/sock"
@@ -80,7 +82,7 @@ export SKATTJAKT_ADMIN_TOKEN="$ADMIN_TOKEN"
 export SKATTJAKT_BLOB_ROOT="$WORKDIR/documents"
 export RUST_LOG=skattjakt=warn
 
-PORT="$APIPORT" "$ROOT/target/debug/skattjakt-api" > "$WORKDIR/api.log" 2>&1 &
+PORT="$APIPORT" "$(newest_binary skattjakt-api)" > "$WORKDIR/api.log" 2>&1 &
 API_PID=$!
 for _ in $(seq 1 80); do
     curl -fsS "http://127.0.0.1:$APIPORT/health" >/dev/null 2>&1 && break
@@ -89,7 +91,7 @@ done
 curl -fsS "http://127.0.0.1:$APIPORT/health" >/dev/null || {
     echo "the API did not start"; cat "$WORKDIR/api.log"; exit 1; }
 
-HOSTNAME=sim-worker-1 "$ROOT/target/debug/skattjakt-analysis-worker" \
+HOSTNAME=sim-worker-1 "$(newest_binary skattjakt-analysis-worker)" \
     > "$WORKDIR/worker.log" 2>&1 &
 WORKER_PID=$!
 sleep 1

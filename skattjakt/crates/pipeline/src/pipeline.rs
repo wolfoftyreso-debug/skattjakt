@@ -459,7 +459,8 @@ impl AnalysisPipeline {
         });
 
         let covered_areas = self.covered_areas(&evaluations, &opportunities);
-        let missing_information = self.missing_information(&evaluations, &input.company);
+        let missing_information =
+            self.missing_information(&evaluations, &opportunities, &input.company);
         let limitations = self.limitations(input, &evaluations);
 
         observer.stage(AnalysisStage::Done);
@@ -1029,9 +1030,28 @@ impl AnalysisPipeline {
         .collect()
     }
 
+    /// What would make the analysis better, gathered in one place.
+    ///
+    /// Three sources, and the third was missing for as long as this existed.
+    /// A profile question nobody answered and a fact we could not read both
+    /// land here — but the rules' own `missing_information_hints`, which are
+    /// literally requests for a document ("Föregående års K10-blankett"), only
+    /// ever reached the individual finding.
+    ///
+    /// The effect was that the section went **empty exactly when the analysis
+    /// worked**: a complete profile and readable documents leave nothing in the
+    /// first two sources, while every finding that fired carries two or three
+    /// things a person could go and fetch. On the run this was found in, twenty
+    /// such requests sat inside eight findings and the section a customer reads
+    /// to know what to do next had nothing in it.
+    ///
+    /// `SKATTJAKT_ENGINEERING_DECISIONS.md` already promised this: "The
+    /// information is not lost — it surfaces in `missing_information`, which is
+    /// where a request for a document belongs." Half of it was true.
     fn missing_information(
         &self,
         evaluations: &[RuleEvaluation],
+        opportunities: &[Opportunity],
         profile: &CompanyProfile,
     ) -> Vec<MissingInformation> {
         let mut out = Vec::new();
@@ -1057,6 +1077,40 @@ impl AnalysisPipeline {
                     });
                 }
             }
+        }
+
+        // What the findings themselves say would make them stronger.
+        //
+        // `seen` is shared with the two loops above deliberately: a finding's
+        // list already contains the humanised missing facts and the unanswered
+        // questions, and those are better described where they were added — an
+        // unanswered question says which rule it would unlock, which is more
+        // useful than saying which finding it would strengthen.
+        //
+        // Ordered by how many findings each unlocks, because a document that
+        // strengthens three findings is the one to fetch first. Alphabetical
+        // within a tie, so the order is stable between runs.
+        let mut strengthens: std::collections::BTreeMap<String, Vec<String>> =
+            std::collections::BTreeMap::new();
+        for opportunity in opportunities.iter().filter(|o| o.status.is_presented()) {
+            for item in &opportunity.missing_information {
+                if seen.contains(item) {
+                    continue;
+                }
+                let titles = strengthens.entry(item.clone()).or_default();
+                if !titles.contains(&opportunity.title) {
+                    titles.push(opportunity.title.clone());
+                }
+            }
+        }
+        let mut ranked: Vec<(String, Vec<String>)> = strengthens.into_iter().collect();
+        ranked.sort_by(|a, b| b.1.len().cmp(&a.1.len()).then_with(|| a.0.cmp(&b.0)));
+        for (description, titles) in ranked {
+            out.push(MissingInformation {
+                code: "would_strengthen".to_string(),
+                unlocks: format!("Stärker {}.", quoted_list(&titles)),
+                description,
+            });
         }
 
         if profile.unanswered_fields().len() > 4 {
@@ -1314,6 +1368,20 @@ fn string_list(value: Option<&serde_json::Value>) -> Vec<String> {
 
 fn fact_kind_from_key(key: &str) -> Option<FactKind> {
     serde_json::from_value(serde_json::Value::String(key.to_string())).ok()
+}
+
+/// `"A"`, `"A" och "B"`, `"A", "B" och "C"` — Swedish list punctuation.
+///
+/// Worth a function rather than a `join`: a list that reads "A, B, C" in a
+/// sentence a customer is meant to act on looks like a machine wrote it, and
+/// this text is the product telling them what to go and fetch.
+fn quoted_list(items: &[String]) -> String {
+    let quoted: Vec<String> = items.iter().map(|i| format!("\"{i}\"")).collect();
+    match quoted.split_last() {
+        None => String::new(),
+        Some((last, [])) => last.clone(),
+        Some((last, rest)) => format!("{} och {last}", rest.join(", ")),
+    }
 }
 
 fn humanise_fact(kind: &FactKind) -> String {

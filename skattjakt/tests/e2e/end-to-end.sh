@@ -20,6 +20,8 @@ fi
 PGBIN="${PGBIN:-/usr/lib/postgresql/16/bin}"
 [[ -x "$PGBIN/initdb" ]] || PGBIN="$(dirname "$(command -v initdb)")"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# Whichever build is newer, never whichever profile is preferred.
+source "$ROOT/tests/lib/newest-binary.sh"
 WORKDIR="$(mktemp -d)"
 PGDATA="$WORKDIR/data"
 SOCKET="$WORKDIR/sock"
@@ -82,7 +84,7 @@ SKATTJAKT_ADMIN_TOKEN="$ADMIN_TOKEN" \
 SKATTJAKT_BLOB_ROOT="$WORKDIR/documents" \
 PORT="$APIPORT" \
 RUST_LOG=skattjakt=info \
-    "$ROOT/target/debug/skattjakt-api" > "$LOG" 2>&1 &
+    "$(newest_binary skattjakt-api)" > "$LOG" 2>&1 &
 API_PID=$!
 
 for _ in $(seq 1 60); do
@@ -103,7 +105,7 @@ DATABASE_URL="$DATABASE_URL" \
 SKATTJAKT_BLOB_ROOT="$WORKDIR/documents" \
 HOSTNAME=e2e-worker \
 RUST_LOG=skattjakt=info \
-    "$ROOT/target/debug/skattjakt-analysis-worker" > "$WORKDIR/worker.log" 2>&1 &
+    "$(newest_binary skattjakt-analysis-worker)" > "$WORKDIR/worker.log" 2>&1 &
 WORKER_PID=$!
 
 # The worker has no HTTP surface, so readiness is "it did not exit".
@@ -357,6 +359,33 @@ for rule in s["evidence"]["rules_cited"]:
         f"{rule['title']} reports source state {rule['source_state']}"
 print(f"  all nine sections; potential {s['economic_potential']['display']}")
 PY
+
+# What a customer should go and fetch next, gathered in one place.
+#
+# This section was empty in exactly the runs that worked: a complete profile and
+# readable documents leave nothing in the two sources it used to draw from,
+# while every finding that fired carries two or three documents a person could
+# actually go and get. Asserted here against a real analysis because that is the
+# only place the emptiness was visible.
+python3 - "$REPORT" <<'MISSING' || exit 1
+import json, sys
+s = json.loads(sys.argv[1])["sections"]
+
+requested = {item for o in s["opportunities"] for item in o["missing_information"]}
+assert requested, "no finding asked for anything, so this proves nothing"
+assert s["missing_information"], \
+    f"{len(requested)} requests inside the findings, and the section that " \
+    "gathers them is empty"
+
+described = {m["description"] for m in s["missing_information"]}
+missing_from_summary = requested - described
+assert not missing_from_summary, \
+    f"asked for by a finding and absent from the summary: {sorted(missing_from_summary)[:3]}"
+
+for item in s["missing_information"]:
+    assert item["unlocks"].strip(), f"{item['description']!r} says nothing about why"
+print(f"  {len(s['missing_information'])} things that would make it better, all explained")
+MISSING
 
 MARKDOWN="$(curl -sS "http://127.0.0.1:$APIPORT/v1/analyses/$ANALYSIS/report?format=markdown" -H "authorization: Bearer $TOKEN_A")"
 for heading in "# Din Skattjakt" "## 1. Sammanfattning" "## 9. Begränsningar"; do

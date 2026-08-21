@@ -428,14 +428,40 @@ Stated plainly, because a decisions document that only lists wins is not useful.
   absent one. An analysis for tax year 2026 returns a 400 naming the gap.
 - **No OCR.** See D12. A scanned PDF yields no text; the pages are reported as
   unreadable rather than silently contributing nothing.
-- **Blob storage is filesystem-only.** `BlobStore` is a trait and an
-  S3-compatible implementation slots in behind it, but only the local one is
-  written. A multi-node deployment needs the S3 one first.
-- **The Docker image has not been built.** The daemon runs in the build
-  environment but Docker Hub returns 429 through its egress, so no base image
-  can be pulled. The Dockerfile is authored and its remote-frontend dependency
-  removed; it has never been built.
-- **Kubernetes has never been applied.** No cluster was available. The manifests
-  parse and are internally consistent; that is all that can be said.
-- **Signed upload URLs are not implemented.** Documents are uploaded through the
-  API rather than directly to storage.
+
+- **No source has been retrieved.** Section 2 states it in full: 0 of 24, every
+  statute host blocked by this environment's egress policy. Every constant in
+  the rule set is transcribed from a citation nobody has fetched, and the
+  `SourceState` ladder reports that honestly rather than hiding it.
+- **No lawyer has read the terms or the consent wording.** The distance-selling
+  text, the withdrawal notice and the consent checkbox were written against the
+  statutes named in `SKATTJAKT_PAYMENTS.md` and reviewed by nobody qualified.
+- **Swish has never been contacted.** The whole payment path — mutual TLS, the
+  `PUT` to `paymentrequests`, settlement by `lookup()` — runs against a
+  stand-in that speaks the Commerce API v2 wire format over real mutual TLS. It
+  has never exchanged a byte with Swish, and will not until the Nordea merchant
+  agreement exists.
+- **Privatanalys has no rule to sell.** The 29 kr private tier renders and takes
+  payment in the shop, but every rule in `se-2025.1` is written for an
+  aktiebolag. It must not be offered until a private-individual rule exists.
+- **Nothing is deployed.** The image builds and the manifests apply to a
+  throwaway cluster; no environment runs this where a customer could reach it.
+
+### Gaps that have since closed
+
+Kept rather than deleted, because a gap list that quietly loses entries cannot
+be trusted to still contain the open ones.
+
+- **Blob storage was filesystem-only.** `crates/store/src/s3.rs` implements the
+  same trait against S3 with hand-written SigV4;
+  `tests/integration/s3-blobstore.sh` and `e2e-on-s3.sh` exercise it against a
+  real MinIO, including that a tampered presigned URL is refused.
+- **The Docker image had never been built.** Docker Hub still returns 403
+  through this egress, but `mirror.gcr.io` does not, and the Dockerfile builds
+  from there. `tests/supply-chain/inspect-image.sh` inspects the built image:
+  13 MB, uid 65532, no shell, no baked credential.
+- **Kubernetes had never been applied.** A k3s v1.31.2 cluster was brought up
+  and all three overlays went through server-side apply. Section 5.1 of
+  `SKATTJAKT_PRODUCT_SURFACE.md` records what it rejected and why.
+- **Signed upload URLs were not implemented.** `apps/api/src/upload_routes.rs`
+  issues a ticket and a presigned URL; the bytes never pass through the API.
