@@ -1,0 +1,25 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html",         "title": "Bolagsanalys · 69 kr",       "x": 0,    "y": 0, "w": 820, "h": 5100, "print": "flow" },
+    { "file": "Privatanalys.dc.html", "title": "Privatanalys · 29 kr",       "x": 920,  "y": 0, "w": 820, "h": 3400, "print": "flow" },
+    { "file": "Kontroll.dc.html",     "title": "Skattjakt Kontroll · 69 kr", "x": 1840, "y": 0, "w": 820, "h": 2350, "print": "flow" },
+    { "file": "Byggstenar.dc.html",   "title": "Byggstenar",                 "x": 2760, "y": 0, "w": 960, "h": 2420, "print": "flow" }
+  ],
+  "annotations": [
+    {
+      "id": "lagren",
+      "x": 0,
+      "y": -300,
+      "w": 820,
+      "text": "De tre lagren skiljer sig idag bara åt på två punkter: kontrollgenomgången (bara byrålagret) och friskrivningen.\n\nAllt annat — fynden, beloppen, underlaget — är identiskt, för att motorn kör en analys och presenterar den tre gånger. Det är avsiktligt.\n\nFrågan till dig: ska de divergera mer? Privatlagret skulle kunna tappa regelhänvisningarna och skriva om språket; byrålagret skulle kunna leda med kontrollgenomgången och lägga fynden i en bilaga. Jag har inte gjort det på eget bevåg."
+    },
+    {
+      "id": "tokens",
+      "x": 2760,
+      "y": -300,
+      "w": 960,
+      "text": "Matchar apps/api/ui/app.css exakt: #fbfaf8 botten, #1f5d4c accent, #8a5a1a varning, 10px radie, 760px textbredd, ui-sans-serif.\n\nVärdena står literalt i märkningen i stället för som CSS-variabler — annars kan egenskapspanelen inte redigera dem."
+    }
+  ],
+  "launch": { "view": "canvas" }
+}

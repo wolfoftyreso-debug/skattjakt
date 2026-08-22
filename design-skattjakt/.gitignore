@@ -1,0 +1,6 @@
+# Den seedade canvasen är genererad — ~2,3 MB, varav nästan allt är editorns
+# egen kod. Den byggs om från artboardsen vid varje ändring, så att versionera
+# den vore att versionera ett byggresultat.
+#
+# Återskapa med seed-canvas.mjs; se README.md.
+skattjakt-rapport.html
