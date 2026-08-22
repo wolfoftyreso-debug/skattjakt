@@ -183,3 +183,115 @@ mod embedded_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod shipped_set_invariants {
+    use crate::rule::ImpactSpec;
+    use crate::RuleEngine;
+
+    /// Every bound a rule produces is written, not derived from a band.
+    ///
+    /// The `Point` variant is gone from the type, so this cannot regress by
+    /// accident — but the set is data, and data is where a "temporary" ±10 %
+    /// would come back. Asserting on the loaded set says it in the one place a
+    /// rule author will see it.
+    #[test]
+    fn no_rule_states_an_amount_it_did_not_compute_both_ends_of() {
+        let engine = RuleEngine::load_embedded().unwrap();
+        for rule in engine.set().rules.iter() {
+            match &rule.impact {
+                ImpactSpec::None => {}
+                ImpactSpec::Range { .. } => {}
+            }
+        }
+    }
+
+    /// A rule that postpones tax says so.
+    ///
+    /// Periodiseringsfond is the case: 20,6 % of the unused headroom is real
+    /// money, and it is money paid in a later year with a schablonintäkt
+    /// charged in the meantime. Adding it to the same figure as a missed
+    /// deduction answered a question nobody asked.
+    #[test]
+    fn the_rules_that_defer_tax_are_marked_as_deferrals() {
+        use skattjakt_core::opportunity::EffectKind;
+        let engine = RuleEngine::load_embedded().unwrap();
+        for rule in engine.set().rules.iter() {
+            let defers = rule.rule_id.contains("periodiseringsfond");
+            assert_eq!(
+                rule.effect == EffectKind::Deferral,
+                defers,
+                "{} is marked {:?}",
+                rule.rule_id,
+                rule.effect
+            );
+        }
+    }
+
+    /// The 30 % huvudregel is applied to equipment, never to the heading.
+    ///
+    /// `FixedAssets` is *Materiella anläggningstillgångar*: buildings, land and
+    /// equipment together. The rule that reads it and multiplies by 30 % is the
+    /// one that invented 630 360 kr for a company that owned its premises.
+    #[test]
+    fn the_depreciation_rule_reads_equipment_and_not_the_heading() {
+        use skattjakt_core::FactKind;
+        let engine = RuleEngine::load_embedded().unwrap();
+        let rule = engine
+            .set()
+            .rules
+            .iter()
+            .find(|r| r.rule_id == "se.investments.inventarier.avskrivningsutrymme")
+            .expect("the shipped set contains the depreciation rule");
+        let facts = rule.referenced_facts();
+        assert!(
+            facts.contains(&FactKind::Equipment),
+            "it must read the equipment line"
+        );
+        assert!(
+            !facts.contains(&FactKind::FixedAssets),
+            "and must not read the heading, which carries buildings and land"
+        );
+    }
+
+    /// The pension frame is a share of cash pay, not of the personnel heading.
+    #[test]
+    fn the_pension_rule_reads_wages_and_not_total_personnel_cost() {
+        use skattjakt_core::FactKind;
+        let engine = RuleEngine::load_embedded().unwrap();
+        let rule = engine
+            .set()
+            .rules
+            .iter()
+            .find(|r| r.rule_id == "se.personnel.pension.avdragsutrymme")
+            .expect("the shipped set contains the pension rule");
+        let facts = rule.referenced_facts();
+        assert!(facts.contains(&FactKind::Wages));
+        assert!(
+            !facts.contains(&FactKind::PersonnelCosts),
+            "personnel costs carry employer's contributions and would raise the \
+             threshold by about a third"
+        );
+    }
+
+    /// A spärr after an ownership change reaches a company that is not in a group.
+    #[test]
+    fn the_loss_rule_guards_on_ownership_change_and_not_only_on_group_membership() {
+        let engine = RuleEngine::load_embedded().unwrap();
+        let rule = engine
+            .set()
+            .rules
+            .iter()
+            .find(|r| r.rule_id == "se.tax.underskott.kvittning")
+            .expect("the shipped set contains the loss rule");
+        let json = serde_json::to_string(&rule.exceptions).unwrap();
+        assert!(
+            json.contains("ownership_changed"),
+            "beloppsspärren följer av ägarförändring, inte av koncerntillhörighet"
+        );
+        assert!(
+            json.contains("in_group"),
+            "group membership is still one route"
+        );
+    }
+}

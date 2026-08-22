@@ -186,6 +186,15 @@ pub struct CompanyProfile {
     /// Whether the company belongs to a group (koncern).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub in_group: Option<bool>,
+    /// Whether the controlling interest changed hands in the last five years.
+    ///
+    /// Asked separately from `in_group` because the beloppsspärr and
+    /// koncernbidragsspärr in IL 40 kap. follow from an *ownership change*, not
+    /// from group membership. A standalone company sold to a new owner is the
+    /// commonest way to hit them, and a rule that guarded on `in_group` alone
+    /// said nothing to exactly that company.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ownership_changed: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub operations_outside_sweden: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -217,6 +226,9 @@ impl CompanyProfile {
         }
         if self.in_group.is_none() {
             missing.push("in_group");
+        }
+        if self.ownership_changed.is_none() {
+            missing.push("ownership_changed");
         }
         if self.operations_outside_sweden.is_none() {
             missing.push("operations_outside_sweden");

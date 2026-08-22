@@ -449,6 +449,29 @@ Stated plainly, because a decisions document that only lists wins is not useful.
 - **Nothing is deployed.** The image builds and the manifests apply to a
   throwaway cluster; no environment runs this where a customer could reach it.
 
+- **The depreciation rule read a heading, not a line.**
+  `"materiella anläggningstillgångar"` mapped to the same fact the 30 %
+  huvudregel was applied to, so a company that owned its premises was told it
+  had an allowance the size of 30 % of its building. A run with 10,2 Mkr under
+  that heading produced 630 360 kr that did not exist. `FactKind::Equipment` is
+  now its own fact, the rule requires it, and golden case 11 is a
+  property-owning company — the shape the first ten cases never covered.
+- **The pension rule compared against the wrong base.** The frame in IL 28 kap.
+  5 § is a share of cash pay; the rule took 35 % of `personnel_costs`, which
+  also carries employer's contributions and runs about a third higher.
+  `FactKind::Wages` now exists and the rule reads it.
+- **The beloppsspärr guard missed standalone companies.** The loss rule's
+  exception fired on `in_group`, but a spärr follows from an ownership change —
+  most often a standalone company sold to a new owner. `ownership_changed` is
+  now a profile question and the exception is an `any` of the two.
+- **Deferred tax was counted as saved tax.** A periodiseringsfond allocation
+  put 20,6 % of the headroom into the headline. `EffectKind` now separates the
+  two: a deferral keeps its amount, gets its own line, and adds nothing to the
+  total a reader takes as money to be had.
+- **Two rules were point estimates with a band painted on.** ±15 % and ±10 %,
+  measured by nobody. `ImpactSpec::Point` is gone from the type; every rule
+  writes both bounds, and the low bound has to name a state of the world.
+
 ### Gaps that have since closed
 
 Kept rather than deleted, because a gap list that quietly loses entries cannot

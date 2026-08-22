@@ -41,6 +41,8 @@ if [[ "${EUID:-$(id -u)}" -eq 0 && -z "${SKATTJAKT_PG_REEXEC:-}" ]]; then
 fi
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# Whichever build is newer, never whichever profile is preferred.
+source "$ROOT/tests/lib/newest-binary.sh"
 WORKDIR="$(mktemp -d)"
 PGDATA="$WORKDIR/data"
 SOCKET="$WORKDIR/sock"
@@ -50,15 +52,9 @@ SWISHPORT="${SWISHPORT:-18121}"
 DB=skattjakt_swish
 ADMIN_TOKEN="admin-swish-suite"
 
-API="$ROOT/target/release/skattjakt-api"
-[[ -x "$API" ]] || API="$ROOT/target/debug/skattjakt-api"
-DEBUG_API="$ROOT/target/debug/skattjakt-api"
-[[ -x "$DEBUG_API" && "$DEBUG_API" -nt "$API" ]] && API="$DEBUG_API"
+API="$(newest_binary skattjakt-api)"
 
-WORKER="$ROOT/target/release/skattjakt-analysis-worker"
-[[ -x "$WORKER" ]] || WORKER="$ROOT/target/debug/skattjakt-analysis-worker"
-DEBUG_WORKER="$ROOT/target/debug/skattjakt-analysis-worker"
-[[ -x "$DEBUG_WORKER" && "$DEBUG_WORKER" -nt "$WORKER" ]] && WORKER="$DEBUG_WORKER"
+WORKER="$(newest_binary skattjakt-analysis-worker)"
 
 PGBIN="${PGBIN:-$(dirname "$(command -v initdb || echo /usr/lib/postgresql/16/bin/initdb)")}"
 [[ -x "$PGBIN/initdb" ]] || PGBIN=/usr/lib/postgresql/16/bin

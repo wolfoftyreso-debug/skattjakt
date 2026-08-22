@@ -17,7 +17,7 @@
     "owners_active_in_company": true
   },
   "documents": [
-    "RESULTATRÄKNING OCH BALANSRÄKNING\nNettoomsättning                               4 200 000\nÖvriga externa kostnader                       -650 000\nPersonalkostnader                            -2 100 000\nPensionskostnader                               -80 000\nAv- och nedskrivningar                          -40 000\nRörelseresultat                               1 330 000\nSkattemässigt resultat                          850 000\nMateriella anläggningstillgångar                180 000\nSumma tillgångar                              2 400 000\nSumma eget kapital och skulder                2 400 000\n"
+    "RESULTATRÄKNING OCH BALANSRÄKNING\nNettoomsättning                               4 200 000\nÖvriga externa kostnader                       -650 000\nPersonalkostnader                            -2 100 000\nLöner och andra ersättningar                  -1 540 000\nPensionskostnader                               -80 000\nAv- och nedskrivningar                          -40 000\nRörelseresultat                               1 330 000\nSkattemässigt resultat                          850 000\nMateriella anläggningstillgångar                180 000\nInventarier, verktyg och installationer       180 000\nSumma tillgångar                              2 400 000\nSumma eget kapital och skulder                2 400 000\n"
   ],
   "accounts_state": "preliminary",
   "model_candidates": {

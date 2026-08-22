@@ -1,0 +1,46 @@
+{
+  "id": "case-11",
+  "name": "Bolag som äger sin fastighet",
+  "description": "Tillverkande bolag som äger sina lokaler. Posten Materiella anläggningstillgångar är 10 200 000 kr, varav 10 000 000 kr är byggnader och mark och 200 000 kr är inventarier. Huvudregelns 30 procent gäller bara inventarierna. Fallet finns för att avskrivningsregeln en gång räknade på hela posten och hittade 630 360 kr som inte fanns; med avskrivningar på 250 000 kr finns inget utrymme kvar alls.",
+  "profile": {
+    "name": "Fastighetsägande Verkstad AB",
+    "org_number": "556016-0680",
+    "fiscal_year": 2025,
+    "industry": "Tillverkning",
+    "employee_count": 9,
+    "owner_count": 2,
+    "in_group": false,
+    "ownership_changed": false,
+    "operations_outside_sweden": false,
+    "does_development_work": false,
+    "owns_premises": true,
+    "has_vehicles": false,
+    "owners_active_in_company": true
+  },
+  "documents": [
+    "RESULTATRÄKNING OCH BALANSRÄKNING\nNettoomsättning                               4 000 000\nÖvriga externa kostnader                       -900 000\nPersonalkostnader                            -1 200 000\nLöner och andra ersättningar                   -880 000\nPensionskostnader                               -60 000\nAv- och nedskrivningar                         -250 000\nRörelseresultat                                 900 000\nSkattemässigt resultat                          900 000\nMateriella anläggningstillgångar             10 200 000\nByggnader och mark                           10 000 000\nInventarier, verktyg och installationer         200 000\nSumma tillgångar                             11 150 000\nSumma eget kapital och skulder               11 150 000\n"
+  ],
+  "accounts_state": "final",
+  "model_candidates": {
+    "candidates": []
+  },
+  "model_verdicts": {
+    "verdicts": []
+  },
+  "expected": {
+    "must_find_rule_ids": [
+      "se.tax.periodiseringsfond.outnyttjat_utrymme",
+      "se.personnel.pension.avdragsutrymme"
+    ],
+    "must_not_find_rule_ids": [
+      "se.investments.inventarier.avskrivningsutrymme",
+      "se.tax.underskott.kvittning",
+      "se.tax.koncernbidrag",
+      "se.vat.personbil.leasing",
+      "se.rnd.forskningsavdrag",
+      "se.risk.balansrakning_stammer_inte"
+    ],
+    "expect_no_findings": false,
+    "expect_warning_codes": []
+  }
+}

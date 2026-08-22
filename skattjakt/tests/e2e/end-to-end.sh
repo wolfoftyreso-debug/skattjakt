@@ -357,7 +357,22 @@ assert s["evidence"]["rules_cited"], "report cites no rules"
 for rule in s["evidence"]["rules_cited"]:
     assert rule["source_state"] in {"unretrieved", "unreachable", "mismatch", "verified"}, \
         f"{rule['title']} reports source state {rule['source_state']}"
-print(f"  all nine sections; potential {s['economic_potential']['display']}")
+ep = s["economic_potential"]
+assert ep["deferred"]["high"] >= ep["deferred"]["low"]
+
+# Uppskjuten skatt får aldrig räknas in i det belopp en läsare tar för pengar
+# att hämta. Ett fynd som är ett uppskov ska synas på egen rad med sitt belopp,
+# och rubriksumman ska sakna det.
+deferring = [o for o in s["opportunities"] if o.get("effect") == "deferral"]
+if deferring:
+    assert ep["deferred"]["high"] > 0, \
+        "en periodiseringsfond hittades men det uppskjutna beloppet är noll"
+    assert ep["deferred_note"], "det uppskjutna beloppet saknar förklaring"
+    for o in deferring:
+        assert o["impact"]["high"] <= ep["deferred"]["high"], \
+            f"{o['title']!r} räknas inte in i det uppskjutna beloppet"
+print(f"  all nine sections; lägre skatt {ep['display']}, "
+      f"uppskjuten {ep['deferred_display']} ({len(deferring)} uppskov)")
 PY
 
 # What a customer should go and fetch next, gathered in one place.

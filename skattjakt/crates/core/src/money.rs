@@ -159,6 +159,8 @@ impl MoneyRange {
         }
     }
 
+    /// Zero kronor. The identity for `checked_add`, and the honest answer when
+    /// there is nothing to report — not an unknown.
     pub const ZERO: MoneyRange = MoneyRange {
         low: Money::ZERO,
         high: Money::ZERO,
@@ -192,6 +194,14 @@ impl MoneyRange {
             self.low.ore().saturating_add(self.high.ore()),
             2,
         ))
+    }
+}
+
+impl Default for MoneyRange {
+    /// Zero, so a deserialised report that predates a field reads as "nothing
+    /// here" rather than failing to parse.
+    fn default() -> Self {
+        Self::ZERO
     }
 }
 

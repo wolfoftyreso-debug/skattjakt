@@ -318,6 +318,7 @@ mod tests {
                 Money::from_sek(low).unwrap(),
                 Money::from_sek(high).unwrap(),
             ),
+            effect: crate::opportunity::EffectKind::Reduction,
             evidence: EvidenceChain::new(),
             missing_information: vec![],
             recommended_action: format!("action {low}"),

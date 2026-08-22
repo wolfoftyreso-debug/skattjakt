@@ -254,7 +254,7 @@
       "taxpayer": "company",
       "tax_year_from": 2023,
       "title": "Periodiseringsfond",
-      "description": "Ett aktiebolag med skattemässigt överskott får sätta av en andel av överskottet till periodiseringsfond. Om årets avsättning understiger det tillgängliga utrymmet finns en outnyttjad möjlighet att skjuta upp beskattning.",
+      "description": "Ett aktiebolag med skattemässigt överskott får sätta av en andel av överskottet till periodiseringsfond. Om årets avsättning understiger det tillgängliga utrymmet finns en outnyttjad möjlighet att skjuta upp beskattning. Detta är uppskjuten skatt, inte sänkt skatt: fonden ska återföras senast det sjätte året och en schablonintäkt tas upp varje år fonden står kvar.",
       "category": "tax",
       "conditions": {
         "type": "all",
@@ -295,8 +295,12 @@
       },
       "exceptions": [],
       "impact": {
-        "kind": "point",
-        "expr": {
+        "kind": "range",
+        "low": {
+          "op": "amount",
+          "sek": 0
+        },
+        "high": {
           "op": "mul_rate",
           "of": {
             "op": "max0",
@@ -317,8 +321,7 @@
             }
           },
           "rate": "corporate_tax"
-        },
-        "uncertainty_bp": 1500
+        }
       },
       "required_evidence": [
         "taxable_result"
@@ -327,7 +330,7 @@
         "Skattemässigt resultat före avsättning enligt deklarationsunderlaget",
         "Befintliga periodiseringsfonder från tidigare år"
       ],
-      "recommended_action": "Fråga din redovisningskonsult om avsättning till periodiseringsfond bör göras innan deklarationen färdigställs, och hur det påverkar kommande års återföringar.",
+      "recommended_action": "Fråga din redovisningskonsult om avsättning till periodiseringsfond bör göras innan deklarationen färdigställs, och väg uppskovet mot schablonintäkten och mot kommande års återföringar.",
       "review": {
         "state": "awaiting_professional_review",
         "note": "Avsättningsunderlaget är överskottet före avsättning; regeln approximerar detta med det skattemässiga resultatet och behöver verifieras mot deklarationsunderlaget."
@@ -339,7 +342,8 @@
       "sources": [
         "il-30-5",
         "il-30-6"
-      ]
+      ],
+      "effect": "deferral"
     },
     {
       "rule_id": "se.tax.periodiseringsfond.aterforing",
@@ -393,7 +397,8 @@
       "relevance": 0.8,
       "sources": [
         "il-30-7"
-      ]
+      ],
+      "effect": "deferral"
     },
     {
       "rule_id": "se.tax.underskott.kvittning",
@@ -402,7 +407,7 @@
       "taxpayer": "company",
       "tax_year_from": 2023,
       "title": "Tidigare års underskott",
-      "description": "Ett outnyttjat underskott från tidigare år rullas vidare och dras av mot senare överskott. Om bolaget både har ett kvarvarande underskott och ett överskott i år kan underskottet minska årets skatt.",
+      "description": "Ett outnyttjat underskott från tidigare år rullas vidare och dras av mot senare överskott. Avdraget sker i deklarationen och kräver ingen åtgärd i sig — det som behöver kontrolleras är att det fastställda underskottet stämmer och att ingen spärr efter ägarförändring begränsar det. Nedre gränsen är noll eftersom en spärr kan ta bort avdraget helt.",
       "category": "tax",
       "conditions": {
         "type": "all",
@@ -441,16 +446,30 @@
         {
           "id": "agarforandring",
           "when": {
-            "type": "profile",
-            "flag": "in_group",
-            "is": true
+            "type": "any",
+            "of": [
+              {
+                "type": "profile",
+                "flag": "ownership_changed",
+                "is": true
+              },
+              {
+                "type": "profile",
+                "flag": "in_group",
+                "is": true
+              }
+            ]
           },
-          "explanation": "Vid ägarförändring kan beloppsspärr och koncernbidragsspärr begränsa hur mycket av underskottet som får utnyttjas. Koncerntillhörighet gör att detta måste utredas."
+          "explanation": "Vid ägarförändring kan beloppsspärr och koncernbidragsspärr enligt 40 kap. inkomstskattelagen begränsa hur mycket av underskottet som får utnyttjas, och spärren kan slå helt. Detta gäller även ett fristående bolag som bytt ägare, inte bara bolag i koncern."
         }
       ],
       "impact": {
-        "kind": "point",
-        "expr": {
+        "kind": "range",
+        "low": {
+          "op": "amount",
+          "sek": 0
+        },
+        "high": {
           "op": "mul_rate",
           "of": {
             "op": "min",
@@ -464,8 +483,7 @@
             }
           },
           "rate": "corporate_tax"
-        },
-        "uncertainty_bp": 1000
+        }
       },
       "required_evidence": [
         "carried_forward_loss",
@@ -475,7 +493,7 @@
         "Föregående års deklaration med fastställt underskott",
         "Eventuella ägarförändringar under året"
       ],
-      "recommended_action": "Stäm av det fastställda underskottet mot föregående års deklaration och kontrollera att inga spärrar efter ägarförändring begränsar avdraget.",
+      "recommended_action": "Stäm av det fastställda underskottet mot föregående års deklaration, kontrollera att det faktiskt utnyttjats i årets beräkning, och utred om någon spärr efter ägarförändring gäller.",
       "review": {
         "state": "awaiting_professional_review",
         "note": "Spärreglerna vid ägarförändring är förenklade till ett undantag på koncerntillhörighet och täcker inte alla fall."
@@ -496,20 +514,20 @@
       "taxpayer": "company",
       "tax_year_from": 2023,
       "title": "Skattemässigt avskrivningsutrymme på inventarier",
-      "description": "Vid räkenskapsenlig avskrivning får inventarier skrivas av med upp till 30 procent av avskrivningsunderlaget enligt huvudregeln. Om den bokförda avskrivningen är lägre kan det finnas ett outnyttjat skattemässigt utrymme.",
+      "description": "Vid räkenskapsenlig avskrivning får inventarier skrivas av med upp till 30 procent av avskrivningsunderlaget enligt huvudregeln. Om den bokförda avskrivningen är lägre kan det finnas ett outnyttjat skattemässigt utrymme. Utrymmet beräknas på inventarier, inte på byggnader och mark.",
       "category": "investments",
       "conditions": {
         "type": "all",
         "of": [
           {
             "type": "fact_present",
-            "fact": "fixed_assets"
+            "fact": "equipment"
           },
           {
             "type": "compare",
             "left": {
               "op": "fact",
-              "fact": "fixed_assets"
+              "fact": "equipment"
             },
             "op": "gt",
             "right": {
@@ -520,17 +538,17 @@
           {
             "type": "compare",
             "left": {
-              "op": "fact_or_zero",
-              "fact": "depreciation"
-            },
-            "op": "lt",
-            "right": {
               "op": "mul_rate",
               "of": {
                 "op": "fact",
-                "fact": "fixed_assets"
+                "fact": "equipment"
               },
               "rate": "inventarier_huvudregel_avskrivning"
+            },
+            "op": "gt",
+            "right": {
+              "op": "fact_or_zero",
+              "fact": "depreciation"
             }
           }
         ]
@@ -552,7 +570,7 @@
                 "op": "mul_rate",
                 "of": {
                   "op": "fact",
-                  "fact": "fixed_assets"
+                  "fact": "equipment"
                 },
                 "rate": "inventarier_huvudregel_avskrivning"
               },
@@ -566,18 +584,20 @@
         }
       },
       "required_evidence": [
-        "fixed_assets",
+        "equipment",
         "depreciation"
       ],
       "missing_information_hints": [
         "Anläggningsregister med avskrivningsunderlag per tillgång",
         "Vilken avskrivningsmetod bolaget tillämpar",
-        "Ackumulerade överavskrivningar"
+        "Ackumulerade överavskrivningar",
+        "Anläggningsregister med skattemässigt värde på inventarier",
+        "Specifikation av posten Materiella anläggningstillgångar, uppdelad på byggnader, mark och inventarier"
       ],
       "recommended_action": "Be din redovisningskonsult stämma av det skattemässiga avskrivningsunderlaget mot anläggningsregistret och bedöma om överavskrivning är aktuell.",
       "review": {
         "state": "awaiting_professional_review",
-        "note": "Avskrivningsunderlaget är inte detsamma som posten materiella anläggningstillgångar i balansräkningen. Undre gränsen sätts därför till noll och beloppet ska betraktas som ett tak, inte en uppskattning."
+        "note": "Avskrivningsunderlaget är det skattemässiga värdet på inventarierna, inte det bokförda. Regeln räknar på bokfört värde och ger därför ett tak, inte ett besked."
       },
       "effort": "medium",
       "risk": "medium",
@@ -781,20 +801,20 @@
       "taxpayer": "company",
       "tax_year_from": 2023,
       "title": "Avdrag för pensionskostnader",
-      "description": "Arbetsgivarens kostnad för tryggande av pension är avdragsgill inom en ram som utgår från den anställdes lön, med ett tak uttryckt i prisbasbelopp. Ett bolag med lönekostnader men utan bokförda pensionskostnader kan ha ett outnyttjat utrymme.",
+      "description": "Arbetsgivarens kostnad för tryggande av pension är avdragsgill inom en ram som utgår från den anställdes lön, med ett tak uttryckt i prisbasbelopp. Ett bolag med utbetalda löner men utan bokförda pensionskostnader kan ha ett outnyttjat utrymme.",
       "category": "personnel",
       "conditions": {
         "type": "all",
         "of": [
           {
             "type": "fact_present",
-            "fact": "personnel_costs"
+            "fact": "wages"
           },
           {
             "type": "compare",
             "left": {
               "op": "fact",
-              "fact": "personnel_costs"
+              "fact": "wages"
             },
             "op": "gt",
             "right": {
@@ -813,7 +833,7 @@
               "op": "mul_rate",
               "of": {
                 "op": "fact",
-                "fact": "personnel_costs"
+                "fact": "wages"
               },
               "rate": "pension_andel_av_lon"
             }
@@ -825,17 +845,19 @@
         "kind": "none"
       },
       "required_evidence": [
-        "personnel_costs",
+        "wages",
         "pension_costs"
       ],
       "missing_information_hints": [
         "Löneunderlag per anställd",
-        "Befintliga pensionsutfästelser och försäkringslösningar"
+        "Befintliga pensionsutfästelser och försäkringslösningar",
+        "Lönespecifikation per anställd",
+        "Befintliga pensionsutfästelser och försäkringsbesked"
       ],
       "recommended_action": "Diskutera med din redovisningskonsult om bolagets pensionslösning utnyttjar avdragsutrymmet, och vad det skulle kosta respektive spara.",
       "review": {
         "state": "awaiting_professional_review",
-        "note": "Avdragsramen beräknas per anställd och kan inte härledas ur den samlade personalkostnaden. Regeln flaggar därför utan belopp."
+        "note": "Avdragsramen beräknas per anställd och har ett tak uttryckt i prisbasbelopp; ingen av delarna går att härleda ur den samlade lönesumman. Regeln flaggar därför utan belopp."
       },
       "effort": "medium",
       "risk": "low",

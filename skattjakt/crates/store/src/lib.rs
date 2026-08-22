@@ -238,6 +238,7 @@ impl Tenant<'_> {
             employee_count: None,
             owner_count: None,
             in_group: None,
+            ownership_changed: None,
             operations_outside_sweden: None,
             does_development_work: None,
             owns_premises: None,

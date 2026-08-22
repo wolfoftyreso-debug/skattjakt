@@ -463,27 +463,13 @@ impl RuleEngine {
         match &rule.impact {
             ImpactSpec::None => (None, None, None),
 
-            ImpactSpec::Point {
-                expr,
-                uncertainty_bp,
-            } => match expr.eval(ctx.facts, ctx.constants) {
-                Ok(value) => match MoneyRange::around(value, *uncertainty_bp) {
-                    Ok(range) => {
-                        let record = self.record(expr, "point_with_uncertainty", ctx, range);
-                        (Some(range), Some(record), None)
-                    }
-                    Err(_) => (None, None, Some(EvalError::Overflow("uncertainty".into()))),
-                },
-                Err(e) => (None, None, Some(e)),
-            },
-
             ImpactSpec::Range { low, high } => {
                 let lo = low.eval(ctx.facts, ctx.constants);
                 let hi = high.eval(ctx.facts, ctx.constants);
                 match (lo, hi) {
                     (Ok(a), Ok(b)) => {
                         let range = MoneyRange::new(a, b);
-                        let record = self.record(low, "explicit_range", ctx, range);
+                        let record = self.record(low, high, "explicit_range", ctx, range);
                         (Some(range), Some(record), None)
                     }
                     (Err(e), _) | (_, Err(e)) => (None, None, Some(e)),
@@ -494,15 +480,29 @@ impl RuleEngine {
 
     /// Captures the inputs that went into a calculation so it can be re-run and
     /// so the evidence card can show its working.
+    /// Captures both bounds, because either one may be the literal.
+    ///
+    /// This used to take a single expression and was handed the lower bound.
+    /// That was harmless while lower bounds were computed, and became wrong the
+    /// moment a rule's low bound became a plain zero — "the company makes no
+    /// allocation" references no fact, so the evidence card lost every value it
+    /// was supposed to show its working from. Reading both and merging is the
+    /// only version that cannot depend on which bound happens to be interesting.
     fn record(
         &self,
-        expr: &Expr,
+        low: &Expr,
+        high: &Expr,
         method: &str,
         ctx: &EvalContext<'_>,
         range: MoneyRange,
     ) -> CalculationRecord {
-        let inputs = expr
-            .referenced_facts()
+        let mut kinds = low.referenced_facts();
+        for kind in high.referenced_facts() {
+            if !kinds.contains(&kind) {
+                kinds.push(kind);
+            }
+        }
+        let inputs = kinds
             .into_iter()
             .map(|kind| CalculationInputRecord {
                 name: kind.key(),
@@ -515,7 +515,7 @@ impl RuleEngine {
             inputs,
             result_low: range.low,
             result_high: range.high,
-            expression: serde_json::to_value(expr).unwrap_or(serde_json::Value::Null),
+            expression: serde_json::json!({ "low": low, "high": high }),
         }
     }
 }
@@ -523,7 +523,6 @@ impl RuleEngine {
 fn validate_impact(impact: &ImpactSpec, constants: &TaxYearConstants) -> Result<(), EvalError> {
     match impact {
         ImpactSpec::None => Ok(()),
-        ImpactSpec::Point { expr, .. } => crate::condition::validate_expr(expr, constants),
         ImpactSpec::Range { low, high } => {
             crate::condition::validate_expr(low, constants)?;
             crate::condition::validate_expr(high, constants)
@@ -609,6 +608,7 @@ mod tests {
             employee_count: None,
             owner_count: None,
             in_group: Some(false),
+            ownership_changed: None,
             operations_outside_sweden: Some(false),
             does_development_work: Some(false),
             owns_premises: Some(false),
@@ -689,8 +689,10 @@ mod tests {
                 right: Expr::Amount { sek: 0 },
             },
             exceptions: vec![],
-            impact: ImpactSpec::Point {
-                expr: Expr::MulRate {
+            effect: skattjakt_core::opportunity::EffectKind::Reduction,
+            impact: ImpactSpec::Range {
+                low: Expr::Amount { sek: 0 },
+                high: Expr::MulRate {
                     of: Box::new(Expr::MulBp {
                         of: Box::new(Expr::Fact {
                             fact: FactKind::TaxableResult,
@@ -699,7 +701,6 @@ mod tests {
                     }),
                     rate: "corporate_tax".into(),
                 },
-                uncertainty_bp: 1000,
             },
             required_evidence: vec![FactKind::TaxableResult],
             missing_information_hints: vec![],
@@ -741,10 +742,13 @@ mod tests {
         let eval = engine.evaluate(&engine.rules()[0], &ctx(&f, &p, &c));
 
         assert_eq!(eval.outcome, RuleOutcome::Matched);
-        // 25 % of 1 000 000 = 250 000, taxed at 20.6 % = 51 500, ±10 %.
+        // 25 % of 1 000 000 = 250 000, taxed at 20.6 % = 51 500. The low bound
+        // is zero because the company can simply make no allocation — a state
+        // of the world, where the ±10 % band this used to assert was a number
+        // nobody had measured.
         let impact = eval.impact.expect("impact should be computed");
-        assert_eq!(impact.low, Money::from_sek(46_350).unwrap());
-        assert_eq!(impact.high, Money::from_sek(56_650).unwrap());
+        assert_eq!(impact.low, Money::ZERO);
+        assert_eq!(impact.high, Money::from_sek(51_500).unwrap());
         assert!(eval.calculation.is_some());
         assert!(eval.awaiting_review);
     }
@@ -789,6 +793,7 @@ mod tests {
         let engine = engine_with(vec![rule]);
         let p = CompanyProfile {
             in_group: Some(true),
+            ownership_changed: None,
             ..profile()
         };
         let (f, c) = (
@@ -817,6 +822,7 @@ mod tests {
         let engine = engine_with(vec![rule]);
         let p = CompanyProfile {
             in_group: None,
+            ownership_changed: None,
             ..profile()
         };
         let (f, c) = (
@@ -1037,14 +1043,14 @@ mod tests {
     #[test]
     fn a_rule_naming_an_unknown_rate_is_rejected_at_load() {
         let mut rule = test_rule();
-        rule.impact = ImpactSpec::Point {
-            expr: Expr::MulRate {
+        rule.impact = ImpactSpec::Range {
+            low: Expr::Amount { sek: 0 },
+            high: Expr::MulRate {
                 of: Box::new(Expr::Fact {
                     fact: FactKind::TaxableResult,
                 }),
                 rate: "does_not_exist".into(),
             },
-            uncertainty_bp: 0,
         };
         let err = RuleEngine::new(RuleSet {
             version: "v".into(),

@@ -831,6 +831,7 @@ impl AnalysisPipeline {
             title: rule.title.clone(),
             rationale: self.rationale_for(rule, evaluation, verdict),
             impact,
+            effect: rule.effect,
             evidence,
             missing_information: missing,
             recommended_action: rule.recommended_action.clone(),
@@ -986,6 +987,9 @@ impl AnalysisPipeline {
             // No rule, no calculation, therefore no figure. Section 13 does not
             // allow a number that nothing computed.
             impact: MoneyRange::ZERO,
+            // A model-only finding carries no amount, so the distinction
+            // between saved and postponed tax has nothing to apply to.
+            effect: skattjakt_core::opportunity::EffectKind::Reduction,
             evidence,
             missing_information: candidate.missing_information.clone(),
             recommended_action: candidate.question.clone(),

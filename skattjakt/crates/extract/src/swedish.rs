@@ -33,6 +33,14 @@ const LABELS: &[(&str, FactKind)] = &[
     ("övriga externa kostnader", FactKind::ExternalCosts),
     ("handelsvaror", FactKind::ExternalCosts),
     ("personalkostnader", FactKind::PersonnelCosts),
+    // Cash pay on its own. The pension deduction frame is a share of this, not
+    // of the heading above, which also carries employer's contributions.
+    ("löner och andra ersättningar", FactKind::Wages),
+    ("löner och ersättningar", FactKind::Wages),
+    (
+        "löner, andra ersättningar och sociala kostnader",
+        FactKind::PersonnelCosts,
+    ),
     ("av- och nedskrivningar", FactKind::Depreciation),
     (
         "avskrivningar av materiella anläggningstillgångar",
@@ -54,10 +62,23 @@ const LABELS: &[(&str, FactKind)] = &[
         FactKind::IntangibleAssets,
     ),
     ("materiella anläggningstillgångar", FactKind::FixedAssets),
+    // The equipment lines, kept apart from the heading above them.
+    //
+    // These used to map to `FixedAssets` as well, which made the depreciation
+    // rule read the whole *Materiella anläggningstillgångar* heading —
+    // buildings and land included — and multiply it by the 30 % that only
+    // applies to equipment. Longest-match ordering means a line that names
+    // equipment explicitly now beats the heading.
     (
         "inventarier, verktyg och installationer",
-        FactKind::FixedAssets,
+        FactKind::Equipment,
     ),
+    ("maskiner och inventarier", FactKind::Equipment),
+    (
+        "maskiner och andra tekniska anläggningar",
+        FactKind::Equipment,
+    ),
+    ("inventarier", FactKind::Equipment),
     ("varulager", FactKind::Inventory),
     ("kundfordringar", FactKind::Receivables),
     ("kassa och bank", FactKind::Cash),

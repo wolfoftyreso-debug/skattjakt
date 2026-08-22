@@ -201,11 +201,19 @@ pub struct Exception {
 pub enum ImpactSpec {
     /// No monetary effect. Risk and control findings use this.
     None,
-    /// A single computed figure, widened into a range by an uncertainty band
-    /// that reflects how much of the input was assumed.
-    Point { expr: Expr, uncertainty_bp: i64 },
-    /// Explicit lower and upper expressions, for rules whose spread is
-    /// structural rather than a tolerance.
+    /// Explicit lower and upper expressions.
+    ///
+    /// The only shape that produces money, and deliberately the only one.
+    /// There used to be a `Point` variant that took one figure and widened it
+    /// by an `uncertainty_bp` band — ±15 % on one rule, ±10 % on another. Those
+    /// numbers came from nowhere: nobody measured them, and no input to the
+    /// calculation was known to that tolerance. The result looked like a
+    /// measurement of uncertainty and was a decoration on a point estimate.
+    ///
+    /// Writing both bounds forces the author to say what the low end *means*.
+    /// For an unused allowance it is "the company makes no allocation"; for a
+    /// carried-forward loss it is "a spärr removes the deduction entirely".
+    /// Both are real states of the world, which ±10 % never was.
     Range { low: Expr, high: Expr },
 }
 
@@ -213,7 +221,6 @@ impl ImpactSpec {
     pub fn required_facts(&self) -> Vec<FactKind> {
         match self {
             ImpactSpec::None => Vec::new(),
-            ImpactSpec::Point { expr, .. } => expr.required_facts(),
             ImpactSpec::Range { low, high } => {
                 let mut facts = low.required_facts();
                 facts.extend(high.required_facts());
@@ -226,7 +233,6 @@ impl ImpactSpec {
     pub fn method_name(&self) -> &'static str {
         match self {
             ImpactSpec::None => "none",
-            ImpactSpec::Point { .. } => "point_with_uncertainty",
             ImpactSpec::Range { .. } => "explicit_range",
         }
     }
@@ -298,6 +304,14 @@ pub struct Rule {
     pub exceptions: Vec<Exception>,
 
     pub impact: ImpactSpec,
+    /// Whether the impact is tax saved or tax postponed.
+    ///
+    /// Defaults to `Reduction`, which is what most rules are. A rule that
+    /// defers — periodiseringsfond, överavskrivning — has to say so, and the
+    /// consequence is that its amount is reported under its own heading rather
+    /// than added to the headline total.
+    #[serde(default)]
+    pub effect: skattjakt_core::opportunity::EffectKind,
 
     /// Facts a reviewer should expect to see cited. Used to explain what the
     /// finding rests on and what is absent.
@@ -450,6 +464,7 @@ mod tests {
             category: OpportunityCategory::Tax,
             conditions: Condition::Always,
             exceptions: vec![],
+            effect: skattjakt_core::opportunity::EffectKind::Reduction,
             impact: ImpactSpec::None,
             required_evidence: vec![],
             missing_information_hints: vec![],
@@ -504,11 +519,11 @@ mod tests {
         r.conditions = Condition::FactPresent {
             fact: FactKind::TaxableResult,
         };
-        r.impact = ImpactSpec::Point {
-            expr: Expr::Fact {
+        r.impact = ImpactSpec::Range {
+            low: Expr::Amount { sek: 0 },
+            high: Expr::Fact {
                 fact: FactKind::Cash,
             },
-            uncertainty_bp: 1000,
         };
         r.required_evidence = vec![FactKind::Equity];
         let facts = r.referenced_facts();
@@ -527,11 +542,11 @@ mod tests {
         r.conditions = Condition::FactPresent {
             fact: FactKind::TaxableResult,
         };
-        r.impact = ImpactSpec::Point {
-            expr: Expr::Fact {
+        r.impact = ImpactSpec::Range {
+            low: Expr::Amount { sek: 0 },
+            high: Expr::Fact {
                 fact: FactKind::Cash,
             },
-            uncertainty_bp: 1000,
         };
         r.required_evidence = vec![FactKind::TaxableResult];
 

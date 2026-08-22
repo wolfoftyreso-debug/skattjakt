@@ -96,6 +96,7 @@ impl CmpOp {
 #[serde(rename_all = "snake_case")]
 pub enum ProfileFlag {
     InGroup,
+    OwnershipChanged,
     OperationsOutsideSweden,
     DoesDevelopmentWork,
     OwnsPremises,
@@ -107,6 +108,7 @@ impl ProfileFlag {
     fn read(self, profile: &CompanyProfile) -> Option<bool> {
         match self {
             ProfileFlag::InGroup => profile.in_group,
+            ProfileFlag::OwnershipChanged => profile.ownership_changed,
             ProfileFlag::OperationsOutsideSweden => profile.operations_outside_sweden,
             ProfileFlag::DoesDevelopmentWork => profile.does_development_work,
             ProfileFlag::OwnsPremises => profile.owns_premises,
@@ -119,6 +121,9 @@ impl ProfileFlag {
     pub fn question_sv(self) -> &'static str {
         match self {
             ProfileFlag::InGroup => "Ingår bolaget i en koncern?",
+            ProfileFlag::OwnershipChanged => {
+                "Har det bestämmande inflytandet över bolaget bytt ägare de senaste fem åren?"
+            }
             ProfileFlag::OperationsOutsideSweden => "Har bolaget verksamhet utanför Sverige?",
             ProfileFlag::DoesDevelopmentWork => "Bedriver bolaget utvecklingsarbete?",
             ProfileFlag::OwnsPremises => "Äger bolaget lokaler eller fastighet?",
@@ -364,6 +369,7 @@ mod tests {
             employee_count: None,
             owner_count: None,
             in_group: None,
+            ownership_changed: None,
             operations_outside_sweden: None,
             does_development_work: None,
             owns_premises: None,
@@ -425,6 +431,7 @@ mod tests {
 
         let answered = CompanyProfile {
             in_group: Some(false),
+            ownership_changed: None,
             ..p.clone()
         };
         let ctx2 = EvalContext {

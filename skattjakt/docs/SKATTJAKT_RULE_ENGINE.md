@@ -44,7 +44,8 @@ configuration reload.
   "category": "tax",
   "conditions": { "type": "all", "of": [ … ] },
   "exceptions": [],
-  "impact": { "kind": "point", "expr": { … }, "uncertainty_bp": 1500 },
+  "impact": { "kind": "range", "low": { … }, "high": { … } },
+  "effect": "reduction",
   "required_evidence": ["taxable_result"],
   "missing_information_hints": [ … ],
   "recommended_action": "…",
@@ -299,20 +300,33 @@ individually falsifiable.
 
 ```json
 "impact": {
-  "kind": "point",
-  "expr": { "op": "mul_rate", "of": { … }, "rate": "corporate_tax" },
-  "uncertainty_bp": 1500
-}
+  "kind": "range",
+  "low":  { "op": "amount", "sek": 0 },
+  "high": { "op": "mul_rate", "of": { … }, "rate": "corporate_tax" }
+},
+"effect": "reduction"
 ```
 
-`kind: "point"` names the *expression* form, not the output. The output is
-always a range: `MoneyRange::around(value, uncertainty_bp)` widens the computed
-figure by the stated uncertainty. There is no path from a rule to a single
-figure, because `MoneyRange` is the only money type the impact code can produce.
+`kind: "range"` is the only form that produces money, and both bounds are
+written by the rule author. There is no path from a rule to a single figure,
+because `MoneyRange` is the only money type the impact code can produce.
 
-`uncertainty_bp` is a claim about how much the rule does not know — 1500 = ±15%.
-Narrowing it is a decision a rule author has to make and a reviewer can
-challenge.
+There used to be a `kind: "point"` that took one expression and widened it by
+an `uncertainty_bp` band — ±15% on one rule, ±10% on another. Those numbers came
+from nowhere. Nobody had measured them, and no input to the calculation was
+known to that tolerance, so the interval looked like a statement about
+uncertainty and was a decoration on a point estimate. Writing both bounds forces
+the author to say what the low end *means*: for an unused allowance it is "the
+company makes no allocation", for a carried-forward loss it is "a spärr removes
+the deduction entirely". Both are states of the world. ±10% never was.
+
+`effect` says whether the amount is tax saved or tax postponed, and defaults to
+`reduction`. A rule marked `deferral` — periodiseringsfond is the shipped case —
+keeps its amount and its own line in the report, and contributes nothing to the
+headline total. Adding an allocation to a periodiseringsfond to a missed
+deduction answered a question nobody asked: the first is money the company
+keeps, the second is the same money paid in a later year with a schablonintäkt
+charged every year the fund stands.
 
 `kind: "none"` is for rules that flag something worth checking without claiming
 an amount. Several rules use it, and that is correct: "you have reserves that

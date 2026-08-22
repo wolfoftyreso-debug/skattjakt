@@ -46,6 +46,8 @@ struct GoldenProfile {
     employee_count: u32,
     owner_count: u32,
     in_group: bool,
+    #[serde(default)]
+    ownership_changed: Option<bool>,
     operations_outside_sweden: bool,
     does_development_work: bool,
     owns_premises: bool,
@@ -144,6 +146,10 @@ async fn run_case(case: &GoldenCase) -> AnalysisResult {
             employee_count: Some(case.profile.employee_count),
             owner_count: Some(case.profile.owner_count),
             in_group: Some(case.profile.in_group),
+            // Optional in the case files: only the cases that turn on a spärr
+            // after an ownership change need to state it, and the rest are
+            // honestly "not asked" rather than a cheerful false.
+            ownership_changed: case.profile.ownership_changed,
             operations_outside_sweden: Some(case.profile.operations_outside_sweden),
             does_development_work: Some(case.profile.does_development_work),
             owns_premises: Some(case.profile.owns_premises),
@@ -268,7 +274,15 @@ fn check_critical(case: &GoldenCase, result: &AnalysisResult, metrics: &mut Metr
 #[tokio::test]
 async fn the_golden_dataset_meets_its_quality_targets() {
     let cases = load_cases();
-    assert_eq!(cases.len(), 10, "section 29 requires ten cases");
+    // Section 29 asks for ten. The floor is what it meant — a dataset that can
+    // shrink is a dataset a failing case can be deleted from — so cases may be
+    // added and none may be removed. Case 11 was added when a company that owns
+    // its premises turned out to be a shape the first ten never covered.
+    assert!(
+        cases.len() >= 10,
+        "section 29 requires at least ten cases, found {}",
+        cases.len()
+    );
 
     let mut metrics = Metrics::default();
     let mut report = String::new();

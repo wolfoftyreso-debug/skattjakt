@@ -197,6 +197,33 @@ impl PriorityBand {
     }
 }
 
+/// What a finding's money actually is.
+///
+/// The distinction the headline turned on. A deduction that was missed is
+/// money the company keeps; an allocation to a periodiseringsfond is the same
+/// money moved to a later year, and it comes back — with a schablonintäkt
+/// charged on the fund every year it stands. Summing the two into one
+/// "ekonomisk potential" reads as recoverable cash and is not.
+///
+/// So a deferral carries its amount, is shown under its own heading, and
+/// contributes nothing to the headline total. See `countable_impact`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum EffectKind {
+    /// Tax that is not paid at all. The default, because most rules are this
+    /// and a rule that forgets to say should not silently become a deferral.
+    #[default]
+    Reduction,
+    /// Tax moved to a later year. Real, worth knowing, and not a saving.
+    Deferral,
+}
+
+impl EffectKind {
+    pub fn is_deferral(self) -> bool {
+        matches!(self, EffectKind::Deferral)
+    }
+}
+
 /// One finding, with everything needed to render its evidence card.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Opportunity {
@@ -211,6 +238,9 @@ pub struct Opportunity {
     pub rationale: String,
     /// Estimated economic effect. Always an interval (section 13).
     pub impact: MoneyRange,
+    /// Whether that effect is tax saved or tax postponed.
+    #[serde(default)]
+    pub effect: EffectKind,
 
     pub evidence: EvidenceChain,
     /// What is absent that would settle the question.
@@ -294,10 +324,37 @@ impl Opportunity {
         Priority { score, band }
     }
 
-    /// The economic effect to include in a total. Rejected findings and
-    /// non-actionable ones contribute nothing, so the headline range never
-    /// includes money the system does not stand behind.
+    /// The economic effect to include in the headline total.
+    ///
+    /// Three things contribute nothing: a rejected finding, one the system does
+    /// not stand behind, and a deferral. The last is the one that used to be
+    /// wrong — a periodiseringsfond allocation put 20,6 % of the headroom into
+    /// a figure a reader takes as money to be had, when it is the same money
+    /// paid later with a schablonintäkt charged in the meantime.
+    ///
+    /// The amount is not discarded; `deferred_impact` reports it, and the
+    /// report gives it its own line. The claim is what changed, not the number.
     pub fn countable_impact(&self) -> MoneyRange {
+        if self.effect.is_deferral() {
+            return MoneyRange::ZERO;
+        }
+        self.stood_behind()
+    }
+
+    /// The postponed tax this finding represents, or zero if it is not a
+    /// deferral. The mirror of `countable_impact`: between them they account
+    /// for every krona a finding claims, which is asserted in the tests.
+    pub fn deferred_impact(&self) -> MoneyRange {
+        if self.effect.is_deferral() {
+            self.stood_behind()
+        } else {
+            MoneyRange::ZERO
+        }
+    }
+
+    /// The impact, or zero when the finding is not one the system stands
+    /// behind. Shared so the two functions above cannot drift apart.
+    fn stood_behind(&self) -> MoneyRange {
         if self.status == OpportunityStatus::Rejected || !self.confidence.is_actionable() {
             MoneyRange::ZERO
         } else {
@@ -473,6 +530,7 @@ mod tests {
             title: "T".into(),
             rationale: "R".into(),
             impact: range(10_000, 20_000),
+            effect: EffectKind::Reduction,
             evidence: EvidenceChain::new(),
             missing_information: vec![],
             recommended_action: "A".into(),

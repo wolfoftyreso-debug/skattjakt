@@ -36,6 +36,8 @@ if [[ "${EUID:-$(id -u)}" -eq 0 && -z "${SKATTJAKT_PG_REEXEC:-}" ]]; then
 fi
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# Whichever build is newer, never whichever profile is preferred.
+source "$ROOT/tests/lib/newest-binary.sh"
 WORKDIR="$(mktemp -d)"
 PGDATA="$WORKDIR/data"
 SOCKET="$WORKDIR/sock"
@@ -48,10 +50,7 @@ ADMIN_TOKEN="admin-payments-suite"
 # left over from before the change under test passes the health check and then
 # fails in ways that read as product bugs — this has now cost two debugging
 # sessions, so the rule lives in every suite that picks a binary.
-API="$ROOT/target/release/skattjakt-api"
-[[ -x "$API" ]] || API="$ROOT/target/debug/skattjakt-api"
-DEBUG_API="$ROOT/target/debug/skattjakt-api"
-[[ -x "$DEBUG_API" && "$DEBUG_API" -nt "$API" ]] && API="$DEBUG_API"
+API="$(newest_binary skattjakt-api)"
 
 PGBIN="${PGBIN:-$(dirname "$(command -v initdb || echo /usr/lib/postgresql/16/bin/initdb)")}"
 [[ -x "$PGBIN/initdb" ]] || PGBIN=/usr/lib/postgresql/16/bin

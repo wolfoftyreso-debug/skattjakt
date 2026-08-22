@@ -159,9 +159,15 @@ Integer öre throughout, tax rates in basis points, rounding stated explicitly
 per operation. Every calculation records its method, its inputs and its result,
 so a figure can be re-derived rather than trusted.
 
-Results are ranges. `MoneyRange::around(value, uncertainty_bp)` widens a figure
-by a stated uncertainty; the width is a claim about how much is unknown, and
-narrowing it is a decision someone has to make in code.
+Results are ranges, and a rule writes both bounds. There is no mechanism that
+turns one figure into an interval by widening it, because the band such a
+mechanism needs is a number nobody can source — see section 6 of
+`SKATTJAKT_RULE_ENGINE.md`. The low bound has to name a state of the world the
+company could actually be in.
+
+The headline total counts reductions only. A finding whose rule is marked
+`deferral` carries its amount to its own line in the report and adds nothing to
+that total.
 
 ---
 

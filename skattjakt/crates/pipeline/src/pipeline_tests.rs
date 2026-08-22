@@ -37,6 +37,7 @@ fn profile() -> CompanyProfile {
         employee_count: Some(8),
         owner_count: Some(2),
         in_group: Some(false),
+        ownership_changed: Some(false),
         operations_outside_sweden: Some(false),
         does_development_work: Some(false),
         owns_premises: Some(false),
@@ -1350,4 +1351,137 @@ fn a_swedish_list_reads_like_a_sentence() {
     assert_eq!(quoted_list(&two), "\"A\" och \"B\"");
     assert_eq!(quoted_list(&three), "\"A\", \"B\" och \"C\"");
     assert_eq!(quoted_list(&[]), "");
+}
+
+/// A balance-sheet heading is not an equipment line.
+///
+/// The defect this is for: `"materiella anläggningstillgångar"` mapped to the
+/// same fact the 30 % huvudregel was applied to, so a company that owned its
+/// premises was told it had a depreciation allowance the size of 30 % of its
+/// building. On the run this was found in, 10,2 Mkr of fixed assets produced
+/// 630 360 kr of "ekonomisk potential" that did not exist.
+#[tokio::test]
+async fn a_company_that_owns_its_premises_is_not_told_it_can_depreciate_the_building() {
+    const OWNS_PREMISES: &str = "\
+RESULTATRÄKNING OCH BALANSRÄKNING
+Nettoomsättning 4 000 000
+Personalkostnader -1 200 000
+Löner och andra ersättningar -880 000
+Av- och nedskrivningar -250 000
+Rörelseresultat 900 000
+Skattemässigt resultat 900 000
+Materiella anläggningstillgångar 10 200 000
+Byggnader och mark 10 000 000
+Inventarier, verktyg och installationer 200 000
+Summa tillgångar 11 150 000
+Summa eget kapital och skulder 11 150 000
+";
+    let (result, _) = pipeline(silent_provider())
+        .run(&input(vec![document(OWNS_PREMISES)]), &SilentObserver)
+        .await
+        .unwrap();
+
+    let depreciation = result
+        .opportunities
+        .iter()
+        .find(|o| o.title.contains("avskrivningsutrymme"));
+    assert!(
+        depreciation.is_none(),
+        "30 % of 200 000 kr of equipment is 60 000 kr against 250 000 kr already \
+         written off, so there is no headroom — and the finding claimed {:?}",
+        depreciation.map(|o| o.impact)
+    );
+
+    // The heading itself is still read; it is simply not the base for this rule.
+    let probe = input(vec![document(OWNS_PREMISES)]);
+    let facts = build_fact_set(
+        probe.company.id,
+        probe.company.fiscal_year,
+        &probe.documents,
+    );
+    assert!(
+        facts
+            .value(&skattjakt_core::FactKind::FixedAssets)
+            .is_some(),
+        "the heading is still a fact worth having"
+    );
+    assert!(
+        facts.value(&skattjakt_core::FactKind::Equipment).is_some(),
+        "the equipment line is read separately"
+    );
+}
+
+/// Deferred tax is not saved tax, and the headline must not add them.
+#[tokio::test]
+async fn a_periodiseringsfond_is_reported_as_postponed_rather_than_saved() {
+    let (result, _) = pipeline(silent_provider())
+        .run(&input(vec![document(INCOME_STATEMENT)]), &SilentObserver)
+        .await
+        .unwrap();
+
+    let fund = result
+        .opportunities
+        .iter()
+        .find(|o| o.title.contains("Periodiseringsfond"))
+        .expect("the fixture triggers the allocation rule");
+    assert!(
+        fund.effect.is_deferral(),
+        "an allocation to a periodiseringsfond postpones tax; it does not remove it"
+    );
+    assert!(
+        fund.countable_impact().is_zero(),
+        "a deferral must not be added to the headline total"
+    );
+    assert!(
+        !fund.deferred_impact().is_zero(),
+        "the amount is not discarded, only reported under its own heading"
+    );
+
+    let report = crate::report::build(&result, "Testbolaget AB", "2025", "se-2025.1");
+    assert!(
+        !report.sections.economic_potential.deferred.is_zero(),
+        "the report shows the postponed tax"
+    );
+    assert!(
+        report
+            .sections
+            .economic_potential
+            .deferred_note
+            .contains("schablonintäkt"),
+        "and says why it is not a saving"
+    );
+    let markdown = crate::report::to_markdown(&report);
+    assert!(markdown.contains("Uppskjuten skatt:"));
+    assert!(markdown.contains("Lägre skatt:"));
+}
+
+/// Every krona a finding claims is either counted or deferred, never both and
+/// never neither. Guards the two functions against drifting apart.
+#[tokio::test]
+async fn counted_and_deferred_together_account_for_every_finding() {
+    let (result, _) = pipeline(silent_provider())
+        .run(&input(vec![document(INCOME_STATEMENT)]), &SilentObserver)
+        .await
+        .unwrap();
+    for o in result
+        .opportunities
+        .iter()
+        .filter(|o| o.status.is_presented())
+    {
+        let counted = o.countable_impact();
+        let deferred = o.deferred_impact();
+        assert!(
+            counted.is_zero() || deferred.is_zero(),
+            "{:?} was counted in both places",
+            o.title
+        );
+        if o.confidence.is_actionable() {
+            assert_eq!(
+                counted.checked_add(deferred).unwrap(),
+                o.impact,
+                "{:?} lost money between the two",
+                o.title
+            );
+        }
+    }
 }

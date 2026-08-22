@@ -828,6 +828,8 @@ pub struct CompanyProfileRequest {
     #[serde(default)]
     pub in_group: Option<bool>,
     #[serde(default)]
+    pub ownership_changed: Option<bool>,
+    #[serde(default)]
     pub operations_outside_sweden: Option<bool>,
     #[serde(default)]
     pub does_development_work: Option<bool>,
@@ -970,6 +972,7 @@ pub fn build_profile(request: CompanyProfileRequest) -> Result<CompanyProfile, P
         employee_count: request.employee_count,
         owner_count: request.owner_count,
         in_group: request.in_group,
+        ownership_changed: request.ownership_changed,
         operations_outside_sweden: request.operations_outside_sweden,
         does_development_work: request.does_development_work,
         owns_premises: request.owns_premises,

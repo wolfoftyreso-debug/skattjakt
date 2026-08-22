@@ -17,16 +17,15 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# Whichever build is newer, never whichever profile is preferred.
+source "$ROOT/tests/lib/newest-binary.sh"
 WORKDIR="$(mktemp -d)"
 APIPORT="${APIPORT:-18115}"
 
 # Whichever build is newer, not whichever profile is preferred. A stale release
 # binary passes the health check and then fails in ways that read as product
 # bugs.
-API="$ROOT/target/release/skattjakt-api"
-[[ -x "$API" ]] || API="$ROOT/target/debug/skattjakt-api"
-DEBUG_API="$ROOT/target/debug/skattjakt-api"
-[[ -x "$DEBUG_API" && "$DEBUG_API" -nt "$API" ]] && API="$DEBUG_API"
+API="$(newest_binary skattjakt-api)"
 
 api_pid=""
 cleanup() {

@@ -10,6 +10,7 @@
 
 use serde::{Deserialize, Serialize};
 use skattjakt_core::analysis::AnalysisResult;
+use skattjakt_core::opportunity::EffectKind;
 use skattjakt_core::{EvidenceItem, MoneyRange, OpportunityStatus, PriorityBand};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -71,6 +72,10 @@ pub struct Highlight {
     pub status_label: String,
     pub impact: MoneyRange,
     pub impact_display: String,
+    /// `reduction` or `deferral`. Carried into the report because a reader who
+    /// sees an amount needs to know whether it is tax saved or tax postponed,
+    /// and the headline total answers that only by omission.
+    pub effect: EffectKind,
     pub confidence: u8,
     pub priority_band: String,
     pub rationale: String,
@@ -113,9 +118,24 @@ fn source_state_label(state: &str) -> &'static str {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EconomicPotential {
+    /// Tax that would not be paid at all. Deferrals are excluded — see
+    /// `deferred`, and `Opportunity::countable_impact`.
     pub total: MoneyRange,
     pub display: String,
     pub note: String,
+    /// Tax that would be postponed rather than saved, on its own line.
+    ///
+    /// Split out because adding the two together answered a question nobody
+    /// asked. A reader who sees one figure reads it as money to be had; a
+    /// periodiseringsfond allocation is the same money paid later, with a
+    /// schablonintäkt charged every year the fund stands.
+    #[serde(default)]
+    pub deferred: MoneyRange,
+    #[serde(default)]
+    pub deferred_display: String,
+    /// What the deferred figure means, or empty when there is none.
+    #[serde(default)]
+    pub deferred_note: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -309,6 +329,15 @@ pub fn build_for(
     };
 
     let total = result.summary.estimated_total;
+    // Summed here rather than on `AnalysisSummary`, because a deferral is a
+    // presentation concern: the analysis found one number and the report is
+    // what decides it must not be added to the other.
+    let deferred = result
+        .opportunities
+        .iter()
+        .map(skattjakt_core::Opportunity::deferred_impact)
+        .try_fold(MoneyRange::ZERO, |acc, r| acc.checked_add(r))
+        .unwrap_or(MoneyRange::ZERO);
 
     // Computed before the list is moved into the report.
     let action_plan = action_plan(&opportunities);
@@ -340,10 +369,21 @@ pub fn build_for(
                 total,
                 display: total.to_string(),
                 note: if total.is_zero() {
-                    "Ingen beräknad ekonomisk effekt på det underlag som lämnats.".to_string()
+                    "Ingen beräknad sänkning av skatten på det underlag som lämnats.".to_string()
                 } else {
                     "Ett intervall, inte ett besked. Beloppen bygger på det underlag som \
                      lämnats och ska verifieras innan någon åtgärd vidtas."
+                        .to_string()
+                },
+                deferred,
+                deferred_display: deferred.to_string(),
+                deferred_note: if deferred.is_zero() {
+                    String::new()
+                } else {
+                    "Uppskjuten skatt, inte sänkt skatt. Beloppet betalas senare — en \
+                     periodiseringsfond ska återföras senast det sjätte året, och en \
+                     schablonintäkt tas upp varje år fonden står kvar. Det är därför \
+                     inte medräknat i beloppet ovan."
                         .to_string()
                 },
             },
@@ -533,9 +573,12 @@ fn highlight(opportunity: &skattjakt_core::Opportunity) -> Highlight {
         impact: opportunity.impact,
         impact_display: if opportunity.impact.is_zero() {
             "Ingen beräknad ekonomisk effekt".to_string()
+        } else if opportunity.effect.is_deferral() {
+            format!("{} uppskjuten skatt", opportunity.impact)
         } else {
             opportunity.impact.to_string()
         },
+        effect: opportunity.effect,
         confidence: opportunity.confidence.score,
         priority_band: priority_key(opportunity.priority.band),
         rationale: opportunity.rationale.clone(),
@@ -661,9 +704,15 @@ pub fn to_markdown(report: &Report) -> String {
 
     out.push_str("## 6. Ekonomisk potential\n\n");
     out.push_str(&format!(
-        "{}\n\n{}\n\n",
+        "**Lägre skatt:** {}\n\n{}\n\n",
         s.economic_potential.display, s.economic_potential.note
     ));
+    if !s.economic_potential.deferred.is_zero() {
+        out.push_str(&format!(
+            "**Uppskjuten skatt:** {}\n\n{}\n\n",
+            s.economic_potential.deferred_display, s.economic_potential.deferred_note
+        ));
+    }
 
     out.push_str("## 7. Evidens\n\n");
     out.push_str(&format!(

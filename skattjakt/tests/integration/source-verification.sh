@@ -38,14 +38,19 @@ if [[ "${EUID:-$(id -u)}" -eq 0 && -z "${SKATTJAKT_PG_REEXEC:-}" ]]; then
 fi
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# Whichever build is newer, never whichever profile is preferred.
+source "$ROOT/tests/lib/newest-binary.sh"
 WORKDIR="$(mktemp -d)"
 PGDATA="$WORKDIR/data"
 SOCKET="$WORKDIR/sock"
 PGPORT="${PGPORT:-55445}"
 DB=skattjakt_sources
 PAGES="$WORKDIR/pages"
-WORKER="$ROOT/target/release/skattjakt-analysis-worker"
-[[ -x "$WORKER" ]] || WORKER="$ROOT/target/debug/skattjakt-analysis-worker"
+# Whichever build is newer, never whichever profile is preferred. The API
+# selection below already had this rule inline and the worker selection did not,
+# so a rebuilt worker went on being ignored — which is exactly how a rule set
+# the running worker could not parse read as twenty product failures.
+WORKER="$(newest_binary skattjakt-analysis-worker)"
 
 PGBIN="${PGBIN:-$(dirname "$(command -v initdb || echo /usr/lib/postgresql/16/bin/initdb)")}"
 [[ -x "$PGBIN/initdb" ]] || PGBIN=/usr/lib/postgresql/16/bin
@@ -273,10 +278,7 @@ MISMATCH_COUNT="$("${PSQL[@]}" -d "$DB" -c \
 # left over from before the change under test passes the health check and then
 # fails in ways that read as product bugs — this has now cost two debugging
 # sessions, so the rule lives in every suite that picks a binary.
-API="$ROOT/target/release/skattjakt-api"
-[[ -x "$API" ]] || API="$ROOT/target/debug/skattjakt-api"
-DEBUG_API="$ROOT/target/debug/skattjakt-api"
-[[ -x "$DEBUG_API" && "$DEBUG_API" -nt "$API" ]] && API="$DEBUG_API"
+API="$(newest_binary skattjakt-api)"
 APIPORT="${APIPORT:-18095}"
 TOKEN="source-verification-suite"
 DATABASE_URL="$DATABASE_URL" SKATTJAKT_API_TOKEN="$TOKEN" \

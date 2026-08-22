@@ -36,7 +36,26 @@ pub enum FactKind {
 
     // Balance sheet
     IntangibleAssets,
+    /// The whole *Materiella anläggningstillgångar* heading: buildings, land,
+    /// machinery and equipment together.
+    ///
+    /// Deliberately **not** what the 30 % huvudregel applies to. Buildings are
+    /// written down at 2–5 %, land not at all, and a rule that multiplies this
+    /// heading by 30 % invents a depreciation allowance for every company that
+    /// owns its premises. Use `Equipment` for that; this is here because a
+    /// balance sheet often gives only the heading, and knowing the total is
+    /// still worth something.
     FixedAssets,
+    /// *Inventarier, verktyg och installationer* — the line the 30 % huvudregel
+    /// in IL 18 kap. 13 § is actually about.
+    ///
+    /// Separate from `FixedAssets` because the two used to be the same fact,
+    /// and the depreciation rule read the heading. A company with a 10 MSEK
+    /// property was told it had 630 000 kr of unused allowance it did not have.
+    Equipment,
+    /// *Varulager*. Named `Inventory` for the English balance-sheet term, and
+    /// not to be confused with `Equipment` — Swedish *inventarier* is equipment,
+    /// not stock, and the false friend has caused this mistake before.
     Inventory,
     Receivables,
     Cash,
@@ -72,6 +91,14 @@ pub enum FactKind {
     VatPayable,
     PayrollTax,
     PensionCosts,
+    /// *Löner och andra ersättningar* — cash pay, without employer's
+    /// contributions or pension on top.
+    ///
+    /// The base the pension deduction frame in IL 28 kap. 5 § is expressed
+    /// against. `PersonnelCosts` is the whole heading and runs roughly a third
+    /// higher, so a rule that used it compared against a threshold about a
+    /// third too generous.
+    Wages,
 
     /// Anything outside the taxonomy. Carries a free-text label.
     Other(String),
@@ -137,6 +164,7 @@ impl FactKind {
                 | TaxExpense
                 | PensionCosts
                 | PayrollTax
+                | Wages
                 | NonDeductibleCosts
         )
     }
