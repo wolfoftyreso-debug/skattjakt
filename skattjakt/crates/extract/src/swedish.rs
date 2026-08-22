@@ -42,6 +42,18 @@ const LABELS: &[(&str, FactKind)] = &[
         FactKind::PersonnelCosts,
     ),
     ("av- och nedskrivningar", FactKind::Depreciation),
+    // The short form, which is what a K2 income statement usually prints.
+    //
+    // Its absence was invisible until the depreciation rule started needing it:
+    // `fact_or_zero(depreciation)` read zero, so a company that had written off
+    // 250 000 kr looked like one that had written off nothing, and the rule
+    // reported headroom it did not have. The evidence card is what gave it
+    // away — it cited one value where the calculation takes two.
+    ("avskrivningar", FactKind::Depreciation),
+    (
+        "avskrivningar av materiella och immateriella anläggningstillgångar",
+        FactKind::Depreciation,
+    ),
     (
         "avskrivningar av materiella anläggningstillgångar",
         FactKind::Depreciation,
@@ -250,9 +262,30 @@ pub fn find_amounts(line: &str) -> Vec<i64> {
     amounts
 }
 
+/// Lines that contain a known label and mean something else.
+///
+/// Substring matching is what makes the label table tolerant of the spacing and
+/// wording real statements use, and it is also what makes it credulous. A note
+/// headed *Ackumulerade avskrivningar* contains "avskrivningar" and is a
+/// balance-sheet total carried since the asset was bought — reading it as this
+/// year's cost would understate the depreciation headroom by years of it.
+///
+/// Checked before the table, so a longer label cannot rescue a line that means
+/// the wrong thing.
+const NOT_A_FACT: &[&str] = &[
+    "ackumulerade avskrivningar",
+    "ackumulerade nedskrivningar",
+    "ingående avskrivningar",
+    "utgående avskrivningar",
+    "årets avskrivningar enligt plan på",
+];
+
 /// Finds the label a line starts with, preferring the longest match.
 fn match_label(line: &str) -> Option<FactKind> {
     let normalised = line.trim().to_lowercase();
+    if NOT_A_FACT.iter().any(|phrase| normalised.contains(phrase)) {
+        return None;
+    }
     LABELS
         .iter()
         .filter(|(label, _)| normalised.starts_with(*label) || normalised.contains(*label))
@@ -478,5 +511,48 @@ Summa eget kapital och skulder     7 720 000
         assert_eq!(get(FactKind::TotalEquityAndLiabilities), Some(7_720_000));
         assert_eq!(get(FactKind::UntaxedReserves), Some(1_250_000));
         assert_eq!(get(FactKind::Equity), Some(4_100_000));
+    }
+}
+
+#[cfg(test)]
+mod depreciation_labels {
+    use super::*;
+
+    /// Every spelling of the depreciation line a Swedish statement uses.
+    ///
+    /// The short form was missing, and nothing noticed until a rule needed the
+    /// value: an unread cost reads as zero, and a rule that subtracts it then
+    /// reports headroom the company has already used.
+    #[test]
+    fn the_short_form_of_the_depreciation_line_is_read() {
+        for line in [
+            "Avskrivningar                                   -250 000",
+            "Av- och nedskrivningar                          -250 000",
+            "Avskrivningar av materiella anläggningstillgångar -250 000",
+            "Avskrivningar av materiella och immateriella anläggningstillgångar -250 000",
+        ] {
+            let facts = extract_from_page(1, line, Scale::Kronor);
+            assert_eq!(
+                facts.first().map(|f| f.kind.clone()),
+                Some(FactKind::Depreciation),
+                "{line:?} was not read as a depreciation line"
+            );
+            assert_eq!(
+                facts[0].amount_sek.abs(),
+                250_000,
+                "{line:?} read the wrong amount"
+            );
+        }
+    }
+
+    /// And it does not swallow the accumulated figure from a note, which is a
+    /// balance-sheet total rather than this year's cost.
+    #[test]
+    fn accumulated_depreciation_is_not_this_years_cost() {
+        let facts = extract_from_page(1, "Ackumulerade avskrivningar -1 800 000", Scale::Kronor);
+        assert!(
+            facts.is_empty() || facts[0].kind != FactKind::Depreciation,
+            "the accumulated total was read as the year's depreciation"
+        );
     }
 }
