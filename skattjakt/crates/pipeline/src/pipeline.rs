@@ -1374,13 +1374,17 @@ fn fact_kind_from_key(key: &str) -> Option<FactKind> {
     serde_json::from_value(serde_json::Value::String(key.to_string())).ok()
 }
 
-/// `"A"`, `"A" och "B"`, `"A", "B" och "C"` — Swedish list punctuation.
+/// `”A”`, `”A” och ”B”`, `”A”, ”B” och ”C”` — Swedish list punctuation.
 ///
 /// Worth a function rather than a `join`: a list that reads "A, B, C" in a
 /// sentence a customer is meant to act on looks like a machine wrote it, and
 /// this text is the product telling them what to go and fetch.
+///
+/// The quotes are the Swedish pair `”…”`, not the ASCII `"`. Same reason: this
+/// is prose a customer reads, and a straight double quote in a Swedish sentence
+/// is a typewriter mark that says nobody set this text.
 fn quoted_list(items: &[String]) -> String {
-    let quoted: Vec<String> = items.iter().map(|i| format!("\"{i}\"")).collect();
+    let quoted: Vec<String> = items.iter().map(|i| format!("”{i}”")).collect();
     match quoted.split_last() {
         None => String::new(),
         Some((last, [])) => last.clone(),

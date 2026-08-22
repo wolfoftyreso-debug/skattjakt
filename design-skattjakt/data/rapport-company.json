@@ -1,5 +1,5 @@
 {
-  "analysis_id": "f829e452-46bb-4093-b721-cb4b9a050b31",
+  "analysis_id": "40dbedb4-2de0-4ed4-817d-15fbbfd571fb",
   "company_name": "Exempelbolaget AB",
   "fiscal_year": "2025",
   "rule_set_version": "se-2025.1",
@@ -431,122 +431,122 @@
       {
         "code": "would_strengthen",
         "description": "Ackumulerade överavskrivningar",
-        "unlocks": "Stärker \"Obeskattade reserver utan specifikation\" och \"Skattemässigt avskrivningsutrymme på inventarier\"."
+        "unlocks": "Stärker ”Obeskattade reserver utan specifikation” och ”Skattemässigt avskrivningsutrymme på inventarier”."
       },
       {
         "code": "would_strengthen",
         "description": "Anläggningsregister med anskaffningsvärde per inventarium",
-        "unlocks": "Stärker \"Inventarier av mindre värde\"."
+        "unlocks": "Stärker ”Inventarier av mindre värde”."
       },
       {
         "code": "would_strengthen",
         "description": "Anläggningsregister med avskrivningsunderlag per tillgång",
-        "unlocks": "Stärker \"Skattemässigt avskrivningsutrymme på inventarier\"."
+        "unlocks": "Stärker ”Skattemässigt avskrivningsutrymme på inventarier”."
       },
       {
         "code": "would_strengthen",
         "description": "Anläggningsregister med skattemässigt värde på inventarier",
-        "unlocks": "Stärker \"Skattemässigt avskrivningsutrymme på inventarier\"."
+        "unlocks": "Stärker ”Skattemässigt avskrivningsutrymme på inventarier”."
       },
       {
         "code": "would_strengthen",
         "description": "Arbetsgivardeklarationer för året",
-        "unlocks": "Stärker \"Nedsättning av arbetsgivaravgifter för forskning och utveckling\"."
+        "unlocks": "Stärker ”Nedsättning av arbetsgivaravgifter för forskning och utveckling”."
       },
       {
         "code": "would_strengthen",
         "description": "Befintliga pensionsutfästelser och försäkringslösningar",
-        "unlocks": "Stärker \"Avdrag för pensionskostnader\"."
+        "unlocks": "Stärker ”Avdrag för pensionskostnader”."
       },
       {
         "code": "would_strengthen",
         "description": "Befintliga periodiseringsfonder från tidigare år",
-        "unlocks": "Stärker \"Periodiseringsfond\"."
+        "unlocks": "Stärker ”Periodiseringsfond”."
       },
       {
         "code": "would_strengthen",
         "description": "Delägarens kontanta lön föregående år",
-        "unlocks": "Stärker \"Löneuttag för huvudregeln i fåmansföretag\"."
+        "unlocks": "Stärker ”Löneuttag för huvudregeln i fåmansföretag”."
       },
       {
         "code": "would_strengthen",
         "description": "Dokumentation av utvecklingsarbetets innehåll",
-        "unlocks": "Stärker \"Nedsättning av arbetsgivaravgifter för forskning och utveckling\"."
+        "unlocks": "Stärker ”Nedsättning av arbetsgivaravgifter för forskning och utveckling”."
       },
       {
         "code": "would_strengthen",
         "description": "Föregående års K10-blankett",
-        "unlocks": "Stärker \"Löneuttag för huvudregeln i fåmansföretag\"."
+        "unlocks": "Stärker ”Löneuttag för huvudregeln i fåmansföretag”."
       },
       {
         "code": "would_strengthen",
         "description": "Hur fordonen används i verksamheten",
-        "unlocks": "Stärker \"Moms på leasing av personbil\"."
+        "unlocks": "Stärker ”Moms på leasing av personbil”."
       },
       {
         "code": "would_strengthen",
         "description": "Kontospecifikation för representationskonton",
-        "unlocks": "Stärker \"Representation\"."
+        "unlocks": "Stärker ”Representation”."
       },
       {
         "code": "would_strengthen",
         "description": "Leasingfakturor för bolagets fordon",
-        "unlocks": "Stärker \"Moms på leasing av personbil\"."
+        "unlocks": "Stärker ”Moms på leasing av personbil”."
       },
       {
         "code": "would_strengthen",
         "description": "Löneunderlag per anställd",
-        "unlocks": "Stärker \"Avdrag för pensionskostnader\"."
+        "unlocks": "Stärker ”Avdrag för pensionskostnader”."
       },
       {
         "code": "would_strengthen",
         "description": "Not till obeskattade reserver",
-        "unlocks": "Stärker \"Obeskattade reserver utan specifikation\"."
+        "unlocks": "Stärker ”Obeskattade reserver utan specifikation”."
       },
       {
         "code": "would_strengthen",
         "description": "Skattemässigt resultat före avsättning enligt deklarationsunderlaget",
-        "unlocks": "Stärker \"Periodiseringsfond\"."
+        "unlocks": "Stärker ”Periodiseringsfond”."
       },
       {
         "code": "would_strengthen",
         "description": "Specifikation av periodiseringsfonder per avsättningsår",
-        "unlocks": "Stärker \"Obeskattade reserver utan specifikation\"."
+        "unlocks": "Stärker ”Obeskattade reserver utan specifikation”."
       },
       {
         "code": "would_strengthen",
         "description": "Specifikation av posten Materiella anläggningstillgångar, uppdelad på byggnader, mark och inventarier",
-        "unlocks": "Stärker \"Skattemässigt avskrivningsutrymme på inventarier\"."
+        "unlocks": "Stärker ”Skattemässigt avskrivningsutrymme på inventarier”."
       },
       {
         "code": "would_strengthen",
         "description": "Total kontant lön i bolaget och i eventuella dotterbolag",
-        "unlocks": "Stärker \"Löneuttag för huvudregeln i fåmansföretag\"."
+        "unlocks": "Stärker ”Löneuttag för huvudregeln i fåmansföretag”."
       },
       {
         "code": "would_strengthen",
         "description": "Underlag med deltagare och syfte",
-        "unlocks": "Stärker \"Representation\"."
+        "unlocks": "Stärker ”Representation”."
       },
       {
         "code": "would_strengthen",
         "description": "Uppgift om bilarna ägs eller hyrs",
-        "unlocks": "Stärker \"Moms på leasing av personbil\"."
+        "unlocks": "Stärker ”Moms på leasing av personbil”."
       },
       {
         "code": "would_strengthen",
         "description": "Uppgift om vilka inköp som aktiverats i stället för att kostnadsföras",
-        "unlocks": "Stärker \"Inventarier av mindre värde\"."
+        "unlocks": "Stärker ”Inventarier av mindre värde”."
       },
       {
         "code": "would_strengthen",
         "description": "Vilka anställda som arbetar med forskning eller utveckling och i vilken omfattning",
-        "unlocks": "Stärker \"Nedsättning av arbetsgivaravgifter för forskning och utveckling\"."
+        "unlocks": "Stärker ”Nedsättning av arbetsgivaravgifter för forskning och utveckling”."
       },
       {
         "code": "would_strengthen",
         "description": "Vilken avskrivningsmetod bolaget tillämpar",
-        "unlocks": "Stärker \"Skattemässigt avskrivningsutrymme på inventarier\"."
+        "unlocks": "Stärker ”Skattemässigt avskrivningsutrymme på inventarier”."
       }
     ],
     "economic_potential": {
@@ -728,5 +728,5 @@
     ]
   },
   "disclaimer": "Skattjakt är ett analys- och upptäcktsverktyg. Resultaten är preliminära och ska inte betraktas som juridisk rådgivning, revisionsuttalande, skattebesked eller garanti om skatteåterbäring eller besparing. Identifierade möjligheter bör verifieras mot aktuella regler och företagets fullständiga underlag innan någon åtgärd vidtas.",
-  "generated_at": "2026-08-22T02:12:44.070890488Z"
+  "generated_at": "2026-08-22T02:32:04.277396415Z"
 }

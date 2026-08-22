@@ -54,7 +54,13 @@ def icon(kind):
 
 def card(f, expanded=False):
     """Ett fyndkort. Bevisraden är det som skiljer produkten från en gissning,
-    så den ligger öppen på de fynd som faktiskt bär ett belopp."""
+    så den ligger öppen på de fynd som faktiskt bär ett belopp.
+
+    Barnen sitter i en flex-kolumn med `gap`, inte på egna marginaler. Det är
+    inte kosmetik: i en editor där någon drar om, dubblerar eller raderar
+    element överlever gap-avstånd, medan en marginal per barn lämnar hål efter
+    det som togs bort.
+    """
     deferral = f.get("effect") == "deferral"
     amount_colour = T["warn"] if deferral else T["ink"]
     has_amount = f["impact_display"] != "Ingen beräknad ekonomisk effekt"
@@ -72,43 +78,48 @@ def card(f, expanded=False):
             f'<li style="display: flex; gap: 0.6rem; align-items: baseline;">'
             f'<code style="font-size: 0.78rem; color: {T["muted"]}; flex: none;">{v["kind"]}</code>'
             f'<span style="font-variant-numeric: tabular-nums; font-weight: 600; font-size: 0.82rem;">{v["amount"]}</span>'
-            f'<span style="color: {T["muted"]}; font-size: 0.78rem;">sida {v["page"]} — “{v["excerpt"]}”</span>'
+            f'<span style="color: {T["muted"]}; font-size: 0.78rem;">sida {v["page"]} — ”{v["excerpt"]}”</span>'
             f'</li>' for v in f["supporting_values"])
         rules = "".join(
             f'<li style="color: {T["muted"]}; font-size: 0.8rem;">{r["source"]} '
             f'<span style="color: {T["warn"]};">(källa ej kontrollerad)</span></li>'
             for r in f.get("rules", []))
         evidence = (
-            f'<div style="margin-top: 0.8rem; padding-top: 0.75rem; border-top: 1px solid {T["border"]};">'
+            f'<div style="padding-top: 0.75rem; border-top: 1px solid {T["border"]}; '
+            f'display: flex; flex-direction: column; gap: 0.5rem;">'
             f'<div style="display: flex; gap: 0.4rem; align-items: center; color: {T["accent"]}; '
-            f'font-size: 0.8rem; font-weight: 550; margin-bottom: 0.5rem;">{icon("doc")}Underlaget bakom siffran</div>'
+            f'font-size: 0.8rem; font-weight: 550;">{icon("doc")}Underlaget bakom siffran</div>'
             f'<ul style="list-style: none; padding: 0; display: flex; flex-direction: column; gap: 0.3rem;">{rows}</ul>'
-            f'<ul style="list-style: circle; padding-left: 1.1rem; margin-top: 0.5rem; '
+            f'<ul style="list-style: circle; padding-left: 1.1rem; '
             f'display: flex; flex-direction: column; gap: 0.2rem;">{rules}</ul>'
             f'</div>')
 
     missing = ""
     if f.get("missing_information"):
-        items = "".join(f'<li>{m}</li>' for m in f["missing_information"][:3])
+        # Hela listan, inte de tre första. Att kapa den gjorde att avsnittet
+        # "Detta skulle göra analysen bättre" kunde peka på ett underlag som
+        # kortet självt inte bad om.
+        items = "".join(f'<li>{m}</li>' for m in f["missing_information"])
         missing = (
-            f'<div style="margin-top: 0.7rem;">'
-            f'<div style="color: {T["muted"]}; font-size: 0.78rem; margin-bottom: 0.25rem;">Skulle stärka fyndet</div>'
+            f'<div style="display: flex; flex-direction: column; gap: 0.25rem;">'
+            f'<div style="color: {T["muted"]}; font-size: 0.78rem;">Skulle stärka fyndet</div>'
             f'<ul style="list-style: circle; padding-left: 1.1rem; color: {T["muted"]}; '
             f'font-size: 0.82rem; display: flex; flex-direction: column; gap: 0.2rem;">{items}</ul>'
             f'</div>')
 
     return (
         f'<article style="background: {T["surface"]}; border: 1px solid {T["border"]}; '
-        f'border-radius: {T["radius"]}; padding: 1rem 1.1rem;">'
+        f'border-radius: {T["radius"]}; padding: 1rem 1.1rem; '
+        f'display: flex; flex-direction: column; gap: 0.6rem;">'
         f'<header style="display: flex; justify-content: space-between; gap: 1rem; align-items: baseline;">'
         f'<h3 style="font-size: 1rem; letter-spacing: -0.01em;">{f["title"]}</h3>{amount}</header>'
-        f'<div style="display: flex; gap: 0.4rem; align-items: center; margin-top: 0.5rem; flex-wrap: wrap;">'
+        f'<div style="display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap;">'
         f'{tag(f["status_label"], status_kind)}{tag(f["category"])}'
         f'<span style="color: {T["muted"]}; font-size: 0.78rem;">Tillförlitlighet {f["confidence"]} %</span>'
         + (f'{tag("Uppskjuten skatt", "warn")}' if deferral else '') +
         f'</div>'
-        f'<p style="color: {T["ink"]}; font-size: 0.9rem; margin-top: 0.6rem;">{f["rationale"]}</p>'
-        f'<p style="color: {T["muted"]}; font-size: 0.85rem; margin-top: 0.6rem;">'
+        f'<p style="color: {T["ink"]}; font-size: 0.9rem;">{f["rationale"]}</p>'
+        f'<p style="color: {T["muted"]}; font-size: 0.85rem;">'
         f'<strong style="color: {T["ink"]}; font-weight: 550;">Nästa steg.</strong> {f["recommended_action"]}</p>'
         + missing + evidence + '</article>')
 
@@ -124,7 +135,7 @@ def potential(ep):
             f'<span style="font-size: 0.85rem; color: {T["warn"]}; font-weight: 550;">Uppskjuten skatt</span>'
             f'<span style="font-variant-numeric: tabular-nums; font-weight: 600; font-size: 1.1rem; '
             f'color: {T["warn"]}; white-space: nowrap;">{ep["deferred_display"]}</span></div>'
-            f'<p style="color: {T["muted"]}; font-size: 0.8rem; margin-top: 0.4rem; text-wrap: pretty;">'
+            f'<p style="color: {T["muted"]}; font-size: 0.8rem; text-wrap: pretty;">'
             f'{ep["deferred_note"]}</p></div>')
     return (
         f'<div style="display: flex; flex-direction: column; gap: 0.7rem;">'
@@ -133,14 +144,13 @@ def potential(ep):
         f'<span style="font-size: 0.85rem; color: {T["accent"]}; font-weight: 550;">Lägre skatt</span>'
         f'<span style="font-variant-numeric: tabular-nums; font-weight: 600; font-size: 1.35rem; '
         f'color: {T["accent"]}; white-space: nowrap;">{ep["display"]}</span></div>'
-        f'<p style="color: {T["muted"]}; font-size: 0.8rem; margin-top: 0.4rem; text-wrap: pretty;">{ep["note"]}</p>'
+        f'<p style="color: {T["muted"]}; font-size: 0.8rem; text-wrap: pretty;">{ep["note"]}</p>'
         f'</div>{deferred}</div>')
 
 def section(n, title, body, lede=None):
-    l = (f'<p style="color: {T["muted"]}; font-size: 0.88rem; margin-bottom: 0.9rem; '
-         f'text-wrap: pretty;">{lede}</p>') if lede else ""
-    return (f'<section style="display: flex; flex-direction: column;">'
-            f'<h2 style="font-size: 1.15rem; letter-spacing: -0.01em; margin-bottom: 0.75rem;">'
+    l = (f'<p style="color: {T["muted"]}; font-size: 0.88rem; text-wrap: pretty;">{lede}</p>') if lede else ""
+    return (f'<section style="display: flex; flex-direction: column; gap: 0.75rem;">'
+            f'<h2 style="font-size: 1.15rem; letter-spacing: -0.01em;">'
             f'<span style="color: {T["muted"]}; font-weight: 400;">{n}.</span> {title}</h2>'
             f'{l}{body}</section>')
 
@@ -156,7 +166,7 @@ def page(company, year, ruleset, audience_label, sections, disclaimer):
         f'display: flex; flex-direction: column; gap: 2rem;">'
         f'<header style="display: flex; flex-direction: column; gap: 0.4rem;">'
         f'<div style="display: flex; gap: 0.5rem; align-items: center;">{tag(audience_label)}</div>'
-        f'<h1 style="font-size: 1.9rem; letter-spacing: -0.02em; margin-top: 0.3rem;">Din Skattjakt</h1>'
+        f'<h1 style="font-size: 1.9rem; letter-spacing: -0.02em;">Din Skattjakt</h1>'
         f'<p style="color: {T["muted"]}; font-size: 0.9rem;">'
         f'<strong style="color: {T["ink"]}; font-weight: 550;">{company}</strong> · räkenskapsår {year} '
         f'· regelverk {ruleset}</p></header>'
@@ -185,10 +195,11 @@ def report_sections(aud, findings, expand_titles):
         + stat("hög prioritet", su["high_priority_count"], T["ink"])
         + stat("bör undersökas", su["should_investigate_count"])
         + stat("kräver mer underlag", su["needs_more_evidence_count"])
-        + stat("varningar", su["warnings_count"]) + '</div>')
+        + stat("varningar om underlaget", su["warnings_count"]) + '</div>')
     summary = section(1, "Sammanfattning",
-        f'<p style="font-size: 1.05rem; color: {T["ink"]}; margin-bottom: 0.9rem; '
-        f'text-wrap: pretty;">{su["headline"]}</p>{stats}')
+        f'<div style="display: flex; flex-direction: column; gap: 0.9rem;">'
+        f'<p style="font-size: 1.05rem; color: {T["ink"]}; text-wrap: pretty;">{su["headline"]}</p>'
+        f'{stats}</div>')
 
     first = s["start_here"][0]
     start = section(2, "Börja här",
@@ -213,13 +224,30 @@ def report_sections(aud, findings, expand_titles):
         f'<span style="color: {T["muted"]}; font-size: 0.78rem; text-align: right; flex: none; '
         f'max-width: 46%;">{m["unlocks"]}</span></li>' for m in mi)
     missing = section(5, "Detta skulle göra analysen bättre",
+        f'<div style="display: flex; flex-direction: column; gap: 0.75rem;">'
         f'<ul style="list-style: none; padding: 0; margin: 0;">{rows}</ul>'
-        f'<p style="color: {T["muted"]}; font-size: 0.8rem; margin-top: 0.75rem;">'
-        f'Ytterligare {len(s["missing_information"]) - len(mi)} poster i den fullständiga rapporten.</p>',
+        f'<p style="color: {T["muted"]}; font-size: 0.8rem;">'
+        f'Ytterligare {len(s["missing_information"]) - len(mi)} poster i den fullständiga rapporten.</p></div>',
         "Sorterat efter hur många fynd varje underlag stärker.")
 
+    w = s["warnings"]
+    if w:
+        wrows = "".join(
+            f'<li style="border-left: 3px solid {T["warn"]}; background: {T["warn_soft"]}; '
+            f'padding: 0.7rem 1rem; border-radius: 0 8px 8px 0; font-size: 0.88rem;">'
+            f'{x["message"]}</li>' for x in w)
+        wbody = (f'<ul style="list-style: none; padding: 0; display: flex; '
+                 f'flex-direction: column; gap: 0.5rem;">{wrows}</ul>')
+    else:
+        wbody = (f'<p style="color: {T["muted"]}; font-size: 0.88rem;">'
+                 f'Inget i underlaget motsäger sig självt. Varningar här gäller '
+                 f'dokumenten — två olika värden för samma post, en balansräkning '
+                 f'som inte går ihop — och är något annat än ett fynd med statusen '
+                 f'”Varning”.</p>')
+    warnings = section(4, "Att kontrollera i underlaget", wbody)
+
     econ = section(6, "Ekonomisk potential", potential(s["economic_potential"]))
-    return summary, start, opps, missing, econ, s
+    return summary, start, opps, warnings, missing, econ, s
 
 EXPAND = {"Skattemässigt avskrivningsutrymme på inventarier", "Periodiseringsfond"}
 
@@ -229,10 +257,10 @@ def write(name, title, inner):
 
 # ---- Bolagsanalys, huvudartboarden -----------------------------------------
 c = R["company"]["sections"]
-summary, start, opps, missing, econ, _ = report_sections("company", c["opportunities"], EXPAND)
+summary, start, opps, warnings, missing, econ, _ = report_sections("company", c["opportunities"], EXPAND)
 write("Main.dc.html", "Bolagsanalys",
       page("Exempelbolaget AB", "2025", "se-2025.1", "Bolagsanalys · 69 kr",
-           [summary, start, econ, opps, missing],
+           [summary, start, opps, warnings, missing, econ],
            "Skattjakt är ett analys- och upptäcktsverktyg. Resultaten är preliminära och ska inte "
            "betraktas som juridisk rådgivning, revisionsuttalande, skattebesked eller garanti om "
            "skatteåterbäring eller besparing. Identifierade möjligheter bör verifieras mot aktuella "
@@ -240,11 +268,11 @@ write("Main.dc.html", "Bolagsanalys",
 
 # ---- Privatanalys -----------------------------------------------------------
 p = R["private"]["sections"]
-psummary, pstart, popps, pmissing, pecon, _ = report_sections(
-    "private", p["opportunities"][:5], EXPAND)
+psummary, pstart, popps, pwarnings, pmissing, pecon, _ = report_sections(
+    "private", p["opportunities"], EXPAND)
 write("Privatanalys.dc.html", "Privatanalys",
       page("Exempelbolaget AB", "2025", "se-2025.1", "Privatanalys · 29 kr",
-           [psummary, pstart, pecon, popps, pmissing],
+           [psummary, pstart, popps, pwarnings, pmissing, pecon],
            "Skattjakt är ett analys- och upptäcktsverktyg. Resultaten är preliminära och ska inte "
            "betraktas som juridisk rådgivning eller skattebesked. Kontrollera varje möjlighet mot "
            "ditt fullständiga underlag innan du agerar."))
@@ -266,43 +294,46 @@ def band(title, items, colour, bg, note, right):
     rows = "".join(
         f'<li style="display: flex; justify-content: space-between; gap: 1rem; align-items: baseline; '
         f'padding: 0.5rem 0; border-bottom: 1px solid {T["border"]};">'
-        f'<span style="font-size: 0.9rem;">{i.get("title") or i["area"]}</span>'
+        f'<span style="font-size: 0.9rem;">{i.get("title") or i["summary"]}</span>'
         f'<span style="color: {T["muted"]}; font-size: 0.78rem; text-align: right; flex: none; '
         f'max-width: 52%;">{right(i)}</span></li>' for i in items)
-    empty = (f'<p style="color: {T["muted"]}; font-size: 0.82rem; margin-top: 0.6rem;">'
+    empty = (f'<p style="color: {T["muted"]}; font-size: 0.82rem;">'
              f'Inget i den här kategorin.</p>') if not items else ""
     return (f'<div style="border: 1px solid {T["border"]}; border-left: 3px solid {colour}; '
-            f'border-radius: 0 {T["radius"]} {T["radius"]} 0; background: {bg}; padding: 0.9rem 1.1rem;">'
+            f'border-radius: 0 {T["radius"]} {T["radius"]} 0; background: {bg}; padding: 0.9rem 1.1rem; '
+            f'display: flex; flex-direction: column; gap: 0.5rem;">'
+            f'<div style="display: flex; flex-direction: column; gap: 0.2rem;">'
             f'<div style="display: flex; justify-content: space-between; gap: 1rem; align-items: baseline;">'
             f'<h3 style="font-size: 0.95rem; color: {colour};">{title}</h3>'
             f'<span style="font-variant-numeric: tabular-nums; font-weight: 600; color: {colour};">'
             f'{len(items)}</span></div>'
-            f'<p style="color: {T["muted"]}; font-size: 0.78rem; margin-top: 0.2rem;">{note}</p>'
-            + (f'<ul style="list-style: none; padding: 0; margin-top: 0.6rem;">{rows}</ul>' if items else empty)
+            f'<p style="color: {T["muted"]}; font-size: 0.78rem;">{note}</p></div>'
+            + (f'<ul style="list-style: none; padding: 0;">{rows}</ul>' if items else empty)
             + '</div>')
 
 review = section(3, "Kontrollgenomgång",
     '<div style="display: flex; flex-direction: column; gap: 0.85rem;">'
-    + band("Måste kontrolleras", cr["must_check"][:5], T["warn"], T["warn_soft"],
-           f"Fynd som måste stämmas av innan bokslutet lämnas in. Visar 5 av {len(cr['must_check'])}.",
+    + band("Måste kontrolleras", cr["must_check"], T["warn"], T["warn_soft"],
+           "Fynd som måste stämmas av innan bokslutet lämnas in.",
            lambda i: f'{i["category"]} · {i["confidence"]} %')
     + band("Möjlig förbättring", cr["possible_improvement"], T["accent"], T["accent_soft"],
            "Prövat och bedömt som en möjlighet värd att ta upp.",
            lambda i: i["category"])
     + band("Prövat, ser korrekt ut", cr["looks_correct"], T["muted"], T["surface"],
-           "Regler som utvärderats mot underlaget utan att slå till.",
-           lambda i: i["reason"])
+           "Regler som prövats mot underlaget utan att slå till. Namnet är regelns "
+           "larm — att det inte utlöstes är beskedet.",
+           lambda i: "slog inte till")
     + band("Värt att ta upp med kunden", cr["worth_raising"], T["muted"], T["surface"],
            "Inget att rätta, men något klienten bör känna till.",
-           lambda i: i["summary"])
+           lambda i: f'{i["area"]} · {i["impact_display"]}')
     + '</div>',
     "Samma analys som bolagsrapporten, ordnad efter vad en granskare gör med den.")
 
-ksummary, kstart, kopps, kmissing, kecon, _ = report_sections(
-    "accountant", a["opportunities"][:4], EXPAND)
+ksummary, kstart, kopps, kwarnings, kmissing, kecon, _ = report_sections(
+    "accountant", a["opportunities"], EXPAND)
 write("Kontroll.dc.html", "Skattjakt Kontroll",
       page("Exempelbolaget AB", "2025", "se-2025.1", "Skattjakt Kontroll · 69 kr",
-           [ksummary, review, kecon, kmissing],
+           [ksummary, kstart, review, kwarnings, kmissing, kecon],
            "Skattjakt är ett analys- och upptäcktsverktyg och ersätter inte byråns egen granskning. "
            "Resultaten är preliminära och utgör varken revisionsuttalande eller skattebesked. Varje "
            "fynd ska verifieras mot fullständigt underlag innan det förs vidare till klienten."))
@@ -314,8 +345,8 @@ write("Kontroll.dc.html", "Skattjakt Kontroll",
 def spec(label, note, body):
     return (f'<div style="display: flex; flex-direction: column; gap: 0.5rem;">'
             f'<div style="display: flex; gap: 0.6rem; align-items: baseline;">'
-            f'<h3 style="font-size: 0.85rem; letter-spacing: 0.04em; text-transform: uppercase; '
-            f'color: {T["muted"]};">{label}</h3>'
+            f'<h2 style="font-size: 0.85rem; letter-spacing: 0.04em; text-transform: uppercase; '
+            f'color: {T["muted"]};">{label}</h2>'
             f'<span style="color: {T["muted"]}; font-size: 0.8rem;">{note}</span></div>'
             f'{body}</div>')
 
@@ -327,7 +358,7 @@ sheet = (
     f'<h1 style="font-size: 1.9rem; letter-spacing: -0.02em;">Byggstenar</h1>'
     f'<p style="color: {T["muted"]}; font-size: 0.9rem; text-wrap: pretty;">'
     f'Fyndkortet bär hela produktens trovärdighet: utan bevisraden är det en gissning med '
-    f'typografi. Tillstånden nedan är de fyra ett fynd faktiskt kan ha.</p></header>'
+    f'typografi. Tillstånden nedan är de fyra som ett fynd faktiskt kan ha.</p></header>'
     + spec("Fynd med belopp och underlag", "det enda tillstånd som får bära en siffra",
            card(by_title["Skattemässigt avskrivningsutrymme på inventarier"], expanded=True))
     + spec("Uppskov", "beloppet finns, men räknas inte in i potentialen",
@@ -336,10 +367,21 @@ sheet = (
            card(by_title["Avdrag för pensionskostnader"]))
     + spec("Kräver mer underlag", "för svagt för att presenteras som något att agera på",
            card(by_title["Moms på leasing av personbil"]))
-    + spec("Etiketter", "status, kategori och uppskov",
-           f'<div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">'
-           f'{tag("Verifiera")}{tag("Undersök", "warn")}{tag("Varning", "warn")}'
-           f'{tag("Möjlighet")}{tag("Skatt")}{tag("Investeringar")}{tag("Uppskjuten skatt", "warn")}</div>')
+    + spec("Etiketter", "två stilar, tre betydelser — status delar utseende med de andra",
+           f'<div style="display: flex; flex-direction: column; gap: 0.6rem;">'
+           + "".join(
+               f'<div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">'
+               f'<span style="color: {T["muted"]}; font-size: 0.78rem; width: 7.5rem; flex: none;">{lbl}</span>'
+               f'{pills}</div>'
+               for lbl, pills in [
+                   ("Status", f'{tag("Möjlighet")}{tag("Verifiera")}{tag("Undersök", "warn")}{tag("Varning", "warn")}'),
+                   ("Kategori", f'{tag("Skatt")}{tag("Investeringar")}{tag("Personal")}{tag("Moms")}'),
+                   ("Effekt", f'{tag("Uppskjuten skatt", "warn")}'),
+               ])
+           + f'<p style="color: {T["muted"]}; font-size: 0.8rem; text-wrap: pretty;">'
+             f'”Undersök” och ”Varning” är idag omöjliga att skilja åt, och en '
+             f'kategori ser ut som en status. Om du vill att de ska gå isär är '
+             f'det här stället att göra det på.</p></div>')
     + spec("Ekonomisk potential", "sänkt och uppskjuten skatt, aldrig i samma tal",
            potential(c["economic_potential"]))
     + '</main>')

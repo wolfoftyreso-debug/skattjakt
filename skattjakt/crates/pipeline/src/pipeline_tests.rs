@@ -1347,9 +1347,11 @@ fn a_swedish_list_reads_like_a_sentence() {
     let one = vec!["Periodiseringsfond".to_string()];
     let two = vec!["A".to_string(), "B".to_string()];
     let three = vec!["A".to_string(), "B".to_string(), "C".to_string()];
-    assert_eq!(quoted_list(&one), "\"Periodiseringsfond\"");
-    assert_eq!(quoted_list(&two), "\"A\" och \"B\"");
-    assert_eq!(quoted_list(&three), "\"A\", \"B\" och \"C\"");
+    // The Swedish pair, not the ASCII typewriter mark. This is prose a
+    // customer reads, and the report is the product's own voice.
+    assert_eq!(quoted_list(&one), "”Periodiseringsfond”");
+    assert_eq!(quoted_list(&two), "”A” och ”B”");
+    assert_eq!(quoted_list(&three), "”A”, ”B” och ”C”");
     assert_eq!(quoted_list(&[]), "");
 }
 
