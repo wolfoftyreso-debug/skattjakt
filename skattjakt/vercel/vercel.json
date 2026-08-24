@@ -1,0 +1,25 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "npm run build",
+  "framework": null,
+  "functions": {
+    "api/**/*.mjs": { "runtime": "nodejs22.x", "memory": 1024 }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/reconcile",
+      "schedule": "*/5 * * * *"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "strict-transport-security", "value": "max-age=31536000; includeSubDomains" },
+        { "key": "x-content-type-options", "value": "nosniff" },
+        { "key": "referrer-policy", "value": "no-referrer" },
+        { "key": "permissions-policy", "value": "geolocation=(), microphone=(), camera=()" }
+      ]
+    }
+  ]
+}

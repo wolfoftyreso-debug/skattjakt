@@ -15,6 +15,7 @@ members = [
     "crates/jobs",
     "crates/payments",
     "apps/api",
+    "apps/wasm",
     "workers/analysis-worker",
     "workers/notification-worker",
 ]
@@ -28,24 +29,28 @@ repository = "https://github.com/wolfoftyreso-debug/skattjakt"
 
 [workspace.dependencies]
 skattjakt-core = { path = "crates/core" }
-skattjakt-telemetry = { path = "crates/telemetry" }
+skattjakt-telemetry = { path = "crates/telemetry", default-features = false }
 skattjakt-rules = { path = "crates/rules" }
-skattjakt-model = { path = "crates/model" }
-skattjakt-gateway = { path = "crates/gateway" }
+skattjakt-model = { path = "crates/model", default-features = false }
+skattjakt-gateway = { path = "crates/gateway", default-features = false }
 skattjakt-identity = { path = "crates/identity" }
 skattjakt-notify = { path = "crates/notify" }
 skattjakt-extract = { path = "crates/extract" }
-skattjakt-pipeline = { path = "crates/pipeline" }
+skattjakt-pipeline = { path = "crates/pipeline", default-features = false }
 skattjakt-simulate = { path = "crates/simulate" }
 skattjakt-store = { path = "crates/store" }
 skattjakt-jobs = { path = "crates/jobs" }
 skattjakt-payments = { path = "crates/payments" }
 skattjakt-api = { path = "apps/api" }
+skattjakt-wasm = { path = "apps/wasm", default-features = false }
 
 anyhow = "1"
 async-trait = "0.1"
 axum = { version = "0.8", features = ["multipart", "macros"] }
-chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
+# `wasmbind` lets `Utc::now()` work on wasm32-unknown-unknown, which is what
+# the Vercel function runs. It is target-gated inside chrono, so a native
+# build is unaffected.
+chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde", "wasmbind"] }
 hex = "0.4"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
@@ -66,7 +71,8 @@ tower = "0.5"
 tower-http = { version = "0.6", features = ["trace", "limit", "cors"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-uuid = { version = "1", features = ["v4", "serde"] }
+# `js` gives v4 a source of randomness on wasm32; target-gated, no effect natively.
+uuid = { version = "1", features = ["v4", "serde", "js"] }
 tempfile = "3"
 
 [profile.release]

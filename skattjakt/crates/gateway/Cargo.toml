@@ -7,15 +7,31 @@ license.workspace = true
 repository.workspace = true
 description = "Model gateway: routing, cost accounting, budgets, fallback policy and prompt injection defence."
 
+
+# The engine has to build for wasm32-unknown-unknown, because that is what the
+# Vercel function runs. Anything that opens a socket is therefore optional:
+# `reqwest` and tokio's networking pull in `mio`, which has no wasm target.
+#
+# `native` is on by default, so a normal build is unchanged and nobody has to
+# remember a flag. A wasm build turns it off and loses exactly the parts that
+# talk to the network — the model provider and the OTLP exporter — while the
+# rules, the extraction and the report are untouched.
+
+[features]
+default = ["native"]
+native = ["skattjakt-model/native", "skattjakt-telemetry/native"]
+
 [dependencies]
 skattjakt-core.workspace = true
-skattjakt-model.workspace = true
-skattjakt-telemetry.workspace = true
+skattjakt-model = { workspace = true }
+skattjakt-telemetry = { workspace = true }
 
 async-trait.workspace = true
 chrono.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-tokio.workspace = true
 uuid.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true

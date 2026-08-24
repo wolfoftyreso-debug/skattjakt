@@ -125,7 +125,7 @@ impl GatewayConfig {
             .unwrap_or(Budget::DEFAULT_LIMIT_SEK);
         // The same function the provider reads, so the two cannot disagree
         // about whether a fallback response is expected or refused.
-        let allow_fallback = skattjakt_model::anthropic::fallback_enabled();
+        let allow_fallback = skattjakt_model::fallback_enabled();
         Ok(Self {
             prices,
             default_budget: Budget::from_sek(limit_sek),
@@ -548,10 +548,7 @@ mod tests {
         // client asked for server-side fallback while the gateway refused the
         // response, so the one case the setting exists for failed the call.
         let config = GatewayConfig::from_env().unwrap();
-        assert_eq!(
-            config.allow_fallback,
-            skattjakt_model::anthropic::fallback_enabled()
-        );
+        assert_eq!(config.allow_fallback, skattjakt_model::fallback_enabled());
     }
 
     #[tokio::test]

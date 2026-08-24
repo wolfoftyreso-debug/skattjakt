@@ -7,9 +7,23 @@ license.workspace = true
 repository.workspace = true
 description = "Metrics, correlation ids and classification-aware logging for Skattjakt."
 
+
+# The engine has to build for wasm32-unknown-unknown, because that is what the
+# Vercel function runs. Anything that opens a socket is therefore optional:
+# `reqwest` and tokio's networking pull in `mio`, which has no wasm target.
+#
+# `native` is on by default, so a normal build is unchanged and nobody has to
+# remember a flag. A wasm build turns it off and loses exactly the parts that
+# talk to the network — the model provider and the OTLP exporter — while the
+# rules, the extraction and the report are untouched.
+
+[features]
+default = ["native"]
+native = ["dep:reqwest", "dep:tokio"]
+
 [dependencies]
-tokio.workspace = true
-reqwest.workspace = true
+reqwest = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
 skattjakt-core.workspace = true
 
 thiserror.workspace = true
@@ -20,3 +34,6 @@ serde_json.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 uuid.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true

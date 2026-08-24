@@ -16,6 +16,10 @@
 
 pub mod logging;
 pub mod metrics;
+// Behind `native` because it opens sockets, and the engine has to build for
+// wasm32 where nothing can. Turning the feature off removes the network, not
+// the analysis: the rules, the extraction and the report are untouched.
+#[cfg(feature = "native")]
 pub mod otlp;
 pub mod tracing_context;
 

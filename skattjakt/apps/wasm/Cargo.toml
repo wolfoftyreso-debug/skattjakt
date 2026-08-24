@@ -1,0 +1,36 @@
+[package]
+name = "skattjakt-wasm"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "The analysis engine as a WebAssembly module, for the Vercel function that serves it."
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+skattjakt-core = { workspace = true }
+skattjakt-extract = { workspace = true }
+skattjakt-gateway = { workspace = true }
+skattjakt-model = { workspace = true }
+skattjakt-pipeline = { workspace = true }
+skattjakt-rules = { workspace = true }
+skattjakt-telemetry = { workspace = true }
+
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+# `analyse` is async because the pipeline is; the bridge back to a JS Promise
+# needs this alongside wasm-bindgen.
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+serde-wasm-bindgen = "0.6"
+console_error_panic_hook = "0.1"
+
+[features]
+# No `native` anywhere: this crate exists to be built for wasm32, and a
+# dependency that opens a socket would not link there.
+default = []
