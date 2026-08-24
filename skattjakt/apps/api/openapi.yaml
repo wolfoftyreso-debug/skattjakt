@@ -696,6 +696,22 @@ paths:
 
         The proxied `POST /v1/documents` is unchanged and remains the right
         shape for a browser posting a small text file.
+
+        **Size.** A ticket accepts up to 5 GB, because the bytes go to storage
+        and this API never holds them. The proxied path stays at 32 MB, which is
+        what a process can buffer. Two numbers, two paths, and the difference
+        between them is the difference between a file and a request.
+
+        **Type.** Any. The declared `mime_type` is recorded and decides nothing:
+        the bytes are identified on arrival, so a `.pdf` that is really a JPEG
+        is read as a JPEG. A type with no extractor is still stored and hashed,
+        and the analysis reports what it was and why nothing was read from it —
+        `document_not_read` among the report's warnings.
+
+        **Reading.** The extractor holds at most 64 MB. A larger file is read to
+        that and the report carries `document_truncated` naming how much of it
+        the analysis rested on. Nothing here can hold 5 GB in memory, and a
+        prefix that says it is a prefix beats an out-of-memory kill.
       requestBody:
         required: true
         content:
@@ -1841,7 +1857,6 @@ components:
             - analysis_is_not_finished
             - authentication_unavailable
             - consent_required
-            - content_does_not_match_its_declared_type
             - document_too_large
             - empty_document
             - insufficient_permission

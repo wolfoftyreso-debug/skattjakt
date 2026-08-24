@@ -129,6 +129,7 @@ async fn run_case(case: &GoldenCase) -> AnalysisResult {
                     pages,
                     unreadable_pages: unreadable,
                     scale: Scale::Kronor,
+                    ..Default::default()
                 },
             }
         })

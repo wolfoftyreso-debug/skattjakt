@@ -257,6 +257,46 @@ impl AnalysisPipeline {
                     ),
                 });
             }
+
+            // A file we accepted and could not read.
+            //
+            // The extractor knows exactly what it was — a photograph, an
+            // archive, an old Office document — and said so. Without this the
+            // sentence died where it was written: the customer uploaded
+            // something deliberately, the analysis found nothing, and the
+            // report never connected the two.
+            if let Some(reason) = &document.extracted.not_read_because {
+                warnings.push(Warning {
+                    code: "document_not_read".to_string(),
+                    message: reason.clone(),
+                    detail: Some(format!(
+                        "Filen togs emot och sparades. Den lästes som {}.",
+                        document.extracted.detected_type
+                    )),
+                });
+            }
+
+            // A file larger than the extractor's budget.
+            //
+            // The analysis rests on a prefix. A fact that was in the part we did
+            // not read is indistinguishable from a fact that was not there, so
+            // this cannot be left to a log.
+            if let Some(read) = document.extracted.truncated_after_bytes {
+                let total = document.extracted.total_bytes;
+                warnings.push(Warning {
+                    code: "document_truncated".to_string(),
+                    message: format!(
+                        "Underlaget är {} MB och analysen bygger på de första {} MB.",
+                        total / 1_048_576,
+                        read / 1_048_576
+                    ),
+                    detail: Some(
+                        "Det som står längre fram i filen har inte lästs. Dela upp \
+                         underlaget eller ladda upp den del som innehåller bokslutet."
+                            .to_string(),
+                    ),
+                });
+            }
         }
 
         observer.stage(AnalysisStage::UnderstandingStructure);

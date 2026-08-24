@@ -72,7 +72,7 @@ pub async fn issue_ticket(
         return Err(Problem {
             status: StatusCode::UNSUPPORTED_MEDIA_TYPE,
             title: "unsupported document type".into(),
-            detail: "documents must be PDF, plain text, CSV, JPEG or PNG".into(),
+            detail: "the declared type could not be read at all".into(),
         });
     }
     if request.size <= 0 || request.size > MAX_DECLARED_BYTES {
@@ -80,8 +80,8 @@ pub async fn issue_ticket(
             status: StatusCode::UNPROCESSABLE_ENTITY,
             title: "document too large".into(),
             detail: format!(
-                "a document must be between 1 byte and {} MB",
-                MAX_DECLARED_BYTES / 1024 / 1024
+                "a document must be between 1 byte and {} GB",
+                MAX_DECLARED_BYTES / 1024 / 1024 / 1024
             ),
         });
     }
@@ -216,11 +216,9 @@ pub async fn complete_ticket(
             // What the customer called it, not a label we invented — this is
             // the name they will look for in their own document list.
             &details.declared_name,
-            MimeType::from_content_type(&details.declared_type).ok_or_else(|| Problem {
-                status: StatusCode::UNSUPPORTED_MEDIA_TYPE,
-                title: "unsupported document type".into(),
-                detail: "the ticket declared a type this build cannot read".into(),
-            })?,
+            // Sniffed from what actually arrived in storage, not from what the
+            // ticket declared half an hour earlier.
+            MimeType::sniff(&bytes, Some(details.declared_name.as_str())),
             &bytes,
             None,
             accounts_state,

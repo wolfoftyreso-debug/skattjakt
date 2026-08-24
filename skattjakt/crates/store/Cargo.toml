@@ -17,6 +17,7 @@ chrono.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 skattjakt-core.workspace = true
+skattjakt-extract.workspace = true
 skattjakt-payments.workspace = true
 skattjakt-rules.workspace = true
 skattjakt-identity.workspace = true

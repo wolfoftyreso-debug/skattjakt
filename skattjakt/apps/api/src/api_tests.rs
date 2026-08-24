@@ -286,22 +286,62 @@ async fn a_tax_year_the_rule_set_does_not_cover_is_an_explicit_error() {
     assert!(problem["detail"].as_str().unwrap().contains("2030"));
 }
 
+/// A wrong declared type is no longer a refusal.
+///
+/// It used to be: the bytes were checked against the claim and a mismatch was
+/// a 400. That protected nothing — a client can declare whatever it likes — and
+/// it refused a customer whose file was simply named badly. The bytes now
+/// decide, and `content_does_not_match_its_declared_type` is gone from the
+/// contract because the condition it named cannot arise.
 #[tokio::test]
-async fn a_document_that_does_not_match_its_declared_type_is_rejected() {
+async fn a_wrongly_named_document_is_read_as_what_it_actually_is() {
     let mut body = analysis_body(STATEMENT, ("2025-01-01", "2025-12-31"));
+    // Plain text, declared as a PDF.
     body["documents"][0]["mime_type"] = json!("application/pdf");
-    let (status, problem) = send(state(), post_analysis(body, Some(TOKEN))).await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert_eq!(problem["title"], "content does not match its declared type");
+    let (status, _) = send(state(), post_analysis(body, Some(TOKEN))).await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "the file was readable; only its label was wrong"
+    );
 }
 
+/// Nor is an unreadable type a refusal.
+///
+/// The file is received and the report says what it was. "Unsupported file"
+/// told a customer nothing about whether to be surprised; "this is a
+/// photograph, and Skattjakt does not read text out of images" tells them
+/// exactly what to do next.
 #[tokio::test]
-async fn an_unsupported_content_type_is_named_rather_than_guessed_at() {
+async fn a_type_with_no_reader_is_received_and_explained() {
     let mut body = analysis_body(STATEMENT, ("2025-01-01", "2025-12-31"));
-    body["documents"][0]["mime_type"] = json!("application/x-msdownload");
-    let (status, problem) = send(state(), post_analysis(body, Some(TOKEN))).await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert_eq!(problem["title"], "unsupported document type");
+    // A JPEG, whatever the filename says. `text` is removed rather than left
+    // beside the bytes: a request carrying both is ambiguous, and this test is
+    // about the type, not about that.
+    body["documents"][0] = json!({
+        "filename": "bokslut.pdf",
+        "mime_type": "application/pdf",
+        "content_base64": "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBD"
+    });
+    let (status, report) = send(state(), post_analysis(body, Some(TOKEN))).await;
+    // The file was received, so the analysis runs. What matters is that the
+    // report says what the file was and why nothing came of it.
+    assert_eq!(status, StatusCode::OK);
+    let warnings = report["warnings"]
+        .as_array()
+        .unwrap_or_else(|| panic!("the analysis carries warnings; got {report}"));
+    let not_read = warnings
+        .iter()
+        .find(|w| w["code"] == "document_not_read")
+        .expect("a photograph must be reported, not silently ignored");
+    assert!(
+        not_read["message"].as_str().unwrap().contains("bild"),
+        "{not_read:?}"
+    );
+    assert!(
+        not_read["detail"].as_str().unwrap().contains("image/jpeg"),
+        "{not_read:?}"
+    );
 }
 
 #[tokio::test]
@@ -818,7 +858,6 @@ fn the_error_codes_are_the_set_the_contract_promises() {
         "analysis_is_not_finished",
         "authentication_unavailable",
         "consent_required",
-        "content_does_not_match_its_declared_type",
         "document_too_large",
         "empty_document",
         "insufficient_permission",

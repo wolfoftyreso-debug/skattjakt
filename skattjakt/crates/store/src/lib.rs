@@ -366,8 +366,7 @@ impl Tenant<'_> {
         .await?
         .ok_or(StoreError::NotFound)?;
 
-        let mime_type = MimeType::from_content_type(row.get::<String, _>("mime_type").as_str())
-            .ok_or_else(|| StoreError::Corrupt("unknown stored mime type".into()))?;
+        let mime_type = MimeType::from_content_type(row.get::<String, _>("mime_type").as_str());
 
         Ok(DocumentVersion {
             id,

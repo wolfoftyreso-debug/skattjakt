@@ -225,7 +225,7 @@ impl Runner {
                 ));
             }
 
-            let extracted = skattjakt_extract::extract(&bytes, version.mime_type).map_err(|_| {
+            let extracted = skattjakt_extract::extract(&bytes, version.mime_type.clone()).map_err(|_| {
                 RunFailure::permanent(
                     "document_unreadable",
                     "Ett av dokumenten gick inte att läsa. Kontrollera att det är en textbaserad PDF.",

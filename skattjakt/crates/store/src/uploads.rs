@@ -25,9 +25,21 @@ pub const TICKET_LIFETIME: Duration = Duration::minutes(30);
 
 /// The largest document that may be declared.
 ///
-/// Matches the limit the proxied upload path enforces. Two different limits on
-/// two paths to the same storage is how one of them becomes the way in.
-pub const MAX_DECLARED_BYTES: i64 = 32 * 1024 * 1024;
+/// # Two limits, and why they are different numbers
+///
+/// This one is about **storage**: a customer with a 5 GB export from their
+/// bookkeeping system should be able to hand it over, and the ticket flow puts
+/// the bytes straight into object storage without the API ever holding them.
+///
+/// It is deliberately not the same as `ExtractionBudget::DEFAULT_MAX_BYTES`,
+/// which is about **reading**: nothing in this system can hold 5 GB in memory —
+/// a WebAssembly module is capped at a 4 GiB address space by the target and a
+/// serverless function well below that — so the extractor reads a bounded
+/// prefix and records that it did.
+///
+/// Storing more than can be read is not a contradiction. The file is kept,
+/// hashed and available; the analysis says how much of it it rested on.
+pub const MAX_DECLARED_BYTES: i64 = 5 * 1024 * 1024 * 1024;
 
 /// What a ticket authorises, read back at completion.
 #[derive(Debug, Clone)]
@@ -81,8 +93,8 @@ impl Tenant<'_> {
     ) -> StoreResult<UploadTicket> {
         if declared_size <= 0 || declared_size > MAX_DECLARED_BYTES {
             return Err(StoreError::Invalid(format!(
-                "a document must be between 1 byte and {} MB",
-                MAX_DECLARED_BYTES / 1024 / 1024
+                "a document must be between 1 byte and {} GB",
+                MAX_DECLARED_BYTES / 1024 / 1024 / 1024
             )));
         }
 
@@ -253,13 +265,24 @@ impl crate::Store {
 
 /// Which content types may be uploaded.
 ///
-/// An allowlist, not a denylist. A denylist is a list of the formats someone
-/// thought of, and the interesting one is always the format nobody thought of.
-pub fn is_supported_type(mime: &str) -> bool {
-    matches!(
-        mime,
-        "application/pdf" | "text/plain" | "text/csv" | "image/jpeg" | "image/png"
-    )
+/// # Why this now accepts everything
+///
+/// It was an allowlist of five, on the argument that a denylist is a list of
+/// the formats someone thought of. That argument is right about *parsing* and
+/// wrong about *receiving*, and the two were tangled together.
+///
+/// A customer with a folder of material does not know which parts we can read.
+/// Refusing the folder teaches them nothing; taking it and saying which parts
+/// were readable is exactly what they wanted to know. So every type is stored,
+/// hashed and recorded, and `MimeType::sniff` decides from the bytes what it
+/// actually is — the declared type is a claim either way.
+///
+/// The safety that the allowlist was providing has moved to where it belongs:
+/// nothing is executed, archives are listed rather than inflated, inflation is
+/// capped on its output, and a type with no extractor produces a document that
+/// states what it was and why it was not read.
+pub fn is_supported_type(_mime: &str) -> bool {
+    true
 }
 
 #[cfg(test)]
@@ -267,10 +290,24 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_size_limit_matches_the_proxied_path() {
-        // Two different limits on two paths into the same storage is how one of
-        // them becomes the way in.
-        assert_eq!(MAX_DECLARED_BYTES, 32 * 1024 * 1024);
+    fn the_storage_limit_is_five_gigabytes_and_the_reading_limit_is_not() {
+        // Two numbers, deliberately different, and the test says why so the
+        // next person does not "fix" one to match the other.
+        //
+        // Storage: a customer with a large export should be able to hand it
+        // over, and the ticket flow puts the bytes straight into object storage
+        // without the API ever holding them.
+        assert_eq!(MAX_DECLARED_BYTES, 5 * 1024 * 1024 * 1024);
+
+        // Reading: nothing in this system can hold that. A WebAssembly module
+        // is capped at a 4 GiB address space by the target; a serverless
+        // function sits well below it. The extractor reads a bounded prefix and
+        // records that it did.
+        assert!(
+            (skattjakt_extract::ExtractionBudget::DEFAULT_MAX_BYTES as i64) < MAX_DECLARED_BYTES,
+            "the reading budget must stay below the storage limit; storing more \
+             than can be read is the design, not a mistake"
+        );
     }
 
     #[test]
@@ -281,12 +318,32 @@ mod tests {
     }
 
     #[test]
-    fn the_supported_types_are_an_allowlist() {
-        assert!(is_supported_type("application/pdf"));
-        assert!(is_supported_type("text/plain"));
-        // The interesting format is always the one nobody thought of.
-        assert!(!is_supported_type("application/x-sh"));
-        assert!(!is_supported_type("text/html"));
-        assert!(!is_supported_type("application/octet-stream"));
+    fn every_type_may_be_uploaded_and_the_bytes_decide_what_it_is() {
+        // This was an allowlist of five, on the argument that a denylist is a
+        // list of the formats someone thought of. The argument is right about
+        // *parsing* and wrong about *receiving*, and the two were tangled.
+        //
+        // A customer with a folder of material does not know which parts we can
+        // read. Refusing the folder teaches them nothing.
+        for declared in [
+            "application/pdf",
+            "text/plain",
+            "application/x-sh",
+            "text/html",
+            "application/octet-stream",
+            "",
+        ] {
+            assert!(is_supported_type(declared), "{declared} was refused");
+        }
+
+        // The safety moved to where it belongs: the declared type decides
+        // nothing, and a type with no extractor produces a document that states
+        // what it was rather than an analysis of nothing.
+        use skattjakt_core::document::MimeType;
+        let script = MimeType::sniff(b"#!/bin/sh\nrm -rf /", Some("bokslut.pdf"));
+        assert!(!script.extracts_text() || script == MimeType::PlainText);
+        let jpeg = MimeType::sniff(b"\xff\xd8\xff\xe0", Some("bokslut.pdf"));
+        assert!(!jpeg.extracts_text());
+        assert!(jpeg.why_unreadable().is_some());
     }
 }

@@ -93,6 +93,7 @@ mod tests {
                 }],
                 unreadable_pages: vec![],
                 scale: Scale::Kronor,
+                ..Default::default()
             },
         }
     }
@@ -168,6 +169,7 @@ mod sign_tests {
                 }],
                 unreadable_pages: vec![],
                 scale: Scale::Kronor,
+                ..Default::default()
             },
         }
     }

@@ -1957,8 +1957,10 @@ dependencies = [
 name = "skattjakt-extract"
 version = "0.1.0"
 dependencies = [
+ "miniz_oxide",
  "pdf-extract",
  "serde",
+ "serde_json",
  "skattjakt-core",
  "thiserror",
 ]
@@ -2122,6 +2124,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "skattjakt-core",
+ "skattjakt-extract",
  "skattjakt-identity",
  "skattjakt-model",
  "skattjakt-payments",

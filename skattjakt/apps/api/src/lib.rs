@@ -60,6 +60,16 @@ const SIMULATE_JS: &str = include_str!("../ui/simulate.js");
 
 /// Uploads are bounded; an unbounded body is a denial-of-service surface and a
 /// very large prompt.
+/// The largest request body the API will buffer.
+///
+/// Deliberately far below the 5 GB an upload may be. A body is held in the
+/// process while it is read; a file is not, because the ticket flow puts the
+/// bytes straight into object storage and the API never sees them.
+///
+/// So this bounds the *proxied* path, which exists for a browser posting a
+/// small text file. Anything larger goes through `POST /v1/documents/tickets`,
+/// and the difference between the two numbers is the difference between a
+/// request and a file.
 const MAX_BODY_BYTES: usize = 32 * 1024 * 1024;
 
 #[derive(Clone)]
@@ -993,13 +1003,10 @@ pub fn parse_accounts_state(value: Option<&str>) -> Result<AccountsState, Proble
     }
 }
 
-pub fn parse_mime(content_type: &str) -> Result<MimeType, Problem> {
-    MimeType::from_content_type(content_type).ok_or_else(|| {
-        Problem::bad_request(
-            "unsupported document type",
-            format!("`{content_type}` is not a supported content type"),
-        )
-    })
+/// What a client says a file is. Kept because a client may say something, and
+/// never the last word — `MimeType::sniff` reads the bytes.
+pub fn parse_mime(content_type: &str) -> MimeType {
+    MimeType::from_content_type(content_type)
 }
 
 /// Reads the bytes out of an upload, refusing an ambiguous or empty one.
@@ -1027,21 +1034,16 @@ pub fn upload_bytes(upload: &DocumentUpload) -> Result<Vec<u8>, Problem> {
 }
 
 fn prepare_document(upload: DocumentUpload) -> Result<DocumentInput, Problem> {
-    let mime = parse_mime(&upload.mime_type)?;
     let bytes = upload_bytes(&upload)?;
 
-    // The declared type is a claim; check it against the bytes before parsing.
-    if !mime.matches_content(&bytes) {
-        return Err(Problem::bad_request(
-            "content does not match its declared type",
-            format!(
-                "{} does not look like {}",
-                upload.filename,
-                mime.as_content_type()
-            ),
-        ));
-    }
-
+    // The bytes decide. The declared type is read for the record and ignored
+    // for the decision: a `.pdf` that is really a JPEG is a JPEG, and the
+    // report says so rather than failing later with an empty extraction.
+    //
+    // Nothing is refused for its type. A file with no extractor comes back as a
+    // document that names what it was and why it was not read — the customer
+    // uploaded it deliberately and is entitled to that sentence.
+    let mime = MimeType::sniff(&bytes, Some(&upload.filename));
     let extracted = skattjakt_extract::extract(&bytes, mime).map_err(|e| {
         Problem::bad_request("unreadable document", format!("{}: {e}", upload.filename))
     })?;

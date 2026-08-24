@@ -31,16 +31,16 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use chrono::NaiveDate;
-use skattjakt_core::AnalysisId;
 use skattjakt_core::company::{CompanyProfile, FiscalYear, OrgNumber};
 use skattjakt_core::document::{AccountsState, MimeType};
+use skattjakt_core::AnalysisId;
 use skattjakt_core::CompanyId;
 use skattjakt_gateway::{GatewayConfig, ModelGateway};
 use skattjakt_model::{ModelProvider, ScriptedProvider};
+use skattjakt_pipeline::pipeline::SilentObserver;
 use skattjakt_pipeline::{
     AnalysisInput, AnalysisPipeline, Audience, DocumentInput, PipelineConfig,
 };
-use skattjakt_pipeline::pipeline::SilentObserver;
 use skattjakt_rules::RuleEngine;
 use skattjakt_telemetry::metrics::Registry;
 
@@ -119,8 +119,9 @@ fn parse_args() -> Result<Option<Args>, String> {
             }
             "--audience" => {
                 let value = args.next().ok_or("--audience behöver ett värde")?;
-                audience = Audience::parse(&value)
-                    .ok_or_else(|| format!("okänd mottagare {value:?}: private, company, accountant"))?;
+                audience = Audience::parse(&value).ok_or_else(|| {
+                    format!("okänd mottagare {value:?}: private, company, accountant")
+                })?;
             }
             "--format" => {
                 let value = args.next().ok_or("--format behöver ett värde")?;
@@ -176,11 +177,7 @@ async fn run() -> Result<(), String> {
 
     let gateway_config = GatewayConfig::from_env()
         .map_err(|e| format!("prislistan för modellen är felaktig: {e}"))?;
-    let gateway = Arc::new(ModelGateway::new(
-        provider,
-        gateway_config,
-        Registry::new(),
-    ));
+    let gateway = Arc::new(ModelGateway::new(provider, gateway_config, Registry::new()));
 
     let mut documents = Vec::new();
     for path in &args.files {
@@ -240,19 +237,12 @@ async fn run() -> Result<(), String> {
 
 fn read_document(path: &Path) -> Result<DocumentInput, String> {
     let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    let mime = mime_for(path)
-        .ok_or_else(|| format!("{}: okänd filändelse (pdf, csv, xlsx, se, txt)", path.display()))?;
 
-    // The declared type is a claim; the bytes decide. A .pdf that is not a PDF
-    // fails here rather than three stages later as an empty extraction.
-    if !mime.matches_content(&bytes) {
-        return Err(format!(
-            "{}: innehållet ser inte ut som {}",
-            path.display(),
-            mime.as_content_type()
-        ));
-    }
-
+    // The bytes decide, not the extension. A `.pdf` that is really a JPEG is a
+    // JPEG, and saying so beats failing three stages later with an empty
+    // extraction. Nothing is refused for its type — a file we cannot read comes
+    // back as a document that says what it was and why.
+    let mime = MimeType::sniff(&bytes, path.file_name().and_then(|n| n.to_str()));
     let extracted = skattjakt_extract::extract(&bytes, mime)
         .map_err(|e| format!("{}: går inte att läsa: {e}", path.display()))?;
 
@@ -261,22 +251,6 @@ fn read_document(path: &Path) -> Result<DocumentInput, String> {
         document_version_id: skattjakt_core::DocumentVersionId::new(),
         extracted,
     })
-}
-
-fn mime_for(path: &Path) -> Option<MimeType> {
-    match path
-        .extension()
-        .and_then(|e| e.to_str())?
-        .to_ascii_lowercase()
-        .as_str()
-    {
-        "pdf" => Some(MimeType::Pdf),
-        "csv" => Some(MimeType::Csv),
-        "xlsx" => Some(MimeType::Xlsx),
-        "se" | "si" | "sie" => Some(MimeType::Sie),
-        "txt" | "text" => Some(MimeType::PlainText),
-        _ => None,
-    }
 }
 
 #[derive(serde::Deserialize)]
@@ -311,8 +285,8 @@ fn load_profile(path: &Path) -> Result<CompanyProfile, String> {
     .map_err(|e| format!("{}: {e}", path.display()))?;
 
     if let serde_json::Value::Object(extra) = file.rest {
-        let mut merged = serde_json::to_value(&profile)
-            .map_err(|e| format!("{}: {e}", path.display()))?;
+        let mut merged =
+            serde_json::to_value(&profile).map_err(|e| format!("{}: {e}", path.display()))?;
         if let serde_json::Value::Object(base) = &mut merged {
             for (key, value) in extra {
                 base.insert(key, value);

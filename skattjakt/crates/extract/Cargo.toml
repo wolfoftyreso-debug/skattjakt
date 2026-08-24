@@ -8,6 +8,12 @@ repository.workspace = true
 description = "Document text extraction and deterministic parsing of Swedish financial statements."
 
 [dependencies]
+# DEFLATE, for the ZIP containers Word and Excel are. Pure Rust with no C
+# dependency, so it crosses to wasm32 with the rest of the engine. Writing one
+# by hand is not the same trade as the forty lines of base64 elsewhere in this
+# workspace: a wrong inflate is a silently corrupt document, not a failed parse.
+miniz_oxide = "0.8"
+serde_json.workspace = true
 pdf-extract = "0.12"
 serde.workspace = true
 skattjakt-core.workspace = true

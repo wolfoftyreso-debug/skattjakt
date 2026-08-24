@@ -36,14 +36,16 @@ use wasm_bindgen::prelude::*;
 
 mod decode;
 
-use skattjakt_core::AnalysisId;
 use skattjakt_core::company::{CompanyProfile, FiscalYear, OrgNumber};
 use skattjakt_core::document::{AccountsState, MimeType};
+use skattjakt_core::AnalysisId;
 use skattjakt_core::CompanyId;
 use skattjakt_gateway::{GatewayConfig, ModelGateway};
 use skattjakt_model::ScriptedProvider;
 use skattjakt_pipeline::pipeline::SilentObserver;
-use skattjakt_pipeline::{AnalysisInput, AnalysisPipeline, Audience, DocumentInput, PipelineConfig};
+use skattjakt_pipeline::{
+    AnalysisInput, AnalysisPipeline, Audience, DocumentInput, PipelineConfig,
+};
 use skattjakt_rules::RuleEngine;
 use skattjakt_telemetry::metrics::Registry;
 
@@ -201,15 +203,10 @@ async fn run(request: JsValue) -> Result<serde_json::Value, String> {
 fn read_document(doc: &Document) -> Result<DocumentInput, String> {
     let bytes = decode::base64(&doc.content_base64)
         .ok_or_else(|| format!("{}: content_base64 is not valid base64", doc.filename))?;
-    let mime = mime_for(&doc.filename)
-        .ok_or_else(|| format!("{}: unsupported file type", doc.filename))?;
-    if !mime.matches_content(&bytes) {
-        return Err(format!(
-            "{}: the bytes do not look like {}",
-            doc.filename,
-            mime.as_content_type()
-        ));
-    }
+
+    // Identified from the bytes. Every type is accepted; one with no extractor
+    // comes back as a document that names what it was and why it was not read.
+    let mime = MimeType::sniff(&bytes, Some(&doc.filename));
     let extracted =
         skattjakt_extract::extract(&bytes, mime).map_err(|e| format!("{}: {e}", doc.filename))?;
     Ok(DocumentInput {
@@ -217,18 +214,6 @@ fn read_document(doc: &Document) -> Result<DocumentInput, String> {
         document_version_id: skattjakt_core::DocumentVersionId::new(),
         extracted,
     })
-}
-
-fn mime_for(filename: &str) -> Option<MimeType> {
-    let ext = filename.rsplit('.').next()?.to_ascii_lowercase();
-    match ext.as_str() {
-        "pdf" => Some(MimeType::Pdf),
-        "csv" => Some(MimeType::Csv),
-        "xlsx" => Some(MimeType::Xlsx),
-        "se" | "si" | "sie" => Some(MimeType::Sie),
-        "txt" | "text" => Some(MimeType::PlainText),
-        _ => None,
-    }
 }
 
 /// Builds the profile from the request's JSON.
@@ -259,7 +244,8 @@ fn profile_from(value: &serde_json::Value) -> Result<CompanyProfile, String> {
         "org_number": org_number,
         "fiscal_year": fiscal_year,
     });
-    if let (Some(base), serde_json::Value::Object(extra)) = (merged.as_object_mut(), value.clone()) {
+    if let (Some(base), serde_json::Value::Object(extra)) = (merged.as_object_mut(), value.clone())
+    {
         for (key, v) in extra {
             if !matches!(
                 key.as_str(),

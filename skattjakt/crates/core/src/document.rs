@@ -40,20 +40,177 @@ pub enum AccountsState {
     Unknown,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// What a file is, as far as we can tell from its bytes.
+///
+/// # Why this is open rather than a fixed list
+///
+/// It used to be five variants and a closed match: a type outside them was
+/// refused at the edge. That is the right answer for a service that only ever
+/// wants five formats, and the wrong one for a customer who has a folder of
+/// material and does not know which parts we can read. Refusing the folder
+/// teaches them nothing; taking it and saying which parts were readable is the
+/// whole of what they wanted to know.
+///
+/// So every file is accepted, identified from its content, stored and recorded.
+/// `Other` carries what the bytes actually turned out to be. What separates the
+/// variants is not whether a file is *allowed* — they all are — but whether an
+/// extractor exists, and `extracts_text` is the honest name for that question.
+///
+/// # The declared type is a claim, the bytes are the evidence
+///
+/// `sniff` reads the leading bytes and ignores the filename. A `.pdf` that is
+/// really a JPEG is a JPEG, and the report says so rather than failing three
+/// stages later with an empty extraction.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MimeType {
     Pdf,
     Csv,
+    /// Excel's current format. A ZIP of XML underneath, like `Docx`.
     Xlsx,
+    /// Word's current format. Swedish annual reports arrive as these often
+    /// enough to be worth reading rather than refusing.
+    Docx,
+    /// SIE, the Swedish accounting interchange format. Text.
     Sie,
+    /// XML that is not one of the above: SIE 5, iXBRL, an export from a
+    /// bookkeeping system.
+    Xml,
+    Html,
+    Json,
+    Rtf,
     PlainText,
+    /// A ZIP that is not an Office document. Its listing is readable even when
+    /// its members are not, and a customer who uploaded a folder deserves to be
+    /// told what was in it.
+    Zip,
+    /// Anything else, carrying what it was detected to be.
+    ///
+    /// Not an error and not a rejection. The file is stored, hashed and
+    /// recorded; the report says it was received and could not be read, and
+    /// names the type so the customer knows whether that is a surprise.
+    Other(String),
 }
 
 impl MimeType {
-    /// Maps a declared content type to a supported kind. Unsupported types are
-    /// rejected at the edge rather than discovered mid-pipeline.
-    pub fn from_content_type(value: &str) -> Option<Self> {
+    /// Identifies a file from its leading bytes.
+    ///
+    /// Content first, always. The filename is consulted only to separate
+    /// formats whose containers are identical — a `.docx` and an `.xlsx` are
+    /// both ZIPs, and telling them apart means looking inside, which `sniff`
+    /// does by reading the member names in the ZIP's central directory.
+    pub fn sniff(bytes: &[u8], filename: Option<&str>) -> Self {
+        if bytes.is_empty() {
+            return MimeType::Other("empty".to_string());
+        }
+        if bytes.starts_with(b"%PDF-") {
+            return MimeType::Pdf;
+        }
+        if bytes.starts_with(b"{\\rtf") {
+            return MimeType::Rtf;
+        }
+        if bytes.starts_with(b"PK\x03\x04") {
+            return Self::inside_zip(bytes, filename);
+        }
+        // Old Office (.xls, .doc): the OLE2 compound file header.
+        if bytes.starts_with(&[0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]) {
+            return MimeType::Other("application/x-ole-storage".to_string());
+        }
+        for (magic, label) in BINARY_SIGNATURES {
+            if bytes.starts_with(magic) {
+                return MimeType::Other((*label).to_string());
+            }
+        }
+        Self::sniff_text(bytes, filename)
+    }
+
+    /// Text formats, told apart by what the text starts with.
+    fn sniff_text(bytes: &[u8], filename: Option<&str>) -> Self {
+        // A prefix is enough, and bounds the work on a very large file.
+        let head = &bytes[..bytes.len().min(4096)];
+        if std::str::from_utf8(head).is_err() && !head.is_ascii() {
+            // Not decodable as UTF-8 and not plain ASCII: binary of some kind.
+            return MimeType::Other("application/octet-stream".to_string());
+        }
+        let text = String::from_utf8_lossy(head);
+        let trimmed = text.trim_start().trim_start_matches('\u{feff}');
+        let lower = trimmed.to_ascii_lowercase();
+
+        if lower.starts_with("<?xml") {
+            return MimeType::Xml;
+        }
+        if lower.starts_with("<!doctype html") || lower.starts_with("<html") {
+            return MimeType::Html;
+        }
+        if trimmed.starts_with('{') || trimmed.starts_with('[') {
+            return MimeType::Json;
+        }
+        // SIE announces itself on the first line.
+        if lower.starts_with("#flagga") || lower.contains("#sietyp") {
+            return MimeType::Sie;
+        }
+        let extension = filename
+            .and_then(|f| f.rsplit('.').next())
+            .map(str::to_ascii_lowercase);
+        match extension.as_deref() {
+            Some("csv" | "tsv") => MimeType::Csv,
+            Some("se" | "si" | "sie") => MimeType::Sie,
+            // Several separators on the first few lines reads like a table.
+            _ if Self::looks_like_delimited(&text) => MimeType::Csv,
+            _ => MimeType::PlainText,
+        }
+    }
+
+    fn looks_like_delimited(text: &str) -> bool {
+        let lines: Vec<&str> = text
+            .lines()
+            .take(5)
+            .filter(|l| !l.trim().is_empty())
+            .collect();
+        if lines.len() < 2 {
+            return false;
+        }
+        let counts: Vec<usize> = lines
+            .iter()
+            .map(|l| l.matches(';').count().max(l.matches(',').count()))
+            .collect();
+        counts[0] >= 2 && counts.iter().all(|c| *c == counts[0])
+    }
+
+    /// Separates the ZIP-container formats by looking at the member names.
+    ///
+    /// `.docx`, `.xlsx` and a plain `.zip` share the same first four bytes, so
+    /// the extension is the only cheap hint — and a wrong extension is exactly
+    /// what sniffing exists to survive. The central directory is at the end of
+    /// the file, so this reads a bounded tail rather than inflating anything.
+    fn inside_zip(bytes: &[u8], filename: Option<&str>) -> Self {
+        let tail = &bytes[bytes.len().saturating_sub(64 * 1024)..];
+        let has = |needle: &[u8]| {
+            tail.windows(needle.len()).any(|w| w == needle)
+                || bytes[..bytes.len().min(64 * 1024)]
+                    .windows(needle.len())
+                    .any(|w| w == needle)
+        };
+        if has(b"word/document.xml") {
+            return MimeType::Docx;
+        }
+        if has(b"xl/workbook.xml") {
+            return MimeType::Xlsx;
+        }
+        match filename
+            .and_then(|f| f.rsplit('.').next())
+            .map(str::to_ascii_lowercase)
+            .as_deref()
+        {
+            Some("docx") => MimeType::Docx,
+            Some("xlsx" | "xlsm") => MimeType::Xlsx,
+            _ => MimeType::Zip,
+        }
+    }
+
+    /// Maps a declared content type. Kept because a client may send one, but it
+    /// is never the last word — see `sniff`.
+    pub fn from_content_type(value: &str) -> Self {
         let normalised = value
             .split(';')
             .next()
@@ -61,46 +218,107 @@ impl MimeType {
             .trim()
             .to_ascii_lowercase();
         match normalised.as_str() {
-            "application/pdf" => Some(MimeType::Pdf),
-            "text/csv" | "application/csv" => Some(MimeType::Csv),
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => {
-                Some(MimeType::Xlsx)
+            "application/pdf" => MimeType::Pdf,
+            "text/csv" | "application/csv" => MimeType::Csv,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => MimeType::Xlsx,
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => {
+                MimeType::Docx
             }
-            "application/sie" | "text/sie" => Some(MimeType::Sie),
-            "text/plain" => Some(MimeType::PlainText),
-            _ => None,
+            "application/sie" | "text/sie" => MimeType::Sie,
+            "text/xml" | "application/xml" => MimeType::Xml,
+            "text/html" => MimeType::Html,
+            "application/json" => MimeType::Json,
+            "application/rtf" | "text/rtf" => MimeType::Rtf,
+            "application/zip" => MimeType::Zip,
+            "text/plain" => MimeType::PlainText,
+            other => MimeType::Other(other.to_string()),
         }
     }
 
-    pub fn as_content_type(self) -> &'static str {
+    pub fn as_content_type(&self) -> &str {
         match self {
             MimeType::Pdf => "application/pdf",
             MimeType::Csv => "text/csv",
             MimeType::Xlsx => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            MimeType::Docx => {
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            }
             MimeType::Sie => "application/sie",
+            MimeType::Xml => "application/xml",
+            MimeType::Html => "text/html",
+            MimeType::Json => "application/json",
+            MimeType::Rtf => "application/rtf",
+            MimeType::Zip => "application/zip",
             MimeType::PlainText => "text/plain",
+            MimeType::Other(label) => label,
         }
     }
 
-    /// The leading bytes a file of this type must start with, when the format
-    /// defines one. A declared content type is a claim; this is a check.
-    pub fn magic_prefix(self) -> Option<&'static [u8]> {
+    /// Whether an extractor exists for this type.
+    ///
+    /// The question that actually matters, and deliberately not called
+    /// "supported": every type is supported for upload. This is about whether
+    /// the analysis will have anything to read.
+    pub fn extracts_text(&self) -> bool {
+        !matches!(self, MimeType::Zip | MimeType::Other(_))
+    }
+
+    /// What to tell a customer who uploaded something we cannot read.
+    ///
+    /// Names the type and says why, because "unsupported file" tells them
+    /// nothing about whether to be surprised.
+    pub fn why_unreadable(&self) -> Option<String> {
         match self {
-            MimeType::Pdf => Some(b"%PDF-"),
-            // ZIP container.
-            MimeType::Xlsx => Some(b"PK\x03\x04"),
-            MimeType::Csv | MimeType::Sie | MimeType::PlainText => None,
-        }
-    }
-
-    /// Whether the bytes are consistent with the declared type.
-    pub fn matches_content(self, bytes: &[u8]) -> bool {
-        match self.magic_prefix() {
-            Some(prefix) => bytes.starts_with(prefix),
-            None => true,
+            MimeType::Zip => Some(
+                "Filen är ett arkiv. Innehållet listas men läses inte — packa upp \
+                 det och ladda upp de filer som hör till bokslutet."
+                    .to_string(),
+            ),
+            MimeType::Other(label) if label == "empty" => Some("Filen är tom.".to_string()),
+            MimeType::Other(label) if label.starts_with("image/") => Some(
+                "Filen är en bild. Skattjakt läser inte text ur bilder, så ett \
+                 fotograferat eller skannat underlag ger ingen analys."
+                    .to_string(),
+            ),
+            MimeType::Other(label) if label == "application/x-ole-storage" => Some(
+                "Filen är ett äldre Office-dokument (.doc eller .xls). Spara om \
+                 det som .docx, .xlsx eller PDF."
+                    .to_string(),
+            ),
+            MimeType::Other(label) => Some(format!(
+                "Filen är av typen {label}, som Skattjakt inte kan läsa text ur."
+            )),
+            _ => None,
         }
     }
 }
+
+/// Leading bytes that identify a format we store but cannot read.
+///
+/// Listed so the report can name what a file was rather than calling it
+/// "unsupported" — a customer who uploaded a photograph of their accounts is
+/// told it is a photograph, which is the sentence that helps them.
+const BINARY_SIGNATURES: &[(&[u8], &str)] = &[
+    (b"\x89PNG\r\n\x1a\n", "image/png"),
+    (b"\xff\xd8\xff", "image/jpeg"),
+    (b"GIF87a", "image/gif"),
+    (b"GIF89a", "image/gif"),
+    (b"BM", "image/bmp"),
+    (b"II*\x00", "image/tiff"),
+    (b"MM\x00*", "image/tiff"),
+    (b"\x1f\x8b", "application/gzip"),
+    (b"7z\xbc\xaf\x27\x1c", "application/x-7z-compressed"),
+    (b"Rar!\x1a\x07", "application/vnd.rar"),
+    (b"OggS", "audio/ogg"),
+    (b"\x00\x00\x00\x18ftyp", "video/mp4"),
+    (b"\x00\x00\x00\x20ftyp", "video/mp4"),
+    (b"\x1aE\xdf\xa3", "video/x-matroska"),
+    (b"ID3", "audio/mpeg"),
+    (b"RIFF", "application/x-riff"),
+    (b"\x7fELF", "application/x-executable"),
+    (b"MZ", "application/vnd.microsoft.portable-executable"),
+    (b"SQLite format 3\x00", "application/vnd.sqlite3"),
+];
 
 /// A logical document belonging to one company.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -259,24 +477,95 @@ mod tests {
     }
 
     #[test]
-    fn content_type_mapping_ignores_parameters_and_case() {
+    fn a_declared_content_type_is_read_but_never_refused() {
         assert_eq!(
             MimeType::from_content_type("application/PDF; charset=binary"),
-            Some(MimeType::Pdf)
+            MimeType::Pdf
         );
-        assert_eq!(MimeType::from_content_type("text/csv"), Some(MimeType::Csv));
+        assert_eq!(MimeType::from_content_type("text/csv"), MimeType::Csv);
+        // Not a rejection any more. An unknown type is a type we know we cannot
+        // read, which is a different and more useful thing to say.
         assert_eq!(
             MimeType::from_content_type("application/x-msdownload"),
-            None
+            MimeType::Other("application/x-msdownload".to_string())
+        );
+    }
+
+    /// The filename is a hint; the bytes are the answer.
+    #[test]
+    fn a_file_is_what_its_bytes_are_not_what_it_is_called() {
+        // The case that used to fail three stages later as an empty extraction.
+        assert_eq!(
+            MimeType::sniff(b"\xff\xd8\xff\xe0JFIF", Some("bokslut.pdf")),
+            MimeType::Other("image/jpeg".to_string())
+        );
+        assert_eq!(
+            MimeType::sniff(b"%PDF-1.7\n...", Some("gissa.txt")),
+            MimeType::Pdf
+        );
+        assert_eq!(
+            MimeType::sniff(b"", Some("tom.pdf")),
+            MimeType::Other("empty".into())
         );
     }
 
     #[test]
-    fn declared_pdf_must_actually_start_like_a_pdf() {
-        assert!(MimeType::Pdf.matches_content(b"%PDF-1.7\n..."));
-        assert!(!MimeType::Pdf.matches_content(b"MZ\x90\x00"));
-        // Text formats have no signature to check.
-        assert!(MimeType::Csv.matches_content(b"anything"));
+    fn text_formats_are_told_apart_by_what_they_start_with() {
+        assert_eq!(
+            MimeType::sniff(b"<?xml version=\"1.0\"?><sie/>", None),
+            MimeType::Xml
+        );
+        assert_eq!(
+            MimeType::sniff(b"<!DOCTYPE html><html>", None),
+            MimeType::Html
+        );
+        assert_eq!(MimeType::sniff(b"{\"resultat\": 1}", None), MimeType::Json);
+        assert_eq!(
+            MimeType::sniff(b"#FLAGGA 0\n#SIETYP 4", None),
+            MimeType::Sie
+        );
+        assert_eq!(MimeType::sniff(b"{\\rtf1\\ansi", None), MimeType::Rtf);
+        assert_eq!(
+            MimeType::sniff("Nettoomsättning 4 200 000".as_bytes(), None),
+            MimeType::PlainText
+        );
+        // Consistent separators across several lines read as a table.
+        assert_eq!(
+            MimeType::sniff(b"a;b;c\n1;2;3\n4;5;6", Some("okant")),
+            MimeType::Csv
+        );
+    }
+
+    /// A `.docx` and an `.xlsx` are both ZIPs; the members separate them.
+    #[test]
+    fn office_containers_are_separated_by_what_is_inside_them() {
+        let docx = [b"PK\x03\x04".as_slice(), b"...word/document.xml..."].concat();
+        let xlsx = [b"PK\x03\x04".as_slice(), b"...xl/workbook.xml..."].concat();
+        let plain = [b"PK\x03\x04".as_slice(), b"...bokslut.pdf..."].concat();
+        assert_eq!(MimeType::sniff(&docx, Some("x.zip")), MimeType::Docx);
+        assert_eq!(MimeType::sniff(&xlsx, Some("x.zip")), MimeType::Xlsx);
+        assert_eq!(MimeType::sniff(&plain, Some("x.zip")), MimeType::Zip);
+    }
+
+    /// A type with no extractor is not an error, and the reason is in the
+    /// customer's terms rather than "unsupported file".
+    #[test]
+    fn a_type_we_cannot_read_says_what_it_was_and_why() {
+        let jpeg = MimeType::sniff(b"\xff\xd8\xff\xe0", None);
+        assert!(!jpeg.extracts_text());
+        let why = jpeg.why_unreadable().expect("a reason");
+        assert!(why.contains("bild"), "{why}");
+        assert!(
+            why.contains("skannat") || why.contains("fotograferat"),
+            "{why}"
+        );
+
+        let old_office = MimeType::sniff(&[0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1], None);
+        assert!(old_office.why_unreadable().unwrap().contains(".docx"));
+
+        // And the ones we can read say nothing, because there is nothing to say.
+        assert!(MimeType::Pdf.extracts_text());
+        assert_eq!(MimeType::Pdf.why_unreadable(), None);
     }
 
     #[test]

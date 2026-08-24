@@ -57,6 +57,7 @@ fn document(text: &str) -> DocumentInput {
             }],
             unreadable_pages: vec![],
             scale: Scale::Kronor,
+            ..Default::default()
         },
     }
 }

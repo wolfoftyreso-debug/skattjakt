@@ -11,13 +11,17 @@ name = "skattjakt-analyze"
 path = "src/main.rs"
 
 [dependencies]
+# `native` explicitly: the workspace turns default features off so the engine
+# can cross to wasm32, and this binary is the side that needs the network —
+# the Anthropic client and the OTLP exporter.
+
 skattjakt-core.workspace = true
 skattjakt-extract.workspace = true
-skattjakt-gateway.workspace = true
-skattjakt-model.workspace = true
-skattjakt-pipeline.workspace = true
+skattjakt-gateway = { workspace = true, features = ["native"] }
+skattjakt-model = { workspace = true, features = ["native"] }
+skattjakt-pipeline = { workspace = true, features = ["native"] }
 skattjakt-rules.workspace = true
-skattjakt-telemetry.workspace = true
+skattjakt-telemetry = { workspace = true, features = ["native"] }
 chrono.workspace = true
 serde.workspace = true
 serde_json.workspace = true

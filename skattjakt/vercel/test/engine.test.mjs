@@ -139,3 +139,96 @@ test('a document that tries to give instructions changes nothing', async () => {
     clean.sections.economic_potential.display,
   );
 });
+
+// Any file, up to five gigabytes — through the bridge, not just in Rust.
+
+test('a Word document is read, not refused', async () => {
+  // A minimal .docx: a stored ZIP holding word/document.xml.
+  const xml = '<w:document><w:body><w:p><w:r><w:t>Nettoomsättning</w:t></w:r>'
+    + '<w:r><w:t>8 400 000</w:t></w:r></w:p><w:p><w:r><w:t>Skattemässigt resultat</w:t>'
+    + '</w:r><w:r><w:t>1 640 000</w:t></w:r></w:p></w:body></w:document>';
+  const docx = storedZip([['word/document.xml', Buffer.from(xml, 'utf8')]]);
+  const report = await analyse(request({
+    documents: [{ filename: 'bokslut.docx', content_base64: docx.toString('base64') }],
+  }));
+  assert.ok(report.sections.opportunities.length > 0, 'a readable docx must analyse');
+});
+
+test('a photograph is received and explained, not rejected', async () => {
+  // JPEG magic bytes with a .pdf name — the case that used to be a 400.
+  const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(64)]);
+  const report = await analyse(request({
+    documents: [{ filename: 'bokslut.pdf', content_base64: jpeg.toString('base64') }],
+  }));
+  const notRead = report.sections.warnings.find((w) => w.code === 'document_not_read');
+  assert.ok(notRead, 'a photograph must be reported, not silently ignored');
+  assert.match(notRead.message, /bild/);
+  assert.match(notRead.detail, /image\/jpeg/);
+});
+
+test('an archive is listed rather than opened', async () => {
+  const zip = storedZip([
+    ['bokslut.pdf', Buffer.from('x')],
+    ['kvitton/mars.jpg', Buffer.from('y')],
+  ]);
+  const report = await analyse(request({
+    documents: [{ filename: 'allt.zip', content_base64: zip.toString('base64') }],
+  }));
+  const notRead = report.sections.warnings.find((w) => w.code === 'document_not_read');
+  assert.ok(notRead, 'an archive must be reported');
+  assert.match(notRead.message, /bokslut\.pdf/);
+  assert.match(notRead.message, /packa upp/);
+});
+
+test('a document past the reading budget says how much it read', async () => {
+  // 80 MB of text: past the 64 MB extraction budget, well inside what a blob
+  // may be. The analysis rests on a prefix and the report has to say so —
+  // a fact in the part we did not read is indistinguishable from one that was
+  // not there.
+  const line = 'Rad utan betydelse som fyller ut filen\n';
+  const head = 'Nettoomsättning        8 400 000\nSkattemässigt resultat   1 640 000\n';
+  const big = Buffer.concat([
+    Buffer.from(head, 'utf8'),
+    Buffer.alloc(80 * 1024 * 1024, line),
+  ]);
+  const report = await analyse(request({
+    documents: [{ filename: 'stor-export.txt', content_base64: big.toString('base64') }],
+  }));
+  const truncated = report.sections.warnings.find((w) => w.code === 'document_truncated');
+  assert.ok(truncated, 'reading a prefix must be stated, never assumed');
+  assert.match(truncated.message, /80 MB/);
+  assert.match(truncated.message, /64 MB/);
+  // And what it did read was analysed.
+  assert.ok(report.sections.opportunities.length > 0);
+});
+
+/** A ZIP with stored (uncompressed) members — enough to be identified and listed. */
+function storedZip(members) {
+  const local = [];
+  const directory = [];
+  let offset = 0;
+  for (const [name, body] of members) {
+    const nameBuf = Buffer.from(name, 'utf8');
+    const head = Buffer.alloc(30);
+    head.write('PK\x03\x04', 0, 'binary');
+    head.writeUInt16LE(20, 4);
+    head.writeUInt32LE(body.length, 18);
+    head.writeUInt32LE(body.length, 22);
+    head.writeUInt16LE(nameBuf.length, 26);
+    local.push(head, nameBuf, body);
+
+    // 46 bytes before the name. Getting this wrong puts every name two bytes
+    // off and the reader finds none — which is exactly what happened first try.
+    const entry = Buffer.alloc(46);
+    entry.write('PK\x01\x02', 0, 'binary');
+    entry.writeUInt16LE(20, 4);
+    entry.writeUInt16LE(20, 6);
+    entry.writeUInt32LE(body.length, 20);
+    entry.writeUInt32LE(body.length, 24);
+    entry.writeUInt16LE(nameBuf.length, 28);
+    entry.writeUInt32LE(offset, 42);
+    directory.push(entry, nameBuf);
+    offset += head.length + nameBuf.length + body.length;
+  }
+  return Buffer.concat([...local, ...directory]);
+}

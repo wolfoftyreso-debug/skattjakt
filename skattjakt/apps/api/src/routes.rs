@@ -12,7 +12,7 @@ use axum::Json;
 use serde::Deserialize;
 use serde_json::json;
 use skattjakt_core::analysis::{AnalysisStage, AnalysisStatus};
-use skattjakt_core::document::DocumentKind;
+use skattjakt_core::document::{DocumentKind, MimeType};
 use skattjakt_core::{AnalysisId, CompanyId, DocumentVersionId, OpportunityId};
 use skattjakt_jobs::{IdempotencyKey, JobKind, NewJob, Queue};
 use skattjakt_pipeline::pipeline::SilentObserver;
@@ -283,19 +283,10 @@ fn prepare_document_bytes(
     ),
     Problem,
 > {
-    let mime = crate::parse_mime(&upload.mime_type)?;
     let bytes = crate::upload_bytes(&upload)?;
-    if !mime.matches_content(&bytes) {
-        return Err(Problem::bad_request(
-            "content does not match its declared type",
-            format!(
-                "{} does not look like {}",
-                upload.filename,
-                mime.as_content_type()
-            ),
-        ));
-    }
-    let extracted = skattjakt_extract::extract(&bytes, mime).map_err(|e| {
+    // Identified from the bytes; see `prepare_document`.
+    let mime = MimeType::sniff(&bytes, Some(&upload.filename));
+    let extracted = skattjakt_extract::extract(&bytes, mime.clone()).map_err(|e| {
         Problem::bad_request("unreadable document", format!("{}: {e}", upload.filename))
     })?;
     Ok((bytes, mime, extracted))
