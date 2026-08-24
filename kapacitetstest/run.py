@@ -3,7 +3,20 @@
 import json, pathlib, subprocess, sys, time
 from scenarios import SCENARIOS
 
-BIN = "/tmp/claude-0/-home-user-konditori-joy/8cbc25f0-c7cd-5b5e-8e76-e42c173ade0a/scratchpad/renrum/skattjakt-engine/target/release/skattjakt-analyze"
+# Whichever build is newer, never whichever profile is preferred — the same
+# rule the shell suites use, and for the same reason: a stale binary produced
+# four false diagnoses in this repository before anybody wrote the rule down.
+def binary():
+    root = pathlib.Path(__file__).resolve().parent.parent / "skattjakt"
+    found = [p for p in (root / "target" / profile / "skattjakt-analyze"
+                         for profile in ("release", "debug")) if p.exists()]
+    if not found:
+        raise SystemExit(
+            "build the analysis command first:\n"
+            "  cd skattjakt && cargo build --release --bin skattjakt-analyze")
+    return str(max(found, key=lambda p: p.stat().st_mtime))
+
+BIN = binary()
 WORK = pathlib.Path("kor"); WORK.mkdir(exist_ok=True)
 OUT = pathlib.Path("resultat"); OUT.mkdir(exist_ok=True)
 

@@ -15,6 +15,7 @@ members = [
     "crates/jobs",
     "crates/payments",
     "apps/api",
+    "apps/analyze",
     "apps/wasm",
     "workers/analysis-worker",
     "workers/notification-worker",
@@ -43,6 +44,7 @@ skattjakt-jobs = { path = "crates/jobs" }
 skattjakt-payments = { path = "crates/payments" }
 skattjakt-api = { path = "apps/api" }
 skattjakt-wasm = { path = "apps/wasm", default-features = false }
+skattjakt-analyze = { path = "apps/analyze" }
 
 anyhow = "1"
 async-trait = "0.1"

@@ -1897,6 +1897,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "skattjakt-analyze"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "skattjakt-core",
+ "skattjakt-extract",
+ "skattjakt-gateway",
+ "skattjakt-model",
+ "skattjakt-pipeline",
+ "skattjakt-rules",
+ "skattjakt-telemetry",
+ "tokio",
+]
+
+[[package]]
 name = "skattjakt-api"
 version = "0.1.0"
 dependencies = [
