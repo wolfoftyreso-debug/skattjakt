@@ -1487,3 +1487,45 @@ async fn counted_and_deferred_together_account_for_every_finding() {
         }
     }
 }
+
+/// The opening sentence inflects both words, not only the noun.
+///
+/// With one finding this read "1 sak som kan vara värda att undersöka" — the
+/// product's first line, ungrammatical, on every analysis that found exactly
+/// one thing. No test had a single-finding case; a hundred generated scenarios
+/// did.
+///
+/// Asserted through a real analysis rather than against the format string,
+/// because a test that restates the code it checks proves only that the code
+/// exists.
+#[tokio::test]
+async fn the_headline_inflects_for_one_finding_and_for_several() {
+    // A statement with nothing in it but a cost line: exactly one rule fires.
+    const THIN: &str = "RESULTATRÄKNING\nÖvriga externa kostnader 0\n";
+    let (one, _) = pipeline(silent_provider())
+        .run(&input(vec![document(THIN)]), &SilentObserver)
+        .await
+        .unwrap();
+    let report = crate::report::build(&one, "Testbolaget AB", "2025", "se-2025.1");
+    assert_eq!(
+        report.sections.summary.found_count, 1,
+        "the fixture must produce exactly one finding for this to test anything"
+    );
+    assert!(
+        report.sections.summary.headline.contains("1 sak som kan vara värd att"),
+        "singular: {}",
+        report.sections.summary.headline
+    );
+
+    let (many, _) = pipeline(silent_provider())
+        .run(&input(vec![document(INCOME_STATEMENT)]), &SilentObserver)
+        .await
+        .unwrap();
+    let report = crate::report::build(&many, "Testbolaget AB", "2025", "se-2025.1");
+    assert!(report.sections.summary.found_count > 1);
+    assert!(
+        report.sections.summary.headline.contains("saker som kan vara värda att"),
+        "plural: {}",
+        report.sections.summary.headline
+    );
+}

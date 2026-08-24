@@ -1,0 +1,22 @@
+RESULTATRÄKNING OCH BALANSRÄKNING
+Nettoomsättning        12 000 000
+Övriga externa kostnader    -4 800 000
+Personalkostnader        -4 200 000
+Löner och andra ersättningar    -3 060 000
+Pensionskostnader        -140 000
+Avskrivningar        -380 000
+Rörelseresultat        2 620 000
+Resultat före skatt        2 620 000
+Skattemässigt resultat        2 600 000
+Skatt på årets resultat        -539 720
+Årets resultat        2 080 280
+
+Materiella anläggningstillgångar    2 400 000
+Inventarier, verktyg och installationer  2 400 000
+Varulager        200 000
+Kundfordringar        400 000
+Kassa och bank        600 000
+Summa tillgångar        3 600 000
+Eget kapital        2 600 000
+Kortfristiga skulder        1 000 000
+Summa eget kapital och skulder    3 600 000

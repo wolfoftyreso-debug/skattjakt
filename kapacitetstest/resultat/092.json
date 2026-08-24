@@ -1,0 +1,543 @@
+{
+  "analysis_id": "edf43300-8377-4c55-bd9a-202c946ef3e4",
+  "company_name": "Underlagsbolaget AB",
+  "fiscal_year": "2025",
+  "rule_set_version": "se-2025.1",
+  "sections": {
+    "summary": {
+      "headline": "Vi hittade 6 saker som kan vara värda att undersöka.",
+      "found_count": 6,
+      "high_priority_count": 1,
+      "should_investigate_count": 5,
+      "needs_more_evidence_count": 0,
+      "warnings_count": 0,
+      "areas_checked": [
+        {
+          "category": "Skatt",
+          "rules_evaluated": 6,
+          "findings": 2
+        },
+        {
+          "category": "Kostnader",
+          "rules_evaluated": 2,
+          "findings": 2
+        },
+        {
+          "category": "Moms",
+          "rules_evaluated": 1,
+          "findings": 0
+        },
+        {
+          "category": "Personal",
+          "rules_evaluated": 1,
+          "findings": 1
+        },
+        {
+          "category": "Investeringar",
+          "rules_evaluated": 1,
+          "findings": 1
+        },
+        {
+          "category": "FoU",
+          "rules_evaluated": 1,
+          "findings": 0
+        },
+        {
+          "category": "Risk",
+          "rules_evaluated": 2,
+          "findings": 0
+        }
+      ]
+    },
+    "start_here": [
+      {
+        "title": "Löneuttag för huvudregeln i fåmansföretag",
+        "category": "Skatt",
+        "status": "verify",
+        "status_label": "Verifiera",
+        "impact": {
+          "low": 0,
+          "high": 0
+        },
+        "impact_display": "Ingen beräknad ekonomisk effekt",
+        "effect": "reduction",
+        "confidence": 91,
+        "priority_band": "high",
+        "rationale": "För att få använda löneunderlagsregeln vid beräkning av gränsbelopp måste en delägare eller närstående ha tagit ut lön över en viss nivå under året före beskattningsåret. Nivån är kopplad till inkomstbasbeloppet.",
+        "recommended_action": "Stäm av delägarens löneuttag mot lönekravet innan året stängs, eftersom kravet avser lön utbetald under kalenderåret och inte kan rättas i efterhand.",
+        "missing_information": [
+          "Delägarens kontanta lön föregående år",
+          "Total kontant lön i bolaget och i eventuella dotterbolag",
+          "Föregående års K10-blankett"
+        ],
+        "supporting_values": [
+          {
+            "kind": "personnel_costs",
+            "amount": "4 200 000,00 kr",
+            "page": 1,
+            "excerpt": "Personalkostnader        -4 200 000"
+          }
+        ],
+        "rules": [
+          {
+            "rule_id": "se.tax.k10.lonekrav",
+            "title": "Löneuttag för huvudregeln i fåmansföretag",
+            "source": "Inkomstskattelag (1999:1229) 57 kap. 19 §",
+            "source_state": "unretrieved"
+          }
+        ]
+      }
+    ],
+    "opportunities": [
+      {
+        "title": "Löneuttag för huvudregeln i fåmansföretag",
+        "category": "Skatt",
+        "status": "verify",
+        "status_label": "Verifiera",
+        "impact": {
+          "low": 0,
+          "high": 0
+        },
+        "impact_display": "Ingen beräknad ekonomisk effekt",
+        "effect": "reduction",
+        "confidence": 91,
+        "priority_band": "high",
+        "rationale": "För att få använda löneunderlagsregeln vid beräkning av gränsbelopp måste en delägare eller närstående ha tagit ut lön över en viss nivå under året före beskattningsåret. Nivån är kopplad till inkomstbasbeloppet.",
+        "recommended_action": "Stäm av delägarens löneuttag mot lönekravet innan året stängs, eftersom kravet avser lön utbetald under kalenderåret och inte kan rättas i efterhand.",
+        "missing_information": [
+          "Delägarens kontanta lön föregående år",
+          "Total kontant lön i bolaget och i eventuella dotterbolag",
+          "Föregående års K10-blankett"
+        ],
+        "supporting_values": [
+          {
+            "kind": "personnel_costs",
+            "amount": "4 200 000,00 kr",
+            "page": 1,
+            "excerpt": "Personalkostnader        -4 200 000"
+          }
+        ],
+        "rules": [
+          {
+            "rule_id": "se.tax.k10.lonekrav",
+            "title": "Löneuttag för huvudregeln i fåmansföretag",
+            "source": "Inkomstskattelag (1999:1229) 57 kap. 19 §",
+            "source_state": "unretrieved"
+          }
+        ]
+      },
+      {
+        "title": "Representation",
+        "category": "Kostnader",
+        "status": "verify",
+        "status_label": "Verifiera",
+        "impact": {
+          "low": 0,
+          "high": 0
+        },
+        "impact_display": "Ingen beräknad ekonomisk effekt",
+        "effect": "reduction",
+        "confidence": 91,
+        "priority_band": "should_investigate",
+        "rationale": "Avdrag för måltidsrepresentation medges inte vid inkomstbeskattningen, medan enklare förtäring är avdragsgill upp till ett belopp per person. Moms får dras av på ett begränsat underlag per person.",
+        "recommended_action": "Stäm av representationskontona mot underlagen och kontrollera att den ej avdragsgilla delen justerats i deklarationen.",
+        "missing_information": [
+          "Kontospecifikation för representationskonton",
+          "Underlag med deltagare och syfte"
+        ],
+        "supporting_values": [
+          {
+            "kind": "external_costs",
+            "amount": "4 800 000,00 kr",
+            "page": 1,
+            "excerpt": "Övriga externa kostnader    -4 800 000"
+          }
+        ],
+        "rules": [
+          {
+            "rule_id": "se.costs.representation",
+            "title": "Representation",
+            "source": "Inkomstskattelag (1999:1229) 16 kap. 2 §; Skatteverkets ställningstagande — Avdrag för enklare förtäring vid representation",
+            "source_state": "unretrieved"
+          }
+        ]
+      },
+      {
+        "title": "Periodiseringsfond",
+        "category": "Skatt",
+        "status": "verify",
+        "status_label": "Verifiera",
+        "impact": {
+          "low": 0,
+          "high": 13390000
+        },
+        "impact_display": "0,00 kr–133 900,00 kr uppskjuten skatt",
+        "effect": "deferral",
+        "confidence": 83,
+        "priority_band": "should_investigate",
+        "rationale": "Ett aktiebolag med skattemässigt överskott får sätta av en andel av överskottet till periodiseringsfond. Om årets avsättning understiger det tillgängliga utrymmet finns en outnyttjad möjlighet att skjuta upp beskattning. Detta är uppskjuten skatt, inte sänkt skatt: fonden ska återföras senast det sjätte året och en schablonintäkt tas upp varje år fonden står kvar.",
+        "recommended_action": "Fråga din redovisningskonsult om avsättning till periodiseringsfond bör göras innan deklarationen färdigställs, och väg uppskovet mot schablonintäkten och mot kommande års återföringar.",
+        "missing_information": [
+          "Skattemässigt resultat före avsättning enligt deklarationsunderlaget",
+          "Befintliga periodiseringsfonder från tidigare år"
+        ],
+        "supporting_values": [
+          {
+            "kind": "taxable_result",
+            "amount": "2 600 000,00 kr",
+            "page": 1,
+            "excerpt": "Skattemässigt resultat        2 600 000"
+          }
+        ],
+        "rules": [
+          {
+            "rule_id": "se.tax.periodiseringsfond.outnyttjat_utrymme",
+            "title": "Periodiseringsfond",
+            "source": "Inkomstskattelag (1999:1229) 30 kap. 5 §; Inkomstskattelag (1999:1229) 30 kap. 6 §",
+            "source_state": "unretrieved"
+          }
+        ]
+      },
+      {
+        "title": "Inventarier av mindre värde",
+        "category": "Kostnader",
+        "status": "verify",
+        "status_label": "Verifiera",
+        "impact": {
+          "low": 0,
+          "high": 0
+        },
+        "impact_display": "Ingen beräknad ekonomisk effekt",
+        "effect": "reduction",
+        "confidence": 91,
+        "priority_band": "should_investigate",
+        "rationale": "Inventarier av mindre värde får dras av omedelbart i stället för att skrivas av över tid. Gränsen är ett halvt prisbasbelopp exklusive moms per inventarium.",
+        "recommended_action": "Gå igenom årets aktiverade inköp och kontrollera om något understiger ett halvt prisbasbelopp och därmed kunde ha dragits av direkt.",
+        "missing_information": [
+          "Anläggningsregister med anskaffningsvärde per inventarium",
+          "Uppgift om vilka inköp som aktiverats i stället för att kostnadsföras"
+        ],
+        "supporting_values": [
+          {
+            "kind": "fixed_assets",
+            "amount": "2 400 000,00 kr",
+            "page": 1,
+            "excerpt": "Materiella anläggningstillgångar    2 400 000"
+          }
+        ],
+        "rules": [
+          {
+            "rule_id": "se.costs.inventarier.mindre_varde",
+            "title": "Inventarier av mindre värde",
+            "source": "Inkomstskattelag (1999:1229) 18 kap. 4 §",
+            "source_state": "unretrieved"
+          }
+        ]
+      },
+      {
+        "title": "Avdrag för pensionskostnader",
+        "category": "Personal",
+        "status": "verify",
+        "status_label": "Verifiera",
+        "impact": {
+          "low": 0,
+          "high": 0
+        },
+        "impact_display": "Ingen beräknad ekonomisk effekt",
+        "effect": "reduction",
+        "confidence": 91,
+        "priority_band": "should_investigate",
+        "rationale": "Arbetsgivarens kostnad för tryggande av pension är avdragsgill inom en ram som utgår från den anställdes lön, med ett tak uttryckt i prisbasbelopp. Ett bolag med utbetalda löner men utan bokförda pensionskostnader kan ha ett outnyttjat utrymme.",
+        "recommended_action": "Diskutera med din redovisningskonsult om bolagets pensionslösning utnyttjar avdragsutrymmet, och vad det skulle kosta respektive spara.",
+        "missing_information": [
+          "Löneunderlag per anställd",
+          "Befintliga pensionsutfästelser och försäkringslösningar"
+        ],
+        "supporting_values": [
+          {
+            "kind": "wages",
+            "amount": "3 060 000,00 kr",
+            "page": 1,
+            "excerpt": "Löner och andra ersättningar    -3 060 000"
+          },
+          {
+            "kind": "pension_costs",
+            "amount": "140 000,00 kr",
+            "page": 1,
+            "excerpt": "Pensionskostnader        -140 000"
+          }
+        ],
+        "rules": [
+          {
+            "rule_id": "se.personnel.pension.avdragsutrymme",
+            "title": "Avdrag för pensionskostnader",
+            "source": "Inkomstskattelag (1999:1229) 28 kap. 5 §; Inkomstskattelag (1999:1229) 28 kap. 6 §",
+            "source_state": "unretrieved"
+          }
+        ]
+      },
+      {
+        "title": "Skattemässigt avskrivningsutrymme på inventarier",
+        "category": "Investeringar",
+        "status": "verify",
+        "status_label": "Verifiera",
+        "impact": {
+          "low": 0,
+          "high": 7004000
+        },
+        "impact_display": "0,00 kr–70 040,00 kr",
+        "effect": "reduction",
+        "confidence": 95,
+        "priority_band": "should_investigate",
+        "rationale": "Vid räkenskapsenlig avskrivning får inventarier skrivas av med upp till 30 procent av avskrivningsunderlaget enligt huvudregeln. Om den bokförda avskrivningen är lägre kan det finnas ett outnyttjat skattemässigt utrymme. Utrymmet beräknas på inventarier, inte på byggnader och mark.",
+        "recommended_action": "Be din redovisningskonsult stämma av det skattemässiga avskrivningsunderlaget mot anläggningsregistret och bedöma om överavskrivning är aktuell.",
+        "missing_information": [
+          "Anläggningsregister med avskrivningsunderlag per tillgång",
+          "Vilken avskrivningsmetod bolaget tillämpar",
+          "Ackumulerade överavskrivningar",
+          "Anläggningsregister med skattemässigt värde på inventarier",
+          "Specifikation av posten Materiella anläggningstillgångar, uppdelad på byggnader, mark och inventarier"
+        ],
+        "supporting_values": [
+          {
+            "kind": "equipment",
+            "amount": "2 400 000,00 kr",
+            "page": 1,
+            "excerpt": "Inventarier, verktyg och installationer  2 400 000"
+          },
+          {
+            "kind": "depreciation",
+            "amount": "380 000,00 kr",
+            "page": 1,
+            "excerpt": "Avskrivningar        -380 000"
+          }
+        ],
+        "rules": [
+          {
+            "rule_id": "se.investments.inventarier.avskrivningsutrymme",
+            "title": "Skattemässigt avskrivningsutrymme på inventarier",
+            "source": "Inkomstskattelag (1999:1229) 18 kap. 13 §; Inkomstskattelag (1999:1229) 18 kap. 17 §",
+            "source_state": "unretrieved"
+          }
+        ]
+      }
+    ],
+    "warnings": [],
+    "missing_information": [
+      {
+        "code": "would_strengthen",
+        "description": "Ackumulerade överavskrivningar",
+        "unlocks": "Stärker ”Skattemässigt avskrivningsutrymme på inventarier”."
+      },
+      {
+        "code": "would_strengthen",
+        "description": "Anläggningsregister med anskaffningsvärde per inventarium",
+        "unlocks": "Stärker ”Inventarier av mindre värde”."
+      },
+      {
+        "code": "would_strengthen",
+        "description": "Anläggningsregister med avskrivningsunderlag per tillgång",
+        "unlocks": "Stärker ”Skattemässigt avskrivningsutrymme på inventarier”."
+      },
+      {
+        "code": "would_strengthen",
+        "description": "Anläggningsregister med skattemässigt värde på inventarier",
+        "unlocks": "Stärker ”Skattemässigt avskrivningsutrymme på inventarier”."
+      },
+      {
+        "code": "would_strengthen",
+        "description": "Befintliga pensionsutfästelser och försäkringslösningar",
+        "unlocks": "Stärker ”Avdrag för pensionskostnader”."
+      },
+      {
+        "code": "would_strengthen",
+        "description": "Befintliga periodiseringsfonder från tidigare år",
+        "unlocks": "Stärker ”Periodiseringsfond”."
+      },
+      {
+        "code": "would_strengthen",
+        "description": "Delägarens kontanta lön föregående år",
+        "unlocks": "Stärker ”Löneuttag för huvudregeln i fåmansföretag”."
+      },
+      {
+        "code": "would_strengthen",
+        "description": "Föregående års K10-blankett",
+        "unlocks": "Stärker ”Löneuttag för huvudregeln i fåmansföretag”."
+      },
+      {
+        "code": "would_strengthen",
+        "description": "Kontospecifikation för representationskonton",
+        "unlocks": "Stärker ”Representation”."
+      },
+      {
+        "code": "would_strengthen",
+        "description": "Löneunderlag per anställd",
+        "unlocks": "Stärker ”Avdrag för pensionskostnader”."
+      },
+      {
+        "code": "would_strengthen",
+        "description": "Skattemässigt resultat före avsättning enligt deklarationsunderlaget",
+        "unlocks": "Stärker ”Periodiseringsfond”."
+      },
+      {
+        "code": "would_strengthen",
+        "description": "Specifikation av posten Materiella anläggningstillgångar, uppdelad på byggnader, mark och inventarier",
+        "unlocks": "Stärker ”Skattemässigt avskrivningsutrymme på inventarier”."
+      },
+      {
+        "code": "would_strengthen",
+        "description": "Total kontant lön i bolaget och i eventuella dotterbolag",
+        "unlocks": "Stärker ”Löneuttag för huvudregeln i fåmansföretag”."
+      },
+      {
+        "code": "would_strengthen",
+        "description": "Underlag med deltagare och syfte",
+        "unlocks": "Stärker ”Representation”."
+      },
+      {
+        "code": "would_strengthen",
+        "description": "Uppgift om vilka inköp som aktiverats i stället för att kostnadsföras",
+        "unlocks": "Stärker ”Inventarier av mindre värde”."
+      },
+      {
+        "code": "would_strengthen",
+        "description": "Vilken avskrivningsmetod bolaget tillämpar",
+        "unlocks": "Stärker ”Skattemässigt avskrivningsutrymme på inventarier”."
+      }
+    ],
+    "economic_potential": {
+      "total": {
+        "low": 0,
+        "high": 7004000
+      },
+      "display": "0,00 kr–70 040,00 kr",
+      "note": "Ett intervall, inte ett besked. Beloppen bygger på det underlag som lämnats och ska verifieras innan någon åtgärd vidtas.",
+      "deferred": {
+        "low": 0,
+        "high": 13390000
+      },
+      "deferred_display": "0,00 kr–133 900,00 kr",
+      "deferred_note": "Uppskjuten skatt, inte sänkt skatt. Beloppet betalas senare — en periodiseringsfond ska återföras senast det sjätte året, och en schablonintäkt tas upp varje år fonden står kvar. Det är därför inte medräknat i beloppet ovan."
+    },
+    "evidence": {
+      "document_versions_used": 1,
+      "values_cited": 8,
+      "rules_cited": [
+        {
+          "rule_id": "se.costs.inventarier.mindre_varde",
+          "title": "Inventarier av mindre värde",
+          "source": "Inkomstskattelag (1999:1229) 18 kap. 4 §",
+          "source_state": "unretrieved"
+        },
+        {
+          "rule_id": "se.costs.representation",
+          "title": "Representation",
+          "source": "Inkomstskattelag (1999:1229) 16 kap. 2 §; Skatteverkets ställningstagande — Avdrag för enklare förtäring vid representation",
+          "source_state": "unretrieved"
+        },
+        {
+          "rule_id": "se.investments.inventarier.avskrivningsutrymme",
+          "title": "Skattemässigt avskrivningsutrymme på inventarier",
+          "source": "Inkomstskattelag (1999:1229) 18 kap. 13 §; Inkomstskattelag (1999:1229) 18 kap. 17 §",
+          "source_state": "unretrieved"
+        },
+        {
+          "rule_id": "se.personnel.pension.avdragsutrymme",
+          "title": "Avdrag för pensionskostnader",
+          "source": "Inkomstskattelag (1999:1229) 28 kap. 5 §; Inkomstskattelag (1999:1229) 28 kap. 6 §",
+          "source_state": "unretrieved"
+        },
+        {
+          "rule_id": "se.tax.k10.lonekrav",
+          "title": "Löneuttag för huvudregeln i fåmansföretag",
+          "source": "Inkomstskattelag (1999:1229) 57 kap. 19 §",
+          "source_state": "unretrieved"
+        },
+        {
+          "rule_id": "se.tax.periodiseringsfond.outnyttjat_utrymme",
+          "title": "Periodiseringsfond",
+          "source": "Inkomstskattelag (1999:1229) 30 kap. 5 §; Inkomstskattelag (1999:1229) 30 kap. 6 §",
+          "source_state": "unretrieved"
+        }
+      ],
+      "assumptions": [
+        "Avdragsramen beräknas per anställd och har ett tak uttryckt i prisbasbelopp; ingen av delarna går att härleda ur den samlade lönesumman. Regeln flaggar därför utan belopp.",
+        "Avskrivningsunderlaget är det skattemässiga värdet på inventarierna, inte det bokförda. Regeln räknar på bokfört värde och ger därför ett tak, inte ett besked.",
+        "Avsättningsunderlaget är överskottet före avsättning; regeln approximerar detta med det skattemässiga resultatet och behöver verifieras mot deklarationsunderlaget.",
+        "Regeln kan bara flagga att en genomgång behövs. Utan anläggningsregister går det inte att avgöra hur enskilda inventarier ska klassificeras, och något belopp beräknas därför inte.",
+        "Regeln kan inte se representationskonton i ett bokslut på översiktsnivå och fungerar därför som en generell kontrollpunkt med låg relevansvikt.",
+        "Reglerna för fåmansföretag har varit föremål för omfattande översyn. Nivåerna är inte kodade och regeln flaggar endast att lönekravet bör stämmas av."
+      ]
+    },
+    "next_steps": [
+      "Stäm av delägarens löneuttag mot lönekravet innan året stängs, eftersom kravet avser lön utbetald under kalenderåret och inte kan rättas i efterhand.",
+      "Stäm av representationskontona mot underlagen och kontrollera att den ej avdragsgilla delen justerats i deklarationen.",
+      "Fråga din redovisningskonsult om avsättning till periodiseringsfond bör göras innan deklarationen färdigställs, och väg uppskovet mot schablonintäkten och mot kommande års återföringar."
+    ],
+    "limitations": [
+      "Analysen bygger på 1 uppladdat underlag och på de uppgifter som lämnats om bolaget. Den har inte tillgång till bokföringen i övrigt.",
+      "Skattjakt avgör inte vad som är rätt enligt lag. Varje möjlighet behöver stämmas av mot fullständigt underlag.",
+      "Delar av regelverket i den här versionen har inte granskats av en kvalificerad rådgivare. Sådana fynd visas som \"Verifiera\" och ska kontrolleras innan de används.",
+      "Analysen kördes utan språkmodell. Regelmotorns fynd är fullständiga, men modellens genomgång av underlaget och dess motsägelsekontroll har inte utförts, så färre möjligheter kan ha hittats."
+    ],
+    "audience": "company",
+    "action_plan": [
+      {
+        "order": 1,
+        "action": "Stäm av delägarens löneuttag mot lönekravet innan året stängs, eftersom kravet avser lön utbetald under kalenderåret och inte kan rättas i efterhand.",
+        "title": "Löneuttag för huvudregeln i fåmansföretag",
+        "priority_band": "high",
+        "impact": null,
+        "is_control": false
+      },
+      {
+        "order": 2,
+        "action": "Fråga din redovisningskonsult om avsättning till periodiseringsfond bör göras innan deklarationen färdigställs, och väg uppskovet mot schablonintäkten och mot kommande års återföringar.",
+        "title": "Periodiseringsfond",
+        "priority_band": "should_investigate",
+        "impact": {
+          "low": 0,
+          "high": 13390000
+        },
+        "is_control": false
+      },
+      {
+        "order": 3,
+        "action": "Be din redovisningskonsult stämma av det skattemässiga avskrivningsunderlaget mot anläggningsregistret och bedöma om överavskrivning är aktuell.",
+        "title": "Skattemässigt avskrivningsutrymme på inventarier",
+        "priority_band": "should_investigate",
+        "impact": {
+          "low": 0,
+          "high": 7004000
+        },
+        "is_control": false
+      },
+      {
+        "order": 4,
+        "action": "Stäm av representationskontona mot underlagen och kontrollera att den ej avdragsgilla delen justerats i deklarationen.",
+        "title": "Representation",
+        "priority_band": "should_investigate",
+        "impact": null,
+        "is_control": false
+      },
+      {
+        "order": 5,
+        "action": "Gå igenom årets aktiverade inköp och kontrollera om något understiger ett halvt prisbasbelopp och därmed kunde ha dragits av direkt.",
+        "title": "Inventarier av mindre värde",
+        "priority_band": "should_investigate",
+        "impact": null,
+        "is_control": false
+      },
+      {
+        "order": 6,
+        "action": "Diskutera med din redovisningskonsult om bolagets pensionslösning utnyttjar avdragsutrymmet, och vad det skulle kosta respektive spara.",
+        "title": "Avdrag för pensionskostnader",
+        "priority_band": "should_investigate",
+        "impact": null,
+        "is_control": false
+      }
+    ]
+  },
+  "disclaimer": "Skattjakt är ett analys- och upptäcktsverktyg. Resultaten är preliminära och ska inte betraktas som juridisk rådgivning, revisionsuttalande, skattebesked eller garanti om skatteåterbäring eller besparing. Identifierade möjligheter bör verifieras mot aktuella regler och företagets fullständiga underlag innan någon åtgärd vidtas.",
+  "generated_at": "2026-08-24T03:56:51.685689680Z"
+}

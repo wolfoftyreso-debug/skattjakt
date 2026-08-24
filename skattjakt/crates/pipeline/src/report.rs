@@ -317,13 +317,18 @@ pub fn build_for(
          tillräckligt stark evidens för att flagga dem."
             .to_string()
     } else {
+        // Both words inflect, not just the noun. With one finding this read
+        // "1 sak som kan vara värda att undersöka" — the product's opening
+        // sentence, ungrammatical, on every analysis that found exactly one
+        // thing. Found by running a hundred scenarios; no test had a
+        // single-finding case.
         format!(
-            "Vi hittade {} {} som kan vara värda att undersöka.",
+            "Vi hittade {} {}.",
             result.summary.identified_opportunities,
             if result.summary.identified_opportunities == 1 {
-                "sak"
+                "sak som kan vara värd att undersöka"
             } else {
-                "saker"
+                "saker som kan vara värda att undersöka"
             }
         )
     };

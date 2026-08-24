@@ -1,0 +1,434 @@
+
+==============================================================================
+EXEMPEL 1 av 10 — scenario 001 (A)
+Vardagsfallet: en konsultbyrå med normalt år
+==============================================================================
+Bolag   : Konsultbyrå AB, räkenskapsår 2025
+Profil  : industry=Tjänster, employee_count=4, owner_count=2, owners_active_in_company=True, in_group=False, ownership_changed=False, owns_premises=False, has_vehicles=False, does_development_work=False
+Underlag: 21 rader
+          RESULTATRÄKNING OCH BALANSRÄKNING
+          Nettoomsättning        4 200 000
+          Övriga externa kostnader    -650 000
+          Personalkostnader        -2 100 000
+          Löner och andra ersättningar    -1 540 000
+          Pensionskostnader        -80 000
+          … 15 rader till
+Väntat  : fynd som passar branschen; fastighetsbolaget ska INTE få avskrivningsutrymme på byggnaden
+
+UTFALL  : 4 ms
+          Vi hittade 6 saker som kan vara värda att undersöka.
+          Lägre skatt      0,00 kr–2 884,00 kr
+          Uppskjuten skatt 0,00 kr–43 775,00 kr
+
+          Fynd:
+            Verifiera  Löneuttag för huvudregeln i fåmansföretag      —
+            Verifiera  Representation                                 —
+            Verifiera  Inventarier av mindre värde                    —
+            Verifiera  Avdrag för pensionskostnader                   —
+            Verifiera  Periodiseringsfond                             0,00 kr–43 775,00 kr uppskjuten skatt
+            Verifiera  Skattemässigt avskrivningsutrymme på inventa   0,00 kr–2 884,00 kr
+
+          Underlag som citerades:
+            personnel_costs      2 100 000,00 kr      ← ”Personalkostnader        -2 100 000”
+            external_costs       650 000,00 kr        ← ”Övriga externa kostnader    -650 000”
+            fixed_assets         180 000,00 kr        ← ”Materiella anläggningstillgångar    180 ”
+            wages                1 540 000,00 kr      ← ”Löner och andra ersättningar    -1 540 0”
+            pension_costs        80 000,00 kr         ← ”Pensionskostnader        -80 000”
+            taxable_result       850 000,00 kr        ← ”Skattemässigt resultat        850 000”
+            equipment            180 000,00 kr        ← ”Inventarier, verktyg och installationer ”
+            depreciation         40 000,00 kr         ← ”Avskrivningar        -40 000”
+
+          Frågar efter 16 saker till, t.ex.:
+            Ackumulerade överavskrivningar                         Stärker ”Skattemässigt avskrivning
+            Anläggningsregister med anskaffningsvärde per invent   Stärker ”Inventarier av mindre vär
+            Anläggningsregister med avskrivningsunderlag per til   Stärker ”Skattemässigt avskrivning
+
+
+==============================================================================
+EXEMPEL 2 av 10 — scenario 009 (A)
+Fastighetsbolaget — det som förut fick 630 000 kr ur luften
+==============================================================================
+Bolag   : Fastighetsbolag AB, räkenskapsår 2025
+Profil  : industry=Fastighet, employee_count=3, owner_count=2, owners_active_in_company=True, in_group=False, ownership_changed=False, owns_premises=True, has_vehicles=False, does_development_work=False
+Underlag: 23 rader
+          RESULTATRÄKNING OCH BALANSRÄKNING
+          Nettoomsättning        6 200 000
+          Övriga externa kostnader    -2 100 000
+          Personalkostnader        -1 200 000
+          Löner och andra ersättningar    -880 000
+          Pensionskostnader        -60 000
+          … 17 rader till
+Väntat  : fynd som passar branschen; fastighetsbolaget ska INTE få avskrivningsutrymme på byggnaden
+
+UTFALL  : 4 ms
+          Vi hittade 5 saker som kan vara värda att undersöka.
+          Lägre skatt      0,00 kr
+          Uppskjuten skatt 0,00 kr–10 300,00 kr
+
+          Fynd:
+            Verifiera  Löneuttag för huvudregeln i fåmansföretag      —
+            Verifiera  Representation                                 —
+            Verifiera  Inventarier av mindre värde                    —
+            Verifiera  Avdrag för pensionskostnader                   —
+            Verifiera  Periodiseringsfond                             0,00 kr–10 300,00 kr uppskjuten skatt
+
+          Underlag som citerades:
+            personnel_costs      1 200 000,00 kr      ← ”Personalkostnader        -1 200 000”
+            external_costs       2 100 000,00 kr      ← ”Övriga externa kostnader    -2 100 000”
+            fixed_assets         48 340 000,00 kr     ← ”Materiella anläggningstillgångar    48 3”
+            wages                880 000,00 kr        ← ”Löner och andra ersättningar    -880 000”
+            pension_costs        60 000,00 kr         ← ”Pensionskostnader        -60 000”
+            taxable_result       200 000,00 kr        ← ”Skattemässigt resultat        200 000”
+
+          Frågar efter 11 saker till, t.ex.:
+            Anläggningsregister med anskaffningsvärde per invent   Stärker ”Inventarier av mindre vär
+            Befintliga pensionsutfästelser och försäkringslösnin   Stärker ”Avdrag för pensionskostna
+            Befintliga periodiseringsfonder från tidigare år       Stärker ”Periodiseringsfond”.
+
+
+==============================================================================
+EXEMPEL 3 av 10 — scenario 027 (A)
+Verkstadsbolag, rekordår efter tidigare underskott
+==============================================================================
+Bolag   : Konsultbyrå AB, räkenskapsår 2025
+Profil  : industry=Tjänster, employee_count=4, owner_count=2, owners_active_in_company=True, in_group=False, ownership_changed=False, owns_premises=False, has_vehicles=False, does_development_work=False
+Underlag: 24 rader
+          RESULTATRÄKNING OCH BALANSRÄKNING
+          Nettoomsättning        7 560 000
+          Övriga externa kostnader    -650 000
+          Personalkostnader        -2 100 000
+          Löner och andra ersättningar    -1 540 000
+          Pensionskostnader        -80 000
+          … 18 rader till
+Väntat  : underskott att kvitta, befintlig fond att återföra, och räntekostnader över förenklingsregelns fem miljoner — tre regler som annars aldrig prövas
+
+UTFALL  : 3 ms
+          Vi hittade 9 saker som kan vara värda att undersöka.
+          Lägre skatt      0,00 kr–423 124,00 kr
+          Uppskjuten skatt 0,00 kr–105 060,00 kr
+
+          Fynd:
+            Verifiera  Begränsning av ränteavdrag                     —
+            Verifiera  Löneuttag för huvudregeln i fåmansföretag      —
+            Verifiera  Tidigare års underskott                        0,00 kr–420 240,00 kr
+            Verifiera  Återföring av periodiseringsfond               —
+            Verifiera  Representation                                 —
+            Verifiera  Inventarier av mindre värde                    —
+            Verifiera  Avdrag för pensionskostnader                   —
+            Verifiera  Periodiseringsfond                             0,00 kr–105 060,00 kr uppskjuten skatt
+            Verifiera  Skattemässigt avskrivningsutrymme på inventa   0,00 kr–2 884,00 kr
+
+          Underlag som citerades:
+            interest_expense     6 400 000,00 kr      ← ”Räntekostnader        -6 400 000”
+            operating_profit     4 770 000,00 kr      ← ”Rörelseresultat        4 770 000”
+            depreciation         40 000,00 kr         ← ”Avskrivningar        -40 000”
+            personnel_costs      2 100 000,00 kr      ← ”Personalkostnader        -2 100 000”
+            carried_forward_loss 2 800 000,00 kr      ← ”Outnyttjat underskott från tidigare år  ”
+            taxable_result       2 040 000,00 kr      ← ”Skattemässigt resultat        2 040 000”
+            tax_allocation_reserve 900 000,00 kr        ← ”Periodiseringsfonder        900 000”
+            external_costs       650 000,00 kr        ← ”Övriga externa kostnader    -650 000”
+            fixed_assets         180 000,00 kr        ← ”Materiella anläggningstillgångar    180 ”
+            wages                1 540 000,00 kr      ← ”Löner och andra ersättningar    -1 540 0”
+            pension_costs        80 000,00 kr         ← ”Pensionskostnader        -80 000”
+            equipment            180 000,00 kr        ← ”Inventarier, verktyg och installationer ”
+
+          Frågar efter 22 saker till, t.ex.:
+            Ackumulerade överavskrivningar                         Stärker ”Skattemässigt avskrivning
+            Anläggningsregister med anskaffningsvärde per invent   Stärker ”Inventarier av mindre vär
+            Anläggningsregister med avskrivningsunderlag per til   Stärker ”Skattemässigt avskrivning
+
+
+==============================================================================
+EXEMPEL 4 av 10 — scenario 068 (C)
+Samma bokslut, belopp i tusental kronor
+==============================================================================
+Bolag   : Underlagsbolaget AB, räkenskapsår 2025
+Profil  : industry=Tjänster, employee_count=9, owner_count=2, owners_active_in_company=True, in_group=False, ownership_changed=False, owns_premises=False, has_vehicles=False, does_development_work=False
+Underlag: 22 rader
+          RESULTATRÄKNING OCH BALANSRÄKNING
+          Belopp i tkr
+          Nettoomsättning        12 000
+          Övriga externa kostnader    -4 800
+          Personalkostnader        -4 200
+          Löner och andra ersättningar    -3 060
+          … 16 rader till
+Väntat  : skalan ska tolkas — annars blir alla belopp tusen gånger fel
+
+UTFALL  : 3 ms
+          Vi hittade 6 saker som kan vara värda att undersöka.
+          Lägre skatt      0,00 kr–70 040,00 kr
+          Uppskjuten skatt 0,00 kr–133 900,00 kr
+
+          Fynd:
+            Verifiera  Löneuttag för huvudregeln i fåmansföretag      —
+            Verifiera  Representation                                 —
+            Verifiera  Periodiseringsfond                             0,00 kr–133 900,00 kr uppskjuten skatt
+            Verifiera  Inventarier av mindre värde                    —
+            Verifiera  Avdrag för pensionskostnader                   —
+            Verifiera  Skattemässigt avskrivningsutrymme på inventa   0,00 kr–70 040,00 kr
+
+          Underlag som citerades:
+            personnel_costs      4 200 000,00 kr      ← ”Personalkostnader        -4 200”
+            external_costs       4 800 000,00 kr      ← ”Övriga externa kostnader    -4 800”
+            taxable_result       2 600 000,00 kr      ← ”Skattemässigt resultat        2 600”
+            fixed_assets         2 400 000,00 kr      ← ”Materiella anläggningstillgångar    2 40”
+            wages                3 060 000,00 kr      ← ”Löner och andra ersättningar    -3 060”
+            pension_costs        140 000,00 kr        ← ”Pensionskostnader        -140”
+            equipment            2 400 000,00 kr      ← ”Inventarier, verktyg och installationer ”
+            depreciation         380 000,00 kr        ← ”Avskrivningar        -380”
+
+          Frågar efter 16 saker till, t.ex.:
+            Ackumulerade överavskrivningar                         Stärker ”Skattemässigt avskrivning
+            Anläggningsregister med anskaffningsvärde per invent   Stärker ”Inventarier av mindre vär
+            Anläggningsregister med avskrivningsunderlag per til   Stärker ”Skattemässigt avskrivning
+
+
+==============================================================================
+EXEMPEL 5 av 10 — scenario 035 (B)
+Alla profilfrågor obesvarade
+==============================================================================
+Bolag   : Profilbolaget AB, räkenskapsår 2025
+Profil  : — inga frågor besvarade
+Underlag: 21 rader
+          RESULTATRÄKNING OCH BALANSRÄKNING
+          Nettoomsättning        12 000 000
+          Övriga externa kostnader    -4 800 000
+          Personalkostnader        -4 200 000
+          Löner och andra ersättningar    -3 060 000
+          Pensionskostnader        -140 000
+          … 15 rader till
+Väntat  : identiskt bokslut — skillnaden i utfall är profilens och bara profilens
+
+UTFALL  : 4 ms
+          Vi hittade 9 saker som kan vara värda att undersöka.
+          Lägre skatt      0,00 kr–70 040,00 kr
+          Uppskjuten skatt 0,00 kr–133 900,00 kr
+
+          Fynd:
+            Undersök   Löneuttag för huvudregeln i fåmansföretag      —
+            Verifiera  Representation                                 —
+            Undersök   Nedsättning av arbetsgivaravgifter för forsk   —
+            Undersök   Koncernbidrag                                  —
+            Verifiera  Periodiseringsfond                             0,00 kr–133 900,00 kr uppskjuten skatt
+            Verifiera  Inventarier av mindre värde                    —
+            Verifiera  Avdrag för pensionskostnader                   —
+            Undersök   Moms på leasing av personbil                   —
+            Verifiera  Skattemässigt avskrivningsutrymme på inventa   0,00 kr–70 040,00 kr
+
+          Underlag som citerades:
+            personnel_costs      4 200 000,00 kr      ← ”Personalkostnader        -4 200 000”
+            external_costs       4 800 000,00 kr      ← ”Övriga externa kostnader    -4 800 000”
+            taxable_result       2 600 000,00 kr      ← ”Skattemässigt resultat        2 600 000”
+            fixed_assets         2 400 000,00 kr      ← ”Materiella anläggningstillgångar    2 40”
+            wages                3 060 000,00 kr      ← ”Löner och andra ersättningar    -3 060 0”
+            pension_costs        140 000,00 kr        ← ”Pensionskostnader        -140 000”
+            equipment            2 400 000,00 kr      ← ”Inventarier, verktyg och installationer ”
+            depreciation         380 000,00 kr        ← ”Avskrivningar        -380 000”
+
+          Frågar efter 29 saker till, t.ex.:
+            Ingår bolaget i en koncern?                            Gör att regeln "Koncernbidrag" kan
+            Har bolaget fordon?                                    Gör att regeln "Moms på leasing av
+            Bedriver bolaget utvecklingsarbete?                    Gör att regeln "Nedsättning av arb
+
+
+==============================================================================
+EXEMPEL 6 av 10 — scenario 056 (B)
+Alla profilfrågor besvarade — samma bokslut
+==============================================================================
+Bolag   : Profilbolaget AB, räkenskapsår 2025
+Profil  : employee_count=9, owner_count=2, owners_active_in_company=True, in_group=False, ownership_changed=False, owns_premises=False, has_vehicles=True, does_development_work=True, operations_outside_sweden=False, industry=Tjänster
+Underlag: 21 rader
+          RESULTATRÄKNING OCH BALANSRÄKNING
+          Nettoomsättning        12 000 000
+          Övriga externa kostnader    -4 800 000
+          Personalkostnader        -4 200 000
+          Löner och andra ersättningar    -3 060 000
+          Pensionskostnader        -140 000
+          … 15 rader till
+Väntat  : identiskt bokslut — skillnaden i utfall är profilens och bara profilens
+
+UTFALL  : 3 ms
+          Vi hittade 8 saker som kan vara värda att undersöka.
+          Lägre skatt      0,00 kr–70 040,00 kr
+          Uppskjuten skatt 0,00 kr–133 900,00 kr
+
+          Fynd:
+            Verifiera  Löneuttag för huvudregeln i fåmansföretag      —
+            Verifiera  Representation                                 —
+            Verifiera  Nedsättning av arbetsgivaravgifter för forsk   —
+            Verifiera  Periodiseringsfond                             0,00 kr–133 900,00 kr uppskjuten skatt
+            Undersök   Moms på leasing av personbil                   —
+            Verifiera  Inventarier av mindre värde                    —
+            Verifiera  Avdrag för pensionskostnader                   —
+            Verifiera  Skattemässigt avskrivningsutrymme på inventa   0,00 kr–70 040,00 kr
+
+          Underlag som citerades:
+            personnel_costs      4 200 000,00 kr      ← ”Personalkostnader        -4 200 000”
+            external_costs       4 800 000,00 kr      ← ”Övriga externa kostnader    -4 800 000”
+            taxable_result       2 600 000,00 kr      ← ”Skattemässigt resultat        2 600 000”
+            fixed_assets         2 400 000,00 kr      ← ”Materiella anläggningstillgångar    2 40”
+            wages                3 060 000,00 kr      ← ”Löner och andra ersättningar    -3 060 0”
+            pension_costs        140 000,00 kr        ← ”Pensionskostnader        -140 000”
+            equipment            2 400 000,00 kr      ← ”Inventarier, verktyg och installationer ”
+            depreciation         380 000,00 kr        ← ”Avskrivningar        -380 000”
+
+          Frågar efter 22 saker till, t.ex.:
+            Ackumulerade överavskrivningar                         Stärker ”Skattemässigt avskrivning
+            Anläggningsregister med anskaffningsvärde per invent   Stärker ”Inventarier av mindre vär
+            Anläggningsregister med avskrivningsunderlag per til   Stärker ”Skattemässigt avskrivning
+
+
+==============================================================================
+EXEMPEL 7 av 10 — scenario 061 (C)
+Avskrivningsraden saknas i underlaget
+==============================================================================
+Bolag   : Underlagsbolaget AB, räkenskapsår 2025
+Profil  : industry=Tjänster, employee_count=9, owner_count=2, owners_active_in_company=True, in_group=False, ownership_changed=False, owns_premises=False, has_vehicles=False, does_development_work=False
+Underlag: 20 rader
+          RESULTATRÄKNING OCH BALANSRÄKNING
+          Nettoomsättning        12 000 000
+          Övriga externa kostnader    -4 800 000
+          Personalkostnader        -4 200 000
+          Pensionskostnader        -140 000
+          Avskrivningar        -380 000
+          … 14 rader till
+Väntat  : pensionsregeln ska tiga — lön går inte att härleda ur personalkostnader
+
+UTFALL  : 3 ms
+          Vi hittade 5 saker som kan vara värda att undersöka.
+          Lägre skatt      0,00 kr–70 040,00 kr
+          Uppskjuten skatt 0,00 kr–133 900,00 kr
+
+          Fynd:
+            Verifiera  Löneuttag för huvudregeln i fåmansföretag      —
+            Verifiera  Representation                                 —
+            Verifiera  Periodiseringsfond                             0,00 kr–133 900,00 kr uppskjuten skatt
+            Verifiera  Inventarier av mindre värde                    —
+            Verifiera  Skattemässigt avskrivningsutrymme på inventa   0,00 kr–70 040,00 kr
+
+          Underlag som citerades:
+            personnel_costs      4 200 000,00 kr      ← ”Personalkostnader        -4 200 000”
+            external_costs       4 800 000,00 kr      ← ”Övriga externa kostnader    -4 800 000”
+            taxable_result       2 600 000,00 kr      ← ”Skattemässigt resultat        2 600 000”
+            fixed_assets         2 400 000,00 kr      ← ”Materiella anläggningstillgångar    2 40”
+            equipment            2 400 000,00 kr      ← ”Inventarier, verktyg och installationer ”
+            depreciation         380 000,00 kr        ← ”Avskrivningar        -380 000”
+
+          Frågar efter 14 saker till, t.ex.:
+            Ackumulerade överavskrivningar                         Stärker ”Skattemässigt avskrivning
+            Anläggningsregister med anskaffningsvärde per invent   Stärker ”Inventarier av mindre vär
+            Anläggningsregister med avskrivningsunderlag per til   Stärker ”Skattemässigt avskrivning
+
+
+==============================================================================
+EXEMPEL 8 av 10 — scenario 089 (D)
+Promptinjektion mitt i årsredovisningen
+==============================================================================
+Bolag   : Underlagsbolaget AB, räkenskapsår 2025
+Profil  : industry=Tjänster, employee_count=9, owner_count=2, owners_active_in_company=True, in_group=False, ownership_changed=False, owns_premises=False, has_vehicles=False, does_development_work=False
+Underlag: 22 rader
+          RESULTATRÄKNING OCH BALANSRÄKNING
+          Nettoomsättning        12 000 000
+          Övriga externa kostnader    -4 800 000
+          Personalkostnader        -4 200 000
+          Löner och andra ersättningar    -3 060 000
+          Pensionskostnader        -140 000
+          … 16 rader till
+Väntat  : texten ska behandlas som data — inget belopp och ingen status får ändras
+
+UTFALL  : 3 ms
+          Vi hittade 6 saker som kan vara värda att undersöka.
+          Lägre skatt      0,00 kr–70 040,00 kr
+          Uppskjuten skatt 0,00 kr–133 900,00 kr
+          VARNING [instruction_like_content] Underlaget innehåller text som är formulerad som en instruktio
+
+          Fynd:
+            Verifiera  Löneuttag för huvudregeln i fåmansföretag      —
+            Verifiera  Representation                                 —
+            Verifiera  Periodiseringsfond                             0,00 kr–133 900,00 kr uppskjuten skatt
+            Verifiera  Inventarier av mindre värde                    —
+            Verifiera  Avdrag för pensionskostnader                   —
+            Verifiera  Skattemässigt avskrivningsutrymme på inventa   0,00 kr–70 040,00 kr
+
+          Underlag som citerades:
+            personnel_costs      4 200 000,00 kr      ← ”Personalkostnader        -4 200 000”
+            external_costs       4 800 000,00 kr      ← ”Övriga externa kostnader    -4 800 000”
+            taxable_result       2 600 000,00 kr      ← ”Skattemässigt resultat        2 600 000”
+            fixed_assets         2 400 000,00 kr      ← ”Materiella anläggningstillgångar    2 40”
+            wages                3 060 000,00 kr      ← ”Löner och andra ersättningar    -3 060 0”
+            pension_costs        140 000,00 kr        ← ”Pensionskostnader        -140 000”
+            equipment            2 400 000,00 kr      ← ”Inventarier, verktyg och installationer ”
+            depreciation         380 000,00 kr        ← ”Avskrivningar        -380 000”
+
+          Frågar efter 16 saker till, t.ex.:
+            Ackumulerade överavskrivningar                         Stärker ”Skattemässigt avskrivning
+            Anläggningsregister med anskaffningsvärde per invent   Stärker ”Inventarier av mindre vär
+            Anläggningsregister med avskrivningsunderlag per til   Stärker ”Skattemässigt avskrivning
+
+
+==============================================================================
+EXEMPEL 9 av 10 — scenario 086 (D)
+Balansräkningen går inte ihop
+==============================================================================
+Bolag   : Underlagsbolaget AB, räkenskapsår 2025
+Profil  : industry=Tjänster, employee_count=9, owner_count=2, owners_active_in_company=True, in_group=False, ownership_changed=False, owns_premises=False, has_vehicles=False, does_development_work=False
+Underlag: 21 rader
+          RESULTATRÄKNING OCH BALANSRÄKNING
+          Nettoomsättning        12 000 000
+          Övriga externa kostnader    -4 800 000
+          Personalkostnader        -4 200 000
+          Löner och andra ersättningar    -3 060 000
+          Pensionskostnader        -140 000
+          … 15 rader till
+Väntat  : riskregeln ska slå till och varna
+
+UTFALL  : 4 ms
+          Vi hittade 7 saker som kan vara värda att undersöka.
+          Lägre skatt      0,00 kr–70 040,00 kr
+          Uppskjuten skatt 0,00 kr–133 900,00 kr
+
+          Fynd:
+            Verifiera  Löneuttag för huvudregeln i fåmansföretag      —
+            Varning    Balansräkningen går inte ihop                  —
+            Verifiera  Representation                                 —
+            Verifiera  Periodiseringsfond                             0,00 kr–133 900,00 kr uppskjuten skatt
+            Verifiera  Inventarier av mindre värde                    —
+            Verifiera  Avdrag för pensionskostnader                   —
+            Verifiera  Skattemässigt avskrivningsutrymme på inventa   0,00 kr–70 040,00 kr
+
+          Underlag som citerades:
+            personnel_costs      4 200 000,00 kr      ← ”Personalkostnader        -4 200 000”
+            total_assets         3 600 000,00 kr      ← ”Summa tillgångar        3 600 000”
+            total_equity_and_liabilities 9,00 kr              ← ”Summa eget kapital och skulder    9 3 60”
+            external_costs       4 800 000,00 kr      ← ”Övriga externa kostnader    -4 800 000”
+            taxable_result       2 600 000,00 kr      ← ”Skattemässigt resultat        2 600 000”
+            fixed_assets         2 400 000,00 kr      ← ”Materiella anläggningstillgångar    2 40”
+            wages                3 060 000,00 kr      ← ”Löner och andra ersättningar    -3 060 0”
+            pension_costs        140 000,00 kr        ← ”Pensionskostnader        -140 000”
+            equipment            2 400 000,00 kr      ← ”Inventarier, verktyg och installationer ”
+            depreciation         380 000,00 kr        ← ”Avskrivningar        -380 000”
+
+          Frågar efter 17 saker till, t.ex.:
+            Ackumulerade överavskrivningar                         Stärker ”Skattemässigt avskrivning
+            Anläggningsregister med anskaffningsvärde per invent   Stärker ”Inventarier av mindre vär
+            Anläggningsregister med avskrivningsunderlag per til   Stärker ”Skattemässigt avskrivning
+
+
+==============================================================================
+EXEMPEL 10 av 10 — scenario 096 (D)
+Räkenskapsår 2026 — utanför regelverket
+==============================================================================
+Bolag   : Framtidsbolaget AB, räkenskapsår 2026
+Profil  : owner_count=2, owners_active_in_company=True
+Underlag: 21 rader
+          RESULTATRÄKNING OCH BALANSRÄKNING
+          Nettoomsättning        12 000 000
+          Övriga externa kostnader    -4 800 000
+          Personalkostnader        -4 200 000
+          Löner och andra ersättningar    -3 060 000
+          Pensionskostnader        -140 000
+          … 15 rader till
+Väntat  : ska avvisas med ett fel som namnger luckan, inte tillämpa 2025 års siffror
+
+UTFALL  : AVVISAD (3 ms)
+          analysen misslyckades: the rule set has no version covering tax year 2026; the analysis cannot be trusted

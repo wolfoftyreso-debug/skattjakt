@@ -1,0 +1,289 @@
+{
+  "analysis_id": "b72f824a-0a43-4a24-b584-54d3fa6e1c7c",
+  "company_name": "Underlagsbolaget AB",
+  "fiscal_year": "2025",
+  "rule_set_version": "se-2025.1",
+  "sections": {
+    "summary": {
+      "headline": "Vi hittade 2 saker som kan vara värda att undersöka.",
+      "found_count": 2,
+      "high_priority_count": 1,
+      "should_investigate_count": 1,
+      "needs_more_evidence_count": 0,
+      "warnings_count": 0,
+      "areas_checked": [
+        {
+          "category": "Skatt",
+          "rules_evaluated": 6,
+          "findings": 1
+        },
+        {
+          "category": "Kostnader",
+          "rules_evaluated": 2,
+          "findings": 0
+        },
+        {
+          "category": "Moms",
+          "rules_evaluated": 1,
+          "findings": 0
+        },
+        {
+          "category": "Personal",
+          "rules_evaluated": 1,
+          "findings": 0
+        },
+        {
+          "category": "Investeringar",
+          "rules_evaluated": 1,
+          "findings": 1
+        },
+        {
+          "category": "FoU",
+          "rules_evaluated": 1,
+          "findings": 0
+        },
+        {
+          "category": "Risk",
+          "rules_evaluated": 2,
+          "findings": 0
+        }
+      ]
+    },
+    "start_here": [
+      {
+        "title": "Löneuttag för huvudregeln i fåmansföretag",
+        "category": "Skatt",
+        "status": "verify",
+        "status_label": "Verifiera",
+        "impact": {
+          "low": 0,
+          "high": 0
+        },
+        "impact_display": "Ingen beräknad ekonomisk effekt",
+        "effect": "reduction",
+        "confidence": 91,
+        "priority_band": "high",
+        "rationale": "För att få använda löneunderlagsregeln vid beräkning av gränsbelopp måste en delägare eller närstående ha tagit ut lön över en viss nivå under året före beskattningsåret. Nivån är kopplad till inkomstbasbeloppet.",
+        "recommended_action": "Stäm av delägarens löneuttag mot lönekravet innan året stängs, eftersom kravet avser lön utbetald under kalenderåret och inte kan rättas i efterhand.",
+        "missing_information": [
+          "Delägarens kontanta lön föregående år",
+          "Total kontant lön i bolaget och i eventuella dotterbolag",
+          "Föregående års K10-blankett"
+        ],
+        "supporting_values": [
+          {
+            "kind": "personnel_costs",
+            "amount": "4 200 000,00 kr",
+            "page": 1,
+            "excerpt": "Personalkostnader        -4 200 000"
+          }
+        ],
+        "rules": [
+          {
+            "rule_id": "se.tax.k10.lonekrav",
+            "title": "Löneuttag för huvudregeln i fåmansföretag",
+            "source": "Inkomstskattelag (1999:1229) 57 kap. 19 §",
+            "source_state": "unretrieved"
+          }
+        ]
+      }
+    ],
+    "opportunities": [
+      {
+        "title": "Löneuttag för huvudregeln i fåmansföretag",
+        "category": "Skatt",
+        "status": "verify",
+        "status_label": "Verifiera",
+        "impact": {
+          "low": 0,
+          "high": 0
+        },
+        "impact_display": "Ingen beräknad ekonomisk effekt",
+        "effect": "reduction",
+        "confidence": 91,
+        "priority_band": "high",
+        "rationale": "För att få använda löneunderlagsregeln vid beräkning av gränsbelopp måste en delägare eller närstående ha tagit ut lön över en viss nivå under året före beskattningsåret. Nivån är kopplad till inkomstbasbeloppet.",
+        "recommended_action": "Stäm av delägarens löneuttag mot lönekravet innan året stängs, eftersom kravet avser lön utbetald under kalenderåret och inte kan rättas i efterhand.",
+        "missing_information": [
+          "Delägarens kontanta lön föregående år",
+          "Total kontant lön i bolaget och i eventuella dotterbolag",
+          "Föregående års K10-blankett"
+        ],
+        "supporting_values": [
+          {
+            "kind": "personnel_costs",
+            "amount": "4 200 000,00 kr",
+            "page": 1,
+            "excerpt": "Personalkostnader        -4 200 000"
+          }
+        ],
+        "rules": [
+          {
+            "rule_id": "se.tax.k10.lonekrav",
+            "title": "Löneuttag för huvudregeln i fåmansföretag",
+            "source": "Inkomstskattelag (1999:1229) 57 kap. 19 §",
+            "source_state": "unretrieved"
+          }
+        ]
+      },
+      {
+        "title": "Skattemässigt avskrivningsutrymme på inventarier",
+        "category": "Investeringar",
+        "status": "verify",
+        "status_label": "Verifiera",
+        "impact": {
+          "low": 0,
+          "high": 7004000
+        },
+        "impact_display": "0,00 kr–70 040,00 kr",
+        "effect": "reduction",
+        "confidence": 95,
+        "priority_band": "should_investigate",
+        "rationale": "Vid räkenskapsenlig avskrivning får inventarier skrivas av med upp till 30 procent av avskrivningsunderlaget enligt huvudregeln. Om den bokförda avskrivningen är lägre kan det finnas ett outnyttjat skattemässigt utrymme. Utrymmet beräknas på inventarier, inte på byggnader och mark.",
+        "recommended_action": "Be din redovisningskonsult stämma av det skattemässiga avskrivningsunderlaget mot anläggningsregistret och bedöma om överavskrivning är aktuell.",
+        "missing_information": [
+          "Anläggningsregister med avskrivningsunderlag per tillgång",
+          "Vilken avskrivningsmetod bolaget tillämpar",
+          "Ackumulerade överavskrivningar",
+          "Anläggningsregister med skattemässigt värde på inventarier",
+          "Specifikation av posten Materiella anläggningstillgångar, uppdelad på byggnader, mark och inventarier"
+        ],
+        "supporting_values": [
+          {
+            "kind": "equipment",
+            "amount": "2 400 000,00 kr",
+            "page": 1,
+            "excerpt": "Inventarier, verktyg och installationer  2 400 000"
+          },
+          {
+            "kind": "depreciation",
+            "amount": "380 000,00 kr",
+            "page": 1,
+            "excerpt": "Avskrivningar        -380 000"
+          }
+        ],
+        "rules": [
+          {
+            "rule_id": "se.investments.inventarier.avskrivningsutrymme",
+            "title": "Skattemässigt avskrivningsutrymme på inventarier",
+            "source": "Inkomstskattelag (1999:1229) 18 kap. 13 §; Inkomstskattelag (1999:1229) 18 kap. 17 §",
+            "source_state": "unretrieved"
+          }
+        ]
+      }
+    ],
+    "warnings": [],
+    "missing_information": [
+      {
+        "code": "would_strengthen",
+        "description": "Ackumulerade överavskrivningar",
+        "unlocks": "Stärker ”Skattemässigt avskrivningsutrymme på inventarier”."
+      },
+      {
+        "code": "would_strengthen",
+        "description": "Anläggningsregister med avskrivningsunderlag per tillgång",
+        "unlocks": "Stärker ”Skattemässigt avskrivningsutrymme på inventarier”."
+      },
+      {
+        "code": "would_strengthen",
+        "description": "Anläggningsregister med skattemässigt värde på inventarier",
+        "unlocks": "Stärker ”Skattemässigt avskrivningsutrymme på inventarier”."
+      },
+      {
+        "code": "would_strengthen",
+        "description": "Delägarens kontanta lön föregående år",
+        "unlocks": "Stärker ”Löneuttag för huvudregeln i fåmansföretag”."
+      },
+      {
+        "code": "would_strengthen",
+        "description": "Föregående års K10-blankett",
+        "unlocks": "Stärker ”Löneuttag för huvudregeln i fåmansföretag”."
+      },
+      {
+        "code": "would_strengthen",
+        "description": "Specifikation av posten Materiella anläggningstillgångar, uppdelad på byggnader, mark och inventarier",
+        "unlocks": "Stärker ”Skattemässigt avskrivningsutrymme på inventarier”."
+      },
+      {
+        "code": "would_strengthen",
+        "description": "Total kontant lön i bolaget och i eventuella dotterbolag",
+        "unlocks": "Stärker ”Löneuttag för huvudregeln i fåmansföretag”."
+      },
+      {
+        "code": "would_strengthen",
+        "description": "Vilken avskrivningsmetod bolaget tillämpar",
+        "unlocks": "Stärker ”Skattemässigt avskrivningsutrymme på inventarier”."
+      }
+    ],
+    "economic_potential": {
+      "total": {
+        "low": 0,
+        "high": 7004000
+      },
+      "display": "0,00 kr–70 040,00 kr",
+      "note": "Ett intervall, inte ett besked. Beloppen bygger på det underlag som lämnats och ska verifieras innan någon åtgärd vidtas.",
+      "deferred": {
+        "low": 0,
+        "high": 0
+      },
+      "deferred_display": "0,00 kr",
+      "deferred_note": ""
+    },
+    "evidence": {
+      "document_versions_used": 1,
+      "values_cited": 3,
+      "rules_cited": [
+        {
+          "rule_id": "se.investments.inventarier.avskrivningsutrymme",
+          "title": "Skattemässigt avskrivningsutrymme på inventarier",
+          "source": "Inkomstskattelag (1999:1229) 18 kap. 13 §; Inkomstskattelag (1999:1229) 18 kap. 17 §",
+          "source_state": "unretrieved"
+        },
+        {
+          "rule_id": "se.tax.k10.lonekrav",
+          "title": "Löneuttag för huvudregeln i fåmansföretag",
+          "source": "Inkomstskattelag (1999:1229) 57 kap. 19 §",
+          "source_state": "unretrieved"
+        }
+      ],
+      "assumptions": [
+        "Avskrivningsunderlaget är det skattemässiga värdet på inventarierna, inte det bokförda. Regeln räknar på bokfört värde och ger därför ett tak, inte ett besked.",
+        "Reglerna för fåmansföretag har varit föremål för omfattande översyn. Nivåerna är inte kodade och regeln flaggar endast att lönekravet bör stämmas av."
+      ]
+    },
+    "next_steps": [
+      "Stäm av delägarens löneuttag mot lönekravet innan året stängs, eftersom kravet avser lön utbetald under kalenderåret och inte kan rättas i efterhand.",
+      "Be din redovisningskonsult stämma av det skattemässiga avskrivningsunderlaget mot anläggningsregistret och bedöma om överavskrivning är aktuell."
+    ],
+    "limitations": [
+      "Analysen bygger på 1 uppladdat underlag och på de uppgifter som lämnats om bolaget. Den har inte tillgång till bokföringen i övrigt.",
+      "Skattjakt avgör inte vad som är rätt enligt lag. Varje möjlighet behöver stämmas av mot fullständigt underlag.",
+      "Delar av regelverket i den här versionen har inte granskats av en kvalificerad rådgivare. Sådana fynd visas som \"Verifiera\" och ska kontrolleras innan de används.",
+      "Analysen kördes utan språkmodell. Regelmotorns fynd är fullständiga, men modellens genomgång av underlaget och dess motsägelsekontroll har inte utförts, så färre möjligheter kan ha hittats."
+    ],
+    "audience": "company",
+    "action_plan": [
+      {
+        "order": 1,
+        "action": "Stäm av delägarens löneuttag mot lönekravet innan året stängs, eftersom kravet avser lön utbetald under kalenderåret och inte kan rättas i efterhand.",
+        "title": "Löneuttag för huvudregeln i fåmansföretag",
+        "priority_band": "high",
+        "impact": null,
+        "is_control": false
+      },
+      {
+        "order": 2,
+        "action": "Be din redovisningskonsult stämma av det skattemässiga avskrivningsunderlaget mot anläggningsregistret och bedöma om överavskrivning är aktuell.",
+        "title": "Skattemässigt avskrivningsutrymme på inventarier",
+        "priority_band": "should_investigate",
+        "impact": {
+          "low": 0,
+          "high": 7004000
+        },
+        "is_control": false
+      }
+    ]
+  },
+  "disclaimer": "Skattjakt är ett analys- och upptäcktsverktyg. Resultaten är preliminära och ska inte betraktas som juridisk rådgivning, revisionsuttalande, skattebesked eller garanti om skatteåterbäring eller besparing. Identifierade möjligheter bör verifieras mot aktuella regler och företagets fullständiga underlag innan någon åtgärd vidtas.",
+  "generated_at": "2026-08-24T03:56:51.620592569Z"
+}

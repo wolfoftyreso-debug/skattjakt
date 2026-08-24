@@ -1,0 +1,156 @@
+{
+  "analysis_id": "44ebd7d4-5991-49a3-aa62-0030a3735b6b",
+  "company_name": "Underlagsbolaget AB",
+  "fiscal_year": "2025",
+  "rule_set_version": "se-2025.1",
+  "sections": {
+    "summary": {
+      "headline": "Vi hittade 1 sak som kan vara värd att undersöka.",
+      "found_count": 1,
+      "high_priority_count": 0,
+      "should_investigate_count": 1,
+      "needs_more_evidence_count": 0,
+      "warnings_count": 0,
+      "areas_checked": [
+        {
+          "category": "Skatt",
+          "rules_evaluated": 6,
+          "findings": 0
+        },
+        {
+          "category": "Kostnader",
+          "rules_evaluated": 2,
+          "findings": 1
+        },
+        {
+          "category": "Moms",
+          "rules_evaluated": 1,
+          "findings": 0
+        },
+        {
+          "category": "Personal",
+          "rules_evaluated": 1,
+          "findings": 0
+        },
+        {
+          "category": "Investeringar",
+          "rules_evaluated": 1,
+          "findings": 0
+        },
+        {
+          "category": "FoU",
+          "rules_evaluated": 1,
+          "findings": 0
+        },
+        {
+          "category": "Risk",
+          "rules_evaluated": 2,
+          "findings": 0
+        }
+      ]
+    },
+    "start_here": [],
+    "opportunities": [
+      {
+        "title": "Representation",
+        "category": "Kostnader",
+        "status": "verify",
+        "status_label": "Verifiera",
+        "impact": {
+          "low": 0,
+          "high": 0
+        },
+        "impact_display": "Ingen beräknad ekonomisk effekt",
+        "effect": "reduction",
+        "confidence": 91,
+        "priority_band": "should_investigate",
+        "rationale": "Avdrag för måltidsrepresentation medges inte vid inkomstbeskattningen, medan enklare förtäring är avdragsgill upp till ett belopp per person. Moms får dras av på ett begränsat underlag per person.",
+        "recommended_action": "Stäm av representationskontona mot underlagen och kontrollera att den ej avdragsgilla delen justerats i deklarationen.",
+        "missing_information": [
+          "Kontospecifikation för representationskonton",
+          "Underlag med deltagare och syfte"
+        ],
+        "supporting_values": [
+          {
+            "kind": "external_costs",
+            "amount": "0,00 kr",
+            "page": 1,
+            "excerpt": "Övriga externa kostnader    -0"
+          }
+        ],
+        "rules": [
+          {
+            "rule_id": "se.costs.representation",
+            "title": "Representation",
+            "source": "Inkomstskattelag (1999:1229) 16 kap. 2 §; Skatteverkets ställningstagande — Avdrag för enklare förtäring vid representation",
+            "source_state": "unretrieved"
+          }
+        ]
+      }
+    ],
+    "warnings": [],
+    "missing_information": [
+      {
+        "code": "would_strengthen",
+        "description": "Kontospecifikation för representationskonton",
+        "unlocks": "Stärker ”Representation”."
+      },
+      {
+        "code": "would_strengthen",
+        "description": "Underlag med deltagare och syfte",
+        "unlocks": "Stärker ”Representation”."
+      }
+    ],
+    "economic_potential": {
+      "total": {
+        "low": 0,
+        "high": 0
+      },
+      "display": "0,00 kr",
+      "note": "Ingen beräknad sänkning av skatten på det underlag som lämnats.",
+      "deferred": {
+        "low": 0,
+        "high": 0
+      },
+      "deferred_display": "0,00 kr",
+      "deferred_note": ""
+    },
+    "evidence": {
+      "document_versions_used": 1,
+      "values_cited": 1,
+      "rules_cited": [
+        {
+          "rule_id": "se.costs.representation",
+          "title": "Representation",
+          "source": "Inkomstskattelag (1999:1229) 16 kap. 2 §; Skatteverkets ställningstagande — Avdrag för enklare förtäring vid representation",
+          "source_state": "unretrieved"
+        }
+      ],
+      "assumptions": [
+        "Regeln kan inte se representationskonton i ett bokslut på översiktsnivå och fungerar därför som en generell kontrollpunkt med låg relevansvikt."
+      ]
+    },
+    "next_steps": [
+      "Stäm av representationskontona mot underlagen och kontrollera att den ej avdragsgilla delen justerats i deklarationen."
+    ],
+    "limitations": [
+      "Analysen bygger på 1 uppladdat underlag och på de uppgifter som lämnats om bolaget. Den har inte tillgång till bokföringen i övrigt.",
+      "Skattjakt avgör inte vad som är rätt enligt lag. Varje möjlighet behöver stämmas av mot fullständigt underlag.",
+      "Delar av regelverket i den här versionen har inte granskats av en kvalificerad rådgivare. Sådana fynd visas som \"Verifiera\" och ska kontrolleras innan de används.",
+      "Analysen kördes utan språkmodell. Regelmotorns fynd är fullständiga, men modellens genomgång av underlaget och dess motsägelsekontroll har inte utförts, så färre möjligheter kan ha hittats."
+    ],
+    "audience": "company",
+    "action_plan": [
+      {
+        "order": 1,
+        "action": "Stäm av representationskontona mot underlagen och kontrollera att den ej avdragsgilla delen justerats i deklarationen.",
+        "title": "Representation",
+        "priority_band": "should_investigate",
+        "impact": null,
+        "is_control": false
+      }
+    ]
+  },
+  "disclaimer": "Skattjakt är ett analys- och upptäcktsverktyg. Resultaten är preliminära och ska inte betraktas som juridisk rådgivning, revisionsuttalande, skattebesked eller garanti om skatteåterbäring eller besparing. Identifierade möjligheter bör verifieras mot aktuella regler och företagets fullständiga underlag innan någon åtgärd vidtas.",
+  "generated_at": "2026-08-24T03:56:51.642473811Z"
+}
