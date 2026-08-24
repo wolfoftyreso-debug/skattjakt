@@ -117,6 +117,19 @@ impl ProfileFlag {
         }
     }
 
+    /// The `CompanyProfile` field this flag reads, as the profile names it.
+    pub fn field_name(self) -> &'static str {
+        match self {
+            ProfileFlag::InGroup => "in_group",
+            ProfileFlag::OwnershipChanged => "ownership_changed",
+            ProfileFlag::OperationsOutsideSweden => "operations_outside_sweden",
+            ProfileFlag::DoesDevelopmentWork => "does_development_work",
+            ProfileFlag::OwnsPremises => "owns_premises",
+            ProfileFlag::HasVehicles => "has_vehicles",
+            ProfileFlag::OwnersActiveInCompany => "owners_active_in_company",
+        }
+    }
+
     /// The onboarding question to ask when this is what is blocking a finding.
     pub fn question_sv(self) -> &'static str {
         match self {
@@ -143,6 +156,14 @@ pub enum ProfileNumber {
 }
 
 impl ProfileNumber {
+    /// The `CompanyProfile` field this reads, as the profile names it.
+    pub fn field_name(self) -> &'static str {
+        match self {
+            ProfileNumber::EmployeeCount => "employee_count",
+            ProfileNumber::OwnerCount => "owner_count",
+        }
+    }
+
     fn read(self, profile: &CompanyProfile) -> Option<i64> {
         match self {
             ProfileNumber::EmployeeCount => profile.employee_count.map(i64::from),

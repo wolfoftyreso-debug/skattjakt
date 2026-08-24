@@ -1,5 +1,5 @@
 {
-  "analysis_id": "7c660d41-c1b2-43a1-97e5-4398733037cf",
+  "analysis_id": "dc3741e5-1442-4bc1-955f-c0baa40d28af",
   "company_name": "Profilbolaget AB",
   "fiscal_year": "2025",
   "rule_set_version": "se-2025.1",
@@ -569,7 +569,7 @@
       {
         "code": "sparse_profile",
         "description": "Företagsprofilen är ofullständig.",
-        "unlocks": "Fler frågor om verksamheten gör att fler regler kan prövas."
+        "unlocks": "5 obesvarade frågor hindrar regler från att prövas."
       }
     ],
     "economic_potential": {
@@ -647,7 +647,7 @@
       ],
       "assumptions": [
         "Avdragsramen beräknas per anställd och har ett tak uttryckt i prisbasbelopp; ingen av delarna går att härleda ur den samlade lönesumman. Regeln flaggar därför utan belopp.",
-        "Avskrivningsunderlaget är det skattemässiga värdet på inventarierna, inte det bokförda. Regeln räknar på bokfört värde och ger därför ett tak, inte ett besked.",
+        "Avskrivningsunderlaget är det skattemässiga värdet på inventarierna, inte det bokförda. Regeln räknar på bokfört värde och ger därför ett tak, inte ett besked. Den kräver dessutom att årets avskrivning går att läsa: utan den raden är taket hela 30 procent, vilket är ett större tal och inte ett sannare.",
         "Avsättningsunderlaget är överskottet före avsättning; regeln approximerar detta med det skattemässiga resultatet och behöver verifieras mot deklarationsunderlaget.",
         "Nedsättningens procentsats och tak har ändrats flera gånger och är inte kodade här. Regeln flaggar möjligheten utan att beräkna belopp.",
         "Regeln kan bara flagga att en genomgång behövs. Utan anläggningsregister går det inte att avgöra hur enskilda inventarier ska klassificeras, och något belopp beräknas därför inte.",
@@ -751,5 +751,5 @@
     ]
   },
   "disclaimer": "Skattjakt är ett analys- och upptäcktsverktyg. Resultaten är preliminära och ska inte betraktas som juridisk rådgivning, revisionsuttalande, skattebesked eller garanti om skatteåterbäring eller besparing. Identifierade möjligheter bör verifieras mot aktuella regler och företagets fullständiga underlag innan någon åtgärd vidtas.",
-  "generated_at": "2026-08-24T03:56:51.501580108Z"
+  "generated_at": "2026-08-24T07:53:42.160478724Z"
 }

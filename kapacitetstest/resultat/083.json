@@ -1,5 +1,5 @@
 {
-  "analysis_id": "50243168-fd1d-46a2-8fe9-4c998e89e048",
+  "analysis_id": "2f2e70f8-7827-4605-aa35-0badf20ddd1a",
   "company_name": "Underlagsbolaget AB",
   "fiscal_year": "2025",
   "rule_set_version": "se-2025.1",
@@ -10,7 +10,7 @@
       "high_priority_count": 1,
       "should_investigate_count": 5,
       "needs_more_evidence_count": 0,
-      "warnings_count": 0,
+      "warnings_count": 1,
       "areas_checked": [
         {
           "category": "Skatt",
@@ -322,7 +322,13 @@
         ]
       }
     ],
-    "warnings": [],
+    "warnings": [
+      {
+        "code": "implausible_value",
+        "message": "Nettoomsättningen är negativ: -5 000 000,00 kr.",
+        "detail": "En omsättning kan inte vara negativ. Kontrollera om teckenkonventionen i underlaget har lästs åt fel håll."
+      }
+    ],
     "missing_information": [
       {
         "code": "would_strengthen",
@@ -462,7 +468,7 @@
       ],
       "assumptions": [
         "Avdragsramen beräknas per anställd och har ett tak uttryckt i prisbasbelopp; ingen av delarna går att härleda ur den samlade lönesumman. Regeln flaggar därför utan belopp.",
-        "Avskrivningsunderlaget är det skattemässiga värdet på inventarierna, inte det bokförda. Regeln räknar på bokfört värde och ger därför ett tak, inte ett besked.",
+        "Avskrivningsunderlaget är det skattemässiga värdet på inventarierna, inte det bokförda. Regeln räknar på bokfört värde och ger därför ett tak, inte ett besked. Den kräver dessutom att årets avskrivning går att läsa: utan den raden är taket hela 30 procent, vilket är ett större tal och inte ett sannare.",
         "Avsättningsunderlaget är överskottet före avsättning; regeln approximerar detta med det skattemässiga resultatet och behöver verifieras mot deklarationsunderlaget.",
         "Regeln kan bara flagga att en genomgång behövs. Utan anläggningsregister går det inte att avgöra hur enskilda inventarier ska klassificeras, och något belopp beräknas därför inte.",
         "Regeln kan inte se representationskonton i ett bokslut på översiktsnivå och fungerar därför som en generell kontrollpunkt med låg relevansvikt.",
@@ -539,5 +545,5 @@
     ]
   },
   "disclaimer": "Skattjakt är ett analys- och upptäcktsverktyg. Resultaten är preliminära och ska inte betraktas som juridisk rådgivning, revisionsuttalande, skattebesked eller garanti om skatteåterbäring eller besparing. Identifierade möjligheter bör verifieras mot aktuella regler och företagets fullständiga underlag innan någon åtgärd vidtas.",
-  "generated_at": "2026-08-24T03:56:51.646602527Z"
+  "generated_at": "2026-08-24T07:53:42.311787558Z"
 }

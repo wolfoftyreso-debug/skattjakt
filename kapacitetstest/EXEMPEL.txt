@@ -102,7 +102,7 @@ Underlag: 24 rader
           … 18 rader till
 Väntat  : underskott att kvitta, befintlig fond att återföra, och räntekostnader över förenklingsregelns fem miljoner — tre regler som annars aldrig prövas
 
-UTFALL  : 3 ms
+UTFALL  : 5 ms
           Vi hittade 9 saker som kan vara värda att undersöka.
           Lägre skatt      0,00 kr–423 124,00 kr
           Uppskjuten skatt 0,00 kr–105 060,00 kr
@@ -199,7 +199,7 @@ Underlag: 21 rader
           … 15 rader till
 Väntat  : identiskt bokslut — skillnaden i utfall är profilens och bara profilens
 
-UTFALL  : 4 ms
+UTFALL  : 3 ms
           Vi hittade 9 saker som kan vara värda att undersöka.
           Lägre skatt      0,00 kr–70 040,00 kr
           Uppskjuten skatt 0,00 kr–133 900,00 kr
@@ -431,4 +431,4 @@ Underlag: 21 rader
 Väntat  : ska avvisas med ett fel som namnger luckan, inte tillämpa 2025 års siffror
 
 UTFALL  : AVVISAD (3 ms)
-          analysen misslyckades: the rule set has no version covering tax year 2026; the analysis cannot be trusted
+          

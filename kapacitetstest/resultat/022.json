@@ -1,5 +1,5 @@
 {
-  "analysis_id": "b53687b4-1abe-4564-8a0f-df5d06423ad9",
+  "analysis_id": "97c450d8-2eb1-4320-93ca-d8212bff87d3",
   "company_name": "Utvecklingsbolag AB",
   "fiscal_year": "2025",
   "rule_set_version": "se-2025.1",
@@ -463,7 +463,7 @@
       ],
       "assumptions": [
         "Avdragsramen beräknas per anställd och har ett tak uttryckt i prisbasbelopp; ingen av delarna går att härleda ur den samlade lönesumman. Regeln flaggar därför utan belopp.",
-        "Avskrivningsunderlaget är det skattemässiga värdet på inventarierna, inte det bokförda. Regeln räknar på bokfört värde och ger därför ett tak, inte ett besked.",
+        "Avskrivningsunderlaget är det skattemässiga värdet på inventarierna, inte det bokförda. Regeln räknar på bokfört värde och ger därför ett tak, inte ett besked. Den kräver dessutom att årets avskrivning går att läsa: utan den raden är taket hela 30 procent, vilket är ett större tal och inte ett sannare.",
         "Regeln beskriver ett underlagsproblem snarare än en skatteregel och kräver ingen materiell prövning.",
         "Regeln kan bara flagga att en genomgång behövs. Utan anläggningsregister går det inte att avgöra hur enskilda inventarier ska klassificeras, och något belopp beräknas därför inte.",
         "Regeln kan inte se representationskonton i ett bokslut på översiktsnivå och fungerar därför som en generell kontrollpunkt med låg relevansvikt.",
@@ -537,5 +537,5 @@
     ]
   },
   "disclaimer": "Skattjakt är ett analys- och upptäcktsverktyg. Resultaten är preliminära och ska inte betraktas som juridisk rådgivning, revisionsuttalande, skattebesked eller garanti om skatteåterbäring eller besparing. Identifierade möjligheter bör verifieras mot aktuella regler och företagets fullständiga underlag innan någon åtgärd vidtas.",
-  "generated_at": "2026-08-24T03:56:51.374956187Z"
+  "generated_at": "2026-08-24T07:53:42.037743895Z"
 }

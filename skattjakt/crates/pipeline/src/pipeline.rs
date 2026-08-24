@@ -273,6 +273,8 @@ impl AnalysisPipeline {
             });
         }
 
+        warnings.extend(implausible_values(&facts));
+
         let tax_year = input.company.fiscal_year.tax_year();
         if !self.engine.covers_tax_year(tax_year) {
             // Section 31: a rule set with no version for the year is a failure
@@ -1117,11 +1119,26 @@ impl AnalysisPipeline {
             });
         }
 
-        if profile.unanswered_fields().len() > 4 {
+        // Counted against what the rule set reads, not against every field the
+        // profile has room for. Four fields — `owns_premises`,
+        // `operations_outside_sweden`, `employee_count`, `industry` — are read
+        // by no rule in the shipped set, so telling a customer that answering
+        // them would let more rules be tested was untrue. Asked of the engine
+        // rather than listed here, so the sentence becomes true by itself the
+        // day somebody writes a rule that reads one.
+        let consulted = self.engine.set().profile_fields_read();
+        let unanswered_that_matter = profile
+            .unanswered_fields()
+            .into_iter()
+            .filter(|f| consulted.contains(f))
+            .count();
+        if unanswered_that_matter > 4 {
             out.push(MissingInformation {
                 code: "sparse_profile".to_string(),
                 description: "Företagsprofilen är ofullständig.".to_string(),
-                unlocks: "Fler frågor om verksamheten gör att fler regler kan prövas.".to_string(),
+                unlocks: format!(
+                    "{unanswered_that_matter} obesvarade frågor hindrar regler från att prövas."
+                ),
             });
         }
 
@@ -1372,6 +1389,65 @@ fn string_list(value: Option<&serde_json::Value>) -> Vec<String> {
 
 fn fact_kind_from_key(key: &str) -> Option<FactKind> {
     serde_json::from_value(serde_json::Value::String(key.to_string())).ok()
+}
+
+/// Values that are arithmetically fine and cannot be true.
+///
+/// The rules compute correctly on whatever they are given, which is the right
+/// division of labour and also means nothing objected when a document claimed
+/// nine trillion kronor of revenue: the engine reported 288 billion of
+/// "potential" without comment. The arithmetic was right. The number was
+/// absurd, and saying so is the pipeline's job, not the rule's.
+///
+/// Two checks, both chosen so they cannot fire on a real Swedish company:
+///
+/// * **Revenue below zero.** Nettoomsättning is a sum of sales. A negative one
+///   is a sign convention read backwards or a line misread, never a company.
+/// * **A single line above Sweden's GDP.** Around 6 000 miljarder kronor. One
+///   line item in one company's accounts cannot exceed the national economy;
+///   a value that does is a misread scale — a statement in tusental read as
+///   kronor, most often.
+///
+/// Deliberately not a plausibility model. Anything narrower would start
+/// refusing real companies, and a large business is not a wrong one.
+fn implausible_values(facts: &FactSet) -> Vec<Warning> {
+    /// Sweden's GDP, rounded up hard. In öre, because `Money` is öre.
+    const BEYOND_THE_ECONOMY: i64 = 600_000_000_000_000;
+
+    let mut out = Vec::new();
+    if let Some(revenue) = facts.value(&FactKind::Revenue) {
+        if revenue.ore() < 0 {
+            out.push(Warning {
+                code: "implausible_value".to_string(),
+                message: format!("Nettoomsättningen är negativ: {revenue}."),
+                detail: Some(
+                    "En omsättning kan inte vara negativ. Kontrollera om teckenkonventionen \
+                     i underlaget har lästs åt fel håll."
+                        .to_string(),
+                ),
+            });
+        }
+    }
+    let mut reported = std::collections::BTreeSet::new();
+    for fact in facts.iter() {
+        if fact.value.ore().abs() > BEYOND_THE_ECONOMY && reported.insert(fact.kind.key()) {
+            let value = fact.value;
+            out.push(Warning {
+                code: "implausible_value".to_string(),
+                message: format!(
+                    "{} är {value}, vilket överstiger Sveriges BNP.",
+                    fact.kind.key()
+                ),
+                detail: Some(
+                    "En enskild post kan inte vara större än landets ekonomi. Skalan i \
+                         underlaget har sannolikt lästs fel — kontrollera om beloppen står \
+                         i tusental eller miljoner."
+                        .to_string(),
+                ),
+            });
+        }
+    }
+    out
 }
 
 /// `”A”`, `”A” och ”B”`, `”A”, ”B” och ”C”` — Swedish list punctuation.

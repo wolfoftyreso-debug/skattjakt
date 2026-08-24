@@ -170,6 +170,46 @@ impl FactKind {
     }
 
     /// A stable key for storage and for grouping.
+    /// Whether a missing value legitimately means zero.
+    ///
+    /// The distinction a rule has to respect before it subtracts something it
+    /// could not read. Two kinds of absence look identical in a `FactSet` and
+    /// mean opposite things:
+    ///
+    /// * An **optional** line only appears when it happened. A company that
+    ///   made no allocation to a periodiseringsfond this year has no such line,
+    ///   and reading that absence as zero is reading it correctly.
+    /// * A **mandatory** line is always in a complete set of accounts. A
+    ///   company with equipment has depreciation; if the line is not there, the
+    ///   document was not fully read. Reading that absence as zero turns
+    ///   "unknown" into a number, and every subtraction from it gets larger.
+    ///
+    /// Measured rather than argued: the same company reported 0–70 040 kr of
+    /// unused depreciation allowance with its depreciation line present, and
+    /// 0–148 320 kr with the line removed. Nothing else changed.
+    ///
+    /// A rule may use `fact_or_zero` freely on an optional fact. On a mandatory
+    /// one it must also require the fact — which is asserted over the shipped
+    /// rule set in `skattjakt_rules`, so this cannot be forgotten in data.
+    pub fn absence_means_zero(&self) -> bool {
+        use FactKind::*;
+        !matches!(
+            self,
+            // Present in any complete statement whose company has the
+            // corresponding asset or activity.
+            Revenue
+                | ExternalCosts
+                | PersonnelCosts
+                | Depreciation
+                | OperatingProfit
+                | ProfitBeforeTax
+                | NetProfit
+                | TotalAssets
+                | TotalEquityAndLiabilities
+                | Equity
+        )
+    }
+
     pub fn key(&self) -> String {
         match self {
             FactKind::Other(label) => format!("other:{label}"),

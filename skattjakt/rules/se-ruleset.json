@@ -547,7 +547,7 @@
             },
             "op": "gt",
             "right": {
-              "op": "fact_or_zero",
+              "op": "fact",
               "fact": "depreciation"
             }
           }
@@ -575,7 +575,7 @@
                 "rate": "inventarier_huvudregel_avskrivning"
               },
               "b": {
-                "op": "fact_or_zero",
+                "op": "fact",
                 "fact": "depreciation"
               }
             }
@@ -597,7 +597,7 @@
       "recommended_action": "Be din redovisningskonsult stämma av det skattemässiga avskrivningsunderlaget mot anläggningsregistret och bedöma om överavskrivning är aktuell.",
       "review": {
         "state": "awaiting_professional_review",
-        "note": "Avskrivningsunderlaget är det skattemässiga värdet på inventarierna, inte det bokförda. Regeln räknar på bokfört värde och ger därför ett tak, inte ett besked."
+        "note": "Avskrivningsunderlaget är det skattemässiga värdet på inventarierna, inte det bokförda. Regeln räknar på bokfört värde och ger därför ett tak, inte ett besked. Den kräver dessutom att årets avskrivning går att läsa: utan den raden är taket hela 30 procent, vilket är ett större tal och inte ett sannare."
       },
       "effort": "medium",
       "risk": "medium",

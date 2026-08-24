@@ -280,9 +280,41 @@ const NOT_A_FACT: &[&str] = &[
     "årets avskrivningar enligt plan på",
 ];
 
+/// Every kind of space a PDF puts between two words, flattened to one.
+///
+/// Text lifted out of a PDF is full of spacing that is not U+0020: a
+/// non-breaking space holds a number's thousands together, a thin space pads a
+/// column, a justified line gets whatever the typesetter emitted. The number
+/// parser already handled these — it was the label table that did not, so
+/// `Övriga` + NBSP + `externa` + NBSP + `kostnader` matched nothing and a
+/// statement that had come through PDF extraction yielded three facts where it
+/// should have yielded eight.
+///
+/// Runs collapse as well as convert, because a column-padded label can carry
+/// several spaces where the table has one.
+fn normalise_spacing(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut in_space = false;
+    for ch in line.chars() {
+        if ch.is_whitespace() || ch == '\u{00a0}' || ch == '\u{202f}' || ch == '\u{feff}' {
+            if !in_space && !out.is_empty() {
+                out.push(' ');
+            }
+            in_space = true;
+        } else {
+            out.push(ch);
+            in_space = false;
+        }
+    }
+    while out.ends_with(' ') {
+        out.pop();
+    }
+    out
+}
+
 /// Finds the label a line starts with, preferring the longest match.
 fn match_label(line: &str) -> Option<FactKind> {
-    let normalised = line.trim().to_lowercase();
+    let normalised = normalise_spacing(&line.to_lowercase());
     if NOT_A_FACT.iter().any(|phrase| normalised.contains(phrase)) {
         return None;
     }
@@ -553,6 +585,56 @@ mod depreciation_labels {
         assert!(
             facts.is_empty() || facts[0].kind != FactKind::Depreciation,
             "the accumulated total was read as the year's depreciation"
+        );
+    }
+}
+
+#[cfg(test)]
+mod spacing_out_of_a_pdf {
+    use super::*;
+
+    /// Text out of a PDF does not use U+0020 between words.
+    ///
+    /// Found by running a hundred generated statements: numbers carrying a
+    /// non-breaking space parsed correctly, and the labels beside them did not
+    /// match at all, so a statement yielded three facts instead of eight.
+    #[test]
+    fn a_label_matches_whatever_space_the_pdf_put_between_its_words() {
+        for space in ["\u{00a0}", "\u{2009}", "\u{202f}", "  ", "\t"] {
+            let line = format!("Övriga{space}externa{space}kostnader   -650 000");
+            let facts = extract_from_page(1, &line, Scale::Kronor);
+            assert_eq!(
+                facts.first().map(|f| f.kind.clone()),
+                Some(FactKind::ExternalCosts),
+                "{:?} between the words hid the label",
+                space
+            );
+            assert_eq!(facts[0].amount_sek.abs(), 650_000);
+        }
+    }
+
+    /// And the exclusions still bite once spacing is normalised — otherwise the
+    /// fix would have quietly re-admitted the accumulated total.
+    #[test]
+    fn the_accumulated_total_stays_excluded_whatever_the_spacing() {
+        for space in ["\u{00a0}", " ", "   "] {
+            let line = format!("Ackumulerade{space}avskrivningar   -1 800 000");
+            let facts = extract_from_page(1, &line, Scale::Kronor);
+            assert!(
+                facts.is_empty() || facts[0].kind != FactKind::Depreciation,
+                "{space:?} let the accumulated total through as the year's cost"
+            );
+        }
+    }
+
+    /// A label padded out to a column edge is the same label.
+    #[test]
+    fn column_padding_does_not_make_a_new_label() {
+        let padded = "Inventarier,      verktyg   och    installationer        1 950 000";
+        let facts = extract_from_page(1, padded, Scale::Kronor);
+        assert_eq!(
+            facts.first().map(|f| f.kind.clone()),
+            Some(FactKind::Equipment)
         );
     }
 }

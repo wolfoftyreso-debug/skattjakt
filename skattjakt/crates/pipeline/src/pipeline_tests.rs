@@ -1512,7 +1512,11 @@ async fn the_headline_inflects_for_one_finding_and_for_several() {
         "the fixture must produce exactly one finding for this to test anything"
     );
     assert!(
-        report.sections.summary.headline.contains("1 sak som kan vara värd att"),
+        report
+            .sections
+            .summary
+            .headline
+            .contains("1 sak som kan vara värd att"),
         "singular: {}",
         report.sections.summary.headline
     );
@@ -1524,8 +1528,97 @@ async fn the_headline_inflects_for_one_finding_and_for_several() {
     let report = crate::report::build(&many, "Testbolaget AB", "2025", "se-2025.1");
     assert!(report.sections.summary.found_count > 1);
     assert!(
-        report.sections.summary.headline.contains("saker som kan vara värda att"),
+        report
+            .sections
+            .summary
+            .headline
+            .contains("saker som kan vara värda att"),
         "plural: {}",
         report.sections.summary.headline
+    );
+}
+
+/// Absurd input is answered, not silently priced.
+///
+/// Nine trillion kronor of revenue used to produce 288 billion of "potential"
+/// with nothing said about it. The arithmetic was right; saying the number
+/// cannot be true is the pipeline's job, not the rule's.
+#[tokio::test]
+async fn a_document_that_cannot_be_true_is_said_to_be() {
+    const ABSURD: &str = "\
+RESULTATRÄKNING
+Nettoomsättning 9 000 000 000 000
+Personalkostnader 1 000 000 000 000
+Löner och andra ersättningar 700 000 000 000
+Avskrivningar 100 000 000 000
+Skattemässigt resultat 6 000 000 000 000
+Inventarier, verktyg och installationer 5 000 000 000 000
+";
+    let (result, _) = pipeline(silent_provider())
+        .run(&input(vec![document(ABSURD)]), &SilentObserver)
+        .await
+        .unwrap();
+    let flagged: Vec<&str> = result
+        .warnings
+        .iter()
+        .filter(|w| w.code == "implausible_value")
+        .map(|w| w.message.as_str())
+        .collect();
+    assert!(
+        !flagged.is_empty(),
+        "a line larger than the national economy went unremarked"
+    );
+    assert!(flagged.iter().any(|m| m.contains("BNP")));
+}
+
+/// A negative nettoomsättning is a sign read backwards, never a company.
+#[tokio::test]
+async fn negative_revenue_is_questioned() {
+    const BACKWARDS: &str = "\
+RESULTATRÄKNING
+Nettoomsättning -5 000 000
+Personalkostnader 1 200 000
+Löner och andra ersättningar 880 000
+Avskrivningar 250 000
+";
+    let (result, _) = pipeline(silent_provider())
+        .run(&input(vec![document(BACKWARDS)]), &SilentObserver)
+        .await
+        .unwrap();
+    assert!(
+        result
+            .warnings
+            .iter()
+            .any(|w| w.code == "implausible_value" && w.message.contains("negativ")),
+        "negative revenue passed without comment: {:?}",
+        result.warnings
+    );
+}
+
+/// And a genuinely large Swedish company is not called implausible.
+#[tokio::test]
+async fn a_large_but_real_company_is_left_alone() {
+    // Volvo-sized: ~500 miljarder kronor of revenue. Real, and two orders of
+    // magnitude below the threshold — the check must not start refusing these.
+    const LARGE: &str = "\
+RESULTATRÄKNING
+Nettoomsättning 500 000 000 000
+Personalkostnader 90 000 000 000
+Löner och andra ersättningar 66 000 000 000
+Avskrivningar 20 000 000 000
+Skattemässigt resultat 40 000 000 000
+Inventarier, verktyg och installationer 120 000 000 000
+";
+    let (result, _) = pipeline(silent_provider())
+        .run(&input(vec![document(LARGE)]), &SilentObserver)
+        .await
+        .unwrap();
+    assert!(
+        !result
+            .warnings
+            .iter()
+            .any(|w| w.code == "implausible_value"),
+        "a real large company was called implausible: {:?}",
+        result.warnings
     );
 }

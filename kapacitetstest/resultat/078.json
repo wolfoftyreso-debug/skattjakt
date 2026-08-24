@@ -1,5 +1,5 @@
 {
-  "analysis_id": "b2a97678-a4b4-4593-972f-1f243ac85b64",
+  "analysis_id": "0691fda7-82c7-4ade-a0ca-9cf9a8a60060",
   "company_name": "Underlagsbolaget AB",
   "fiscal_year": "2025",
   "rule_set_version": "se-2025.1",
@@ -247,7 +247,7 @@
         }
       ],
       "assumptions": [
-        "Avskrivningsunderlaget är det skattemässiga värdet på inventarierna, inte det bokförda. Regeln räknar på bokfört värde och ger därför ett tak, inte ett besked.",
+        "Avskrivningsunderlaget är det skattemässiga värdet på inventarierna, inte det bokförda. Regeln räknar på bokfört värde och ger därför ett tak, inte ett besked. Den kräver dessutom att årets avskrivning går att läsa: utan den raden är taket hela 30 procent, vilket är ett större tal och inte ett sannare.",
         "Reglerna för fåmansföretag har varit föremål för omfattande översyn. Nivåerna är inte kodade och regeln flaggar endast att lönekravet bör stämmas av."
       ]
     },
@@ -285,5 +285,5 @@
     ]
   },
   "disclaimer": "Skattjakt är ett analys- och upptäcktsverktyg. Resultaten är preliminära och ska inte betraktas som juridisk rådgivning, revisionsuttalande, skattebesked eller garanti om skatteåterbäring eller besparing. Identifierade möjligheter bör verifieras mot aktuella regler och företagets fullständiga underlag innan någon åtgärd vidtas.",
-  "generated_at": "2026-08-24T03:56:51.626175024Z"
+  "generated_at": "2026-08-24T07:53:42.292478788Z"
 }

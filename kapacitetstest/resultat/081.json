@@ -1,5 +1,5 @@
 {
-  "analysis_id": "f46f374d-8a98-4b33-9858-75c9aae16305",
+  "analysis_id": "8a554f43-3e2f-401c-a640-6acff06bbd64",
   "company_name": "Underlagsbolaget AB",
   "fiscal_year": "2025",
   "rule_set_version": "se-2025.1",
@@ -84,5 +84,5 @@
     "action_plan": []
   },
   "disclaimer": "Skattjakt är ett analys- och upptäcktsverktyg. Resultaten är preliminära och ska inte betraktas som juridisk rådgivning, revisionsuttalande, skattebesked eller garanti om skatteåterbäring eller besparing. Identifierade möjligheter bör verifieras mot aktuella regler och företagets fullständiga underlag innan någon åtgärd vidtas.",
-  "generated_at": "2026-08-24T03:56:51.638520762Z"
+  "generated_at": "2026-08-24T07:53:42.303449702Z"
 }

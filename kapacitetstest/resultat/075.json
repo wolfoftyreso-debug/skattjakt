@@ -1,5 +1,5 @@
 {
-  "analysis_id": "c82ec48d-80d9-4a17-bdd8-f5e7d3879b2e",
+  "analysis_id": "980b25a5-2b46-4f23-aac3-8a18268e586e",
   "company_name": "Underlagsbolaget AB",
   "fiscal_year": "2025",
   "rule_set_version": "se-2025.1",
@@ -8,8 +8,8 @@
       "headline": "Vi hittade 5 saker som kan vara värda att undersöka.",
       "found_count": 5,
       "high_priority_count": 0,
-      "should_investigate_count": 5,
-      "needs_more_evidence_count": 0,
+      "should_investigate_count": 4,
+      "needs_more_evidence_count": 1,
       "warnings_count": 0,
       "areas_checked": [
         {
@@ -204,17 +204,17 @@
       {
         "title": "Skattemässigt avskrivningsutrymme på inventarier",
         "category": "Investeringar",
-        "status": "verify",
-        "status_label": "Verifiera",
+        "status": "investigate",
+        "status_label": "Undersök",
         "impact": {
           "low": 0,
-          "high": 14832000
+          "high": 0
         },
-        "impact_display": "0,00 kr–148 320,00 kr",
+        "impact_display": "Ingen beräknad ekonomisk effekt",
         "effect": "reduction",
-        "confidence": 75,
-        "priority_band": "should_investigate",
-        "rationale": "Vid räkenskapsenlig avskrivning får inventarier skrivas av med upp till 30 procent av avskrivningsunderlaget enligt huvudregeln. Om den bokförda avskrivningen är lägre kan det finnas ett outnyttjat skattemässigt utrymme. Utrymmet beräknas på inventarier, inte på byggnader och mark.",
+        "confidence": 41,
+        "priority_band": "needs_more_evidence",
+        "rationale": "Vid räkenskapsenlig avskrivning får inventarier skrivas av med upp till 30 procent av avskrivningsunderlaget enligt huvudregeln. Om den bokförda avskrivningen är lägre kan det finnas ett outnyttjat skattemässigt utrymme. Utrymmet beräknas på inventarier, inte på byggnader och mark. det saknas underlag för att avgöra om regeln är tillämplig.",
         "recommended_action": "Be din redovisningskonsult stämma av det skattemässiga avskrivningsunderlaget mot anläggningsregistret och bedöma om överavskrivning är aktuell.",
         "missing_information": [
           "Uppgift om årets avskrivningar saknas i underlaget.",
@@ -318,10 +318,10 @@
     "economic_potential": {
       "total": {
         "low": 0,
-        "high": 14832000
+        "high": 0
       },
-      "display": "0,00 kr–148 320,00 kr",
-      "note": "Ett intervall, inte ett besked. Beloppen bygger på det underlag som lämnats och ska verifieras innan någon åtgärd vidtas.",
+      "display": "0,00 kr",
+      "note": "Ingen beräknad sänkning av skatten på det underlag som lämnats.",
       "deferred": {
         "low": 0,
         "high": 13390000
@@ -366,7 +366,7 @@
       ],
       "assumptions": [
         "Avdragsramen beräknas per anställd och har ett tak uttryckt i prisbasbelopp; ingen av delarna går att härleda ur den samlade lönesumman. Regeln flaggar därför utan belopp.",
-        "Avskrivningsunderlaget är det skattemässiga värdet på inventarierna, inte det bokförda. Regeln räknar på bokfört värde och ger därför ett tak, inte ett besked.",
+        "Avskrivningsunderlaget är det skattemässiga värdet på inventarierna, inte det bokförda. Regeln räknar på bokfört värde och ger därför ett tak, inte ett besked. Den kräver dessutom att årets avskrivning går att läsa: utan den raden är taket hela 30 procent, vilket är ett större tal och inte ett sannare.",
         "Avsättningsunderlaget är överskottet före avsättning; regeln approximerar detta med det skattemässiga resultatet och behöver verifieras mot deklarationsunderlaget.",
         "Regeln kan bara flagga att en genomgång behövs. Utan anläggningsregister går det inte att avgöra hur enskilda inventarier ska klassificeras, och något belopp beräknas därför inte.",
         "Regeln kan inte se representationskonton i ett bokslut på översiktsnivå och fungerar därför som en generell kontrollpunkt med låg relevansvikt."
@@ -387,17 +387,6 @@
     "action_plan": [
       {
         "order": 1,
-        "action": "Be din redovisningskonsult stämma av det skattemässiga avskrivningsunderlaget mot anläggningsregistret och bedöma om överavskrivning är aktuell.",
-        "title": "Skattemässigt avskrivningsutrymme på inventarier",
-        "priority_band": "should_investigate",
-        "impact": {
-          "low": 0,
-          "high": 14832000
-        },
-        "is_control": false
-      },
-      {
-        "order": 2,
         "action": "Fråga din redovisningskonsult om avsättning till periodiseringsfond bör göras innan deklarationen färdigställs, och väg uppskovet mot schablonintäkten och mot kommande års återföringar.",
         "title": "Periodiseringsfond",
         "priority_band": "should_investigate",
@@ -408,7 +397,7 @@
         "is_control": false
       },
       {
-        "order": 3,
+        "order": 2,
         "action": "Stäm av representationskontona mot underlagen och kontrollera att den ej avdragsgilla delen justerats i deklarationen.",
         "title": "Representation",
         "priority_band": "should_investigate",
@@ -416,7 +405,7 @@
         "is_control": false
       },
       {
-        "order": 4,
+        "order": 3,
         "action": "Gå igenom årets aktiverade inköp och kontrollera om något understiger ett halvt prisbasbelopp och därmed kunde ha dragits av direkt.",
         "title": "Inventarier av mindre värde",
         "priority_band": "should_investigate",
@@ -424,15 +413,23 @@
         "is_control": false
       },
       {
-        "order": 5,
+        "order": 4,
         "action": "Diskutera med din redovisningskonsult om bolagets pensionslösning utnyttjar avdragsutrymmet, och vad det skulle kosta respektive spara.",
         "title": "Avdrag för pensionskostnader",
         "priority_band": "should_investigate",
         "impact": null,
         "is_control": false
+      },
+      {
+        "order": 5,
+        "action": "Be din redovisningskonsult stämma av det skattemässiga avskrivningsunderlaget mot anläggningsregistret och bedöma om överavskrivning är aktuell.",
+        "title": "Skattemässigt avskrivningsutrymme på inventarier",
+        "priority_band": "needs_more_evidence",
+        "impact": null,
+        "is_control": true
       }
     ]
   },
   "disclaimer": "Skattjakt är ett analys- och upptäcktsverktyg. Resultaten är preliminära och ska inte betraktas som juridisk rådgivning, revisionsuttalande, skattebesked eller garanti om skatteåterbäring eller besparing. Identifierade möjligheter bör verifieras mot aktuella regler och företagets fullständiga underlag innan någon åtgärd vidtas.",
-  "generated_at": "2026-08-24T03:56:51.611962297Z"
+  "generated_at": "2026-08-24T07:53:42.278441999Z"
 }

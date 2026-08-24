@@ -1,5 +1,5 @@
 {
-  "analysis_id": "42da8343-dabd-4293-98c4-abdc5527f867",
+  "analysis_id": "8efc9b3c-c798-4d74-a6cf-70980b1c501d",
   "company_name": "Fastighetsbolag AB",
   "fiscal_year": "2025",
   "rule_set_version": "se-2025.1",
@@ -451,5 +451,5 @@
     ]
   },
   "disclaimer": "Skattjakt är ett analys- och upptäcktsverktyg. Resultaten är preliminära och ska inte betraktas som juridisk rådgivning, revisionsuttalande, skattebesked eller garanti om skatteåterbäring eller besparing. Identifierade möjligheter bör verifieras mot aktuella regler och företagets fullständiga underlag innan någon åtgärd vidtas.",
-  "generated_at": "2026-08-24T03:56:51.314424656Z"
+  "generated_at": "2026-08-24T07:53:41.981986611Z"
 }

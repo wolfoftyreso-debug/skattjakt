@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use skattjakt_core::{FactKind, Money, MoneyRange};
 use thiserror::Error;
 
-use crate::condition::{EvalContext, Truth};
+use crate::condition::{Condition, EvalContext, Truth};
 use crate::expr::{EvalError, Expr, TaxYearConstants};
 use crate::rule::{
     CalculationInputRecord, CalculationRecord, ImpactSpec, Rule, RuleEvaluation, RuleOutcome,
@@ -32,6 +32,43 @@ pub struct RuleSet {
 }
 
 impl RuleSet {
+    /// The profile fields at least one rule actually reads.
+    ///
+    /// The report used to tell a customer their profile was incomplete and that
+    /// answering more would let more rules be tested, counting every unanswered
+    /// field. Four of them — `owns_premises`, `operations_outside_sweden`,
+    /// `employee_count`, `industry` — are read by no rule in the shipped set,
+    /// so for those the claim was simply untrue. Asking the set rather than
+    /// listing names here means the sentence becomes true again by itself the
+    /// day somebody writes a rule that reads one.
+    pub fn profile_fields_read(&self) -> std::collections::BTreeSet<&'static str> {
+        fn walk(c: &Condition, out: &mut std::collections::BTreeSet<&'static str>) {
+            match c {
+                Condition::Profile { flag, .. } => {
+                    out.insert(flag.field_name());
+                }
+                Condition::ProfileNumber { field, .. } => {
+                    out.insert(field.field_name());
+                }
+                Condition::All { of } | Condition::Any { of } => {
+                    for inner in of {
+                        walk(inner, out);
+                    }
+                }
+                Condition::Not { of } => walk(of, out),
+                _ => {}
+            }
+        }
+        let mut out = std::collections::BTreeSet::new();
+        for rule in &self.rules {
+            walk(&rule.conditions, &mut out);
+            for exception in &rule.exceptions {
+                walk(&exception.when, &mut out);
+            }
+        }
+        out
+    }
+
     pub fn source_by_id(&self, id: &str) -> Option<&Source> {
         self.sources.get(id)
     }

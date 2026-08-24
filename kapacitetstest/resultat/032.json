@@ -1,5 +1,5 @@
 {
-  "analysis_id": "3ad694ed-51fb-457d-9784-8f73bf47b779",
+  "analysis_id": "0bec5229-d284-4e4b-95ed-b3e8e562cdd8",
   "company_name": "Restaurang AB",
   "fiscal_year": "2025",
   "rule_set_version": "se-2025.1",
@@ -726,7 +726,7 @@
       ],
       "assumptions": [
         "Avdragsramen beräknas per anställd och har ett tak uttryckt i prisbasbelopp; ingen av delarna går att härleda ur den samlade lönesumman. Regeln flaggar därför utan belopp.",
-        "Avskrivningsunderlaget är det skattemässiga värdet på inventarierna, inte det bokförda. Regeln räknar på bokfört värde och ger därför ett tak, inte ett besked.",
+        "Avskrivningsunderlaget är det skattemässiga värdet på inventarierna, inte det bokförda. Regeln räknar på bokfört värde och ger därför ett tak, inte ett besked. Den kräver dessutom att årets avskrivning går att läsa: utan den raden är taket hela 30 procent, vilket är ett större tal och inte ett sannare.",
         "Avsättningsunderlaget är överskottet före avsättning; regeln approximerar detta med det skattemässiga resultatet och behöver verifieras mot deklarationsunderlaget.",
         "Regeln flaggar endast att en kontroll behövs; den beräknar inte återföringsbelopp eftersom avsättningsår saknas i bokslutet.",
         "Regeln jämför bruttoräntekostnad mot förenklingsregeln eftersom räntenetto sällan framgår av bokslutet. Det gör flaggan försiktig men inte exakt.",
@@ -833,5 +833,5 @@
     ]
   },
   "disclaimer": "Skattjakt är ett analys- och upptäcktsverktyg. Resultaten är preliminära och ska inte betraktas som juridisk rådgivning, revisionsuttalande, skattebesked eller garanti om skatteåterbäring eller besparing. Identifierade möjligheter bör verifieras mot aktuella regler och företagets fullständiga underlag innan någon åtgärd vidtas.",
-  "generated_at": "2026-08-24T03:56:51.420233790Z"
+  "generated_at": "2026-08-24T07:53:42.083991858Z"
 }

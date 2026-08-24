@@ -186,6 +186,48 @@ mod embedded_tests {
 
 #[cfg(test)]
 mod shipped_set_invariants {
+    /// Whether the condition tree requires this fact to be present at all.
+    ///
+    /// Walks the tree instead of matching the serialised text: field order in a
+    /// serialisation is not something a test should depend on, and the first
+    /// version of this one passed for the wrong reason.
+    fn requires_fact(node: &serde_json::Value, fact: &str) -> bool {
+        match node {
+            serde_json::Value::Object(map) => {
+                if map.get("type").and_then(|v| v.as_str()) == Some("fact_present")
+                    && map.get("fact").and_then(|v| v.as_str()) == Some(fact)
+                {
+                    return true;
+                }
+                map.values().any(|v| requires_fact(v, fact))
+            }
+            serde_json::Value::Array(items) => items.iter().any(|v| requires_fact(v, fact)),
+            _ => false,
+        }
+    }
+
+    /// Every `fact_or_zero` anywhere in an expression tree.
+    fn collect_fact_or_zero(node: &serde_json::Value, out: &mut Vec<String>) {
+        match node {
+            serde_json::Value::Object(map) => {
+                if map.get("op").and_then(|v| v.as_str()) == Some("fact_or_zero") {
+                    if let Some(f) = map.get("fact").and_then(|v| v.as_str()) {
+                        out.push(f.to_string());
+                    }
+                }
+                for v in map.values() {
+                    collect_fact_or_zero(v, out);
+                }
+            }
+            serde_json::Value::Array(items) => {
+                for v in items {
+                    collect_fact_or_zero(v, out);
+                }
+            }
+            _ => {}
+        }
+    }
+
     use crate::rule::ImpactSpec;
     use crate::RuleEngine;
 
@@ -202,6 +244,45 @@ mod shipped_set_invariants {
             match &rule.impact {
                 ImpactSpec::None => {}
                 ImpactSpec::Range { .. } => {}
+            }
+        }
+    }
+
+    /// A rule may not subtract a value it could not read.
+    ///
+    /// `fact_or_zero` is right for a line that only exists when it happened —
+    /// an allocation to a periodiseringsfond, a group contribution. It is wrong
+    /// for a line every complete statement carries, because absence there means
+    /// the document was not fully read, and reading it as zero makes every
+    /// subtraction from it larger. The depreciation rule did exactly that: the
+    /// same company reported 0–70 040 kr with its depreciation line and
+    /// 0–148 320 kr without it.
+    ///
+    /// `FactKind::absence_means_zero` carries the distinction; this holds the
+    /// shipped rule set to it, because the rule set is data and data is where
+    /// the next `fact_or_zero` will be written.
+    #[test]
+    fn no_rule_treats_an_unreadable_mandatory_line_as_zero() {
+        let engine = RuleEngine::load_embedded().unwrap();
+        for rule in engine.set().rules.iter() {
+            let impact = serde_json::to_value(&rule.impact).unwrap();
+            let conditions = serde_json::to_value(&rule.conditions).unwrap();
+            let mut lenient = Vec::new();
+            collect_fact_or_zero(&impact, &mut lenient);
+            collect_fact_or_zero(&conditions, &mut lenient);
+
+            for fact in lenient {
+                let kind: skattjakt_core::FactKind =
+                    serde_json::from_value(serde_json::Value::String(fact.clone())).unwrap();
+                if kind.absence_means_zero() {
+                    continue;
+                }
+                assert!(
+                    requires_fact(&conditions, &fact),
+                    "{} reads {fact} with fact_or_zero without requiring it; a document \
+                     that did not yield {fact} would make the finding bigger, not absent",
+                    rule.rule_id
+                );
             }
         }
     }

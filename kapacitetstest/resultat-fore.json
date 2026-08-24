@@ -45,7 +45,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 23355
+  "raw_len": 23211
  },
  {
   "id": "002",
@@ -53,7 +53,7 @@
   "name": "Verkstadsbolag — normalår",
   "expect": "fynd som passar branschen; fastighetsbolaget ska INTE få avskrivningsutrymme på byggnaden",
   "exit": 0,
-  "ms": 5,
+  "ms": 3,
   "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn",
   "ok": true,
   "findings": 6,
@@ -93,7 +93,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 25156
+  "raw_len": 25012
  },
  {
   "id": "003",
@@ -101,7 +101,7 @@
   "name": "E-handel — normalår",
   "expect": "fynd som passar branschen; fastighetsbolaget ska INTE få avskrivningsutrymme på byggnaden",
   "exit": 0,
-  "ms": 4,
+  "ms": 3,
   "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn",
   "ok": true,
   "findings": 6,
@@ -141,7 +141,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 25128
+  "raw_len": 24984
  },
  {
   "id": "004",
@@ -191,7 +191,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 28250
+  "raw_len": 28106
  },
  {
   "id": "005",
@@ -242,7 +242,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 25873
+  "raw_len": 25729
  },
  {
   "id": "006",
@@ -290,7 +290,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 23377
+  "raw_len": 23233
  },
  {
   "id": "007",
@@ -341,7 +341,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 27649
+  "raw_len": 27505
  },
  {
   "id": "008",
@@ -389,7 +389,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 23370
+  "raw_len": 23226
  },
  {
   "id": "009",
@@ -441,7 +441,7 @@
   "name": "Tandläkarmottagning — normalår",
   "expect": "fynd som passar branschen; fastighetsbolaget ska INTE få avskrivningsutrymme på byggnaden",
   "exit": 0,
-  "ms": 4,
+  "ms": 3,
   "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn",
   "ok": true,
   "findings": 6,
@@ -481,7 +481,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 23393
+  "raw_len": 23249
  },
  {
   "id": "011",
@@ -489,7 +489,7 @@
   "name": "Konsultbyrå — förlustår",
   "expect": "inget skattemässigt överskott — periodiseringsfond ska inte slå till",
   "exit": 0,
-  "ms": 3,
+  "ms": 4,
   "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn",
   "ok": true,
   "findings": 5,
@@ -526,7 +526,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 20107
+  "raw_len": 19963
  },
  {
   "id": "012",
@@ -534,7 +534,7 @@
   "name": "Verkstadsbolag — förlustår",
   "expect": "inget skattemässigt överskott — periodiseringsfond ska inte slå till",
   "exit": 0,
-  "ms": 3,
+  "ms": 4,
   "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn",
   "ok": true,
   "findings": 5,
@@ -571,7 +571,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 20154
+  "raw_len": 20010
  },
  {
   "id": "013",
@@ -579,7 +579,7 @@
   "name": "E-handel — förlustår",
   "expect": "inget skattemässigt överskott — periodiseringsfond ska inte slå till",
   "exit": 0,
-  "ms": 3,
+  "ms": 4,
   "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn",
   "ok": true,
   "findings": 5,
@@ -616,7 +616,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 20114
+  "raw_len": 19970
  },
  {
   "id": "014",
@@ -661,7 +661,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 20137
+  "raw_len": 19993
  },
  {
   "id": "015",
@@ -706,7 +706,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 20131
+  "raw_len": 19987
  },
  {
   "id": "016",
@@ -751,7 +751,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 20125
+  "raw_len": 19981
  },
  {
   "id": "017",
@@ -796,7 +796,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 20145
+  "raw_len": 20001
  },
  {
   "id": "018",
@@ -841,7 +841,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 20118
+  "raw_len": 19974
  },
  {
   "id": "019",
@@ -890,7 +890,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 22930
+  "raw_len": 22786
  },
  {
   "id": "020",
@@ -898,7 +898,7 @@
   "name": "Verkstadsbolag — nollresultat med obeskattade reserver",
   "expect": "noll i underlag, men reserver utan specifikation — riskregeln ska slå till",
   "exit": 0,
-  "ms": 3,
+  "ms": 4,
   "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn",
   "ok": true,
   "findings": 6,
@@ -939,7 +939,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 22997
+  "raw_len": 22853
  },
  {
   "id": "021",
@@ -947,7 +947,7 @@
   "name": "E-handel — nollresultat med obeskattade reserver",
   "expect": "noll i underlag, men reserver utan specifikation — riskregeln ska slå till",
   "exit": 0,
-  "ms": 3,
+  "ms": 4,
   "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn",
   "ok": true,
   "findings": 6,
@@ -988,7 +988,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 22937
+  "raw_len": 22793
  },
  {
   "id": "022",
@@ -996,7 +996,7 @@
   "name": "Utvecklingsbolag — nollresultat med obeskattade reserver",
   "expect": "noll i underlag, men reserver utan specifikation — riskregeln ska slå till",
   "exit": 0,
-  "ms": 3,
+  "ms": 4,
   "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn",
   "ok": true,
   "findings": 6,
@@ -1037,7 +1037,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 22960
+  "raw_len": 22816
  },
  {
   "id": "023",
@@ -1045,7 +1045,7 @@
   "name": "Åkeri — nollresultat med obeskattade reserver",
   "expect": "noll i underlag, men reserver utan specifikation — riskregeln ska slå till",
   "exit": 0,
-  "ms": 3,
+  "ms": 4,
   "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn",
   "ok": true,
   "findings": 6,
@@ -1086,7 +1086,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 22954
+  "raw_len": 22810
  },
  {
   "id": "024",
@@ -1135,7 +1135,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 22948
+  "raw_len": 22804
  },
  {
   "id": "025",
@@ -1143,7 +1143,7 @@
   "name": "Byggföretag — nollresultat med obeskattade reserver",
   "expect": "noll i underlag, men reserver utan specifikation — riskregeln ska slå till",
   "exit": 0,
-  "ms": 3,
+  "ms": 4,
   "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn",
   "ok": true,
   "findings": 6,
@@ -1184,7 +1184,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 22968
+  "raw_len": 22824
  },
  {
   "id": "026",
@@ -1233,7 +1233,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 22941
+  "raw_len": 22797
  },
  {
   "id": "027",
@@ -1241,7 +1241,7 @@
   "name": "Konsultbyrå — rekordår efter tidigare underskott",
   "expect": "underskott att kvitta, befintlig fond att återföra, och räntekostnader över förenklingsregelns fem miljoner — tre regler som annars aldrig prövas",
   "exit": 0,
-  "ms": 5,
+  "ms": 3,
   "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn",
   "ok": true,
   "findings": 9,
@@ -1291,7 +1291,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 35759
+  "raw_len": 35615
  },
  {
   "id": "028",
@@ -1299,7 +1299,7 @@
   "name": "Verkstadsbolag — rekordår efter tidigare underskott",
   "expect": "underskott att kvitta, befintlig fond att återföra, och räntekostnader över förenklingsregelns fem miljoner — tre regler som annars aldrig prövas",
   "exit": 0,
-  "ms": 4,
+  "ms": 3,
   "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn",
   "ok": true,
   "findings": 9,
@@ -1349,7 +1349,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 37514
+  "raw_len": 37370
  },
  {
   "id": "029",
@@ -1357,7 +1357,7 @@
   "name": "E-handel — rekordår efter tidigare underskott",
   "expect": "underskott att kvitta, befintlig fond att återföra, och räntekostnader över förenklingsregelns fem miljoner — tre regler som annars aldrig prövas",
   "exit": 0,
-  "ms": 4,
+  "ms": 3,
   "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn",
   "ok": true,
   "findings": 9,
@@ -1407,7 +1407,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 37482
+  "raw_len": 37338
  },
  {
   "id": "030",
@@ -1465,7 +1465,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 37521
+  "raw_len": 37377
  },
  {
   "id": "031",
@@ -1523,7 +1523,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 37499
+  "raw_len": 37355
  },
  {
   "id": "032",
@@ -1581,7 +1581,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 35779
+  "raw_len": 35635
  },
  {
   "id": "033",
@@ -1589,7 +1589,7 @@
   "name": "Byggföretag — rekordår efter tidigare underskott",
   "expect": "underskott att kvitta, befintlig fond att återföra, och räntekostnader över förenklingsregelns fem miljoner — tre regler som annars aldrig prövas",
   "exit": 0,
-  "ms": 4,
+  "ms": 3,
   "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn",
   "ok": true,
   "findings": 9,
@@ -1639,7 +1639,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 37525
+  "raw_len": 37381
  },
  {
   "id": "034",
@@ -1697,7 +1697,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 37474
+  "raw_len": 37330
  },
  {
   "id": "035",
@@ -1705,7 +1705,7 @@
   "name": "Profil: alla frågor obesvarade",
   "expect": "identiskt bokslut — skillnaden i utfall är profilens och bara profilens",
   "exit": 0,
-  "ms": 3,
+  "ms": 4,
   "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn",
   "ok": true,
   "findings": 9,
@@ -1752,7 +1752,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 32978
+  "raw_len": 32842
  },
  {
   "id": "036",
@@ -1760,7 +1760,7 @@
   "name": "Profil: ensam ägare, aktiv",
   "expect": "identiskt bokslut — skillnaden i utfall är profilens och bara profilens",
   "exit": 0,
-  "ms": 3,
+  "ms": 4,
   "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn",
   "ok": true,
   "findings": 9,
@@ -1795,7 +1795,7 @@
   "deferred_low": 0,
   "deferred_high": 13390000,
   "warnings": [],
-  "missing": 27,
+  "missing": 28,
   "facts": [
    "depreciation",
    "equipment",
@@ -1807,7 +1807,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 32306
+  "raw_len": 32354
  },
  {
   "id": "037",
@@ -1850,7 +1850,7 @@
   "deferred_low": 0,
   "deferred_high": 13390000,
   "warnings": [],
-  "missing": 27,
+  "missing": 28,
   "facts": [
    "depreciation",
    "equipment",
@@ -1862,7 +1862,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 32306
+  "raw_len": 32354
  },
  {
   "id": "038",
@@ -1870,7 +1870,7 @@
   "name": "Profil: fyra ägare, aktiva",
   "expect": "identiskt bokslut — skillnaden i utfall är profilens och bara profilens",
   "exit": 0,
-  "ms": 3,
+  "ms": 4,
   "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn",
   "ok": true,
   "findings": 9,
@@ -1905,7 +1905,7 @@
   "deferred_low": 0,
   "deferred_high": 13390000,
   "warnings": [],
-  "missing": 27,
+  "missing": 28,
   "facts": [
    "depreciation",
    "equipment",
@@ -1917,7 +1917,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 32306
+  "raw_len": 32354
  },
  {
   "id": "039",
@@ -1925,7 +1925,7 @@
   "name": "Profil: fem ägare — över fåmansgränsen",
   "expect": "identiskt bokslut — skillnaden i utfall är profilens och bara profilens",
   "exit": 0,
-  "ms": 3,
+  "ms": 4,
   "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn",
   "ok": true,
   "findings": 8,
@@ -1958,7 +1958,7 @@
   "deferred_low": 0,
   "deferred_high": 13390000,
   "warnings": [],
-  "missing": 24,
+  "missing": 25,
   "facts": [
    "depreciation",
    "equipment",
@@ -1970,7 +1970,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 27895
+  "raw_len": 27943
  },
  {
   "id": "040",
@@ -2011,7 +2011,7 @@
   "deferred_low": 0,
   "deferred_high": 13390000,
   "warnings": [],
-  "missing": 24,
+  "missing": 25,
   "facts": [
    "depreciation",
    "equipment",
@@ -2023,7 +2023,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 27895
+  "raw_len": 27943
  },
  {
   "id": "041",
@@ -2064,7 +2064,7 @@
   "deferred_low": 0,
   "deferred_high": 13390000,
   "warnings": [],
-  "missing": 24,
+  "missing": 25,
   "facts": [
    "depreciation",
    "equipment",
@@ -2076,226 +2076,12 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 27895
+  "raw_len": 27943
  },
  {
   "id": "042",
   "group": "B",
   "name": "Profil: i koncern",
-  "expect": "identiskt bokslut — skillnaden i utfall är profilens och bara profilens",
-  "exit": 0,
-  "ms": 3,
-  "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn",
-  "ok": true,
-  "findings": 9,
-  "rules": [
-   "se.costs.inventarier.mindre_varde",
-   "se.costs.representation",
-   "se.investments.inventarier.avskrivningsutrymme",
-   "se.personnel.pension.avdragsutrymme",
-   "se.rnd.forskningsavdrag",
-   "se.tax.k10.lonekrav",
-   "se.tax.koncernbidrag",
-   "se.tax.periodiseringsfond.outnyttjat_utrymme",
-   "se.vat.personbil.leasing"
-  ],
-  "titles": [
-   "Löneuttag för huvudregeln i fåmansföretag",
-   "Representation",
-   "Koncernbidrag",
-   "Nedsättning av arbetsgivaravgifter för forskning och utveckling",
-   "Periodiseringsfond",
-   "Inventarier av mindre värde",
-   "Avdrag för pensionskostnader",
-   "Moms på leasing av personbil",
-   "Skattemässigt avskrivningsutrymme på inventarier"
-  ],
-  "statuses": [
-   "Undersök",
-   "Verifiera"
-  ],
-  "lower_low": 0,
-  "lower_high": 7004000,
-  "deferred_low": 0,
-  "deferred_high": 13390000,
-  "warnings": [],
-  "missing": 26,
-  "facts": [
-   "depreciation",
-   "equipment",
-   "external_costs",
-   "fixed_assets",
-   "pension_costs",
-   "personnel_costs",
-   "taxable_result",
-   "wages"
-  ],
-  "limitations": 4,
-  "raw_len": 31981
- },
- {
-  "id": "043",
-  "group": "B",
-  "name": "Profil: ej i koncern",
-  "expect": "identiskt bokslut — skillnaden i utfall är profilens och bara profilens",
-  "exit": 0,
-  "ms": 3,
-  "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn",
-  "ok": true,
-  "findings": 8,
-  "rules": [
-   "se.costs.inventarier.mindre_varde",
-   "se.costs.representation",
-   "se.investments.inventarier.avskrivningsutrymme",
-   "se.personnel.pension.avdragsutrymme",
-   "se.rnd.forskningsavdrag",
-   "se.tax.k10.lonekrav",
-   "se.tax.periodiseringsfond.outnyttjat_utrymme",
-   "se.vat.personbil.leasing"
-  ],
-  "titles": [
-   "Löneuttag för huvudregeln i fåmansföretag",
-   "Representation",
-   "Nedsättning av arbetsgivaravgifter för forskning och utveckling",
-   "Periodiseringsfond",
-   "Inventarier av mindre värde",
-   "Avdrag för pensionskostnader",
-   "Moms på leasing av personbil",
-   "Skattemässigt avskrivningsutrymme på inventarier"
-  ],
-  "statuses": [
-   "Undersök",
-   "Verifiera"
-  ],
-  "lower_low": 0,
-  "lower_high": 7004000,
-  "deferred_low": 0,
-  "deferred_high": 13390000,
-  "warnings": [],
-  "missing": 24,
-  "facts": [
-   "depreciation",
-   "equipment",
-   "external_costs",
-   "fixed_assets",
-   "pension_costs",
-   "personnel_costs",
-   "taxable_result",
-   "wages"
-  ],
-  "limitations": 4,
-  "raw_len": 29629
- },
- {
-  "id": "044",
-  "group": "B",
-  "name": "Profil: ägarförändring senaste fem åren",
-  "expect": "identiskt bokslut — skillnaden i utfall är profilens och bara profilens",
-  "exit": 0,
-  "ms": 3,
-  "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn",
-  "ok": true,
-  "findings": 8,
-  "rules": [
-   "se.costs.inventarier.mindre_varde",
-   "se.costs.representation",
-   "se.investments.inventarier.avskrivningsutrymme",
-   "se.personnel.pension.avdragsutrymme",
-   "se.rnd.forskningsavdrag",
-   "se.tax.k10.lonekrav",
-   "se.tax.periodiseringsfond.outnyttjat_utrymme",
-   "se.vat.personbil.leasing"
-  ],
-  "titles": [
-   "Löneuttag för huvudregeln i fåmansföretag",
-   "Representation",
-   "Nedsättning av arbetsgivaravgifter för forskning och utveckling",
-   "Periodiseringsfond",
-   "Inventarier av mindre värde",
-   "Avdrag för pensionskostnader",
-   "Moms på leasing av personbil",
-   "Skattemässigt avskrivningsutrymme på inventarier"
-  ],
-  "statuses": [
-   "Undersök",
-   "Verifiera"
-  ],
-  "lower_low": 0,
-  "lower_high": 7004000,
-  "deferred_low": 0,
-  "deferred_high": 13390000,
-  "warnings": [],
-  "missing": 25,
-  "facts": [
-   "depreciation",
-   "equipment",
-   "external_costs",
-   "fixed_assets",
-   "pension_costs",
-   "personnel_costs",
-   "taxable_result",
-   "wages"
-  ],
-  "limitations": 4,
-  "raw_len": 30117
- },
- {
-  "id": "045",
-  "group": "B",
-  "name": "Profil: ingen ägarförändring",
-  "expect": "identiskt bokslut — skillnaden i utfall är profilens och bara profilens",
-  "exit": 0,
-  "ms": 4,
-  "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn",
-  "ok": true,
-  "findings": 8,
-  "rules": [
-   "se.costs.inventarier.mindre_varde",
-   "se.costs.representation",
-   "se.investments.inventarier.avskrivningsutrymme",
-   "se.personnel.pension.avdragsutrymme",
-   "se.rnd.forskningsavdrag",
-   "se.tax.k10.lonekrav",
-   "se.tax.periodiseringsfond.outnyttjat_utrymme",
-   "se.vat.personbil.leasing"
-  ],
-  "titles": [
-   "Löneuttag för huvudregeln i fåmansföretag",
-   "Representation",
-   "Nedsättning av arbetsgivaravgifter för forskning och utveckling",
-   "Periodiseringsfond",
-   "Inventarier av mindre värde",
-   "Avdrag för pensionskostnader",
-   "Moms på leasing av personbil",
-   "Skattemässigt avskrivningsutrymme på inventarier"
-  ],
-  "statuses": [
-   "Undersök",
-   "Verifiera"
-  ],
-  "lower_low": 0,
-  "lower_high": 7004000,
-  "deferred_low": 0,
-  "deferred_high": 13390000,
-  "warnings": [],
-  "missing": 25,
-  "facts": [
-   "depreciation",
-   "equipment",
-   "external_costs",
-   "fixed_assets",
-   "pension_costs",
-   "personnel_costs",
-   "taxable_result",
-   "wages"
-  ],
-  "limitations": 4,
-  "raw_len": 30117
- },
- {
-  "id": "046",
-  "group": "B",
-  "name": "Profil: ägarförändring OCH koncern",
   "expect": "identiskt bokslut — skillnaden i utfall är profilens och bara profilens",
   "exit": 0,
   "ms": 4,
@@ -2345,7 +2131,221 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 32469
+  "raw_len": 32029
+ },
+ {
+  "id": "043",
+  "group": "B",
+  "name": "Profil: ej i koncern",
+  "expect": "identiskt bokslut — skillnaden i utfall är profilens och bara profilens",
+  "exit": 0,
+  "ms": 4,
+  "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn",
+  "ok": true,
+  "findings": 8,
+  "rules": [
+   "se.costs.inventarier.mindre_varde",
+   "se.costs.representation",
+   "se.investments.inventarier.avskrivningsutrymme",
+   "se.personnel.pension.avdragsutrymme",
+   "se.rnd.forskningsavdrag",
+   "se.tax.k10.lonekrav",
+   "se.tax.periodiseringsfond.outnyttjat_utrymme",
+   "se.vat.personbil.leasing"
+  ],
+  "titles": [
+   "Löneuttag för huvudregeln i fåmansföretag",
+   "Representation",
+   "Nedsättning av arbetsgivaravgifter för forskning och utveckling",
+   "Periodiseringsfond",
+   "Inventarier av mindre värde",
+   "Avdrag för pensionskostnader",
+   "Moms på leasing av personbil",
+   "Skattemässigt avskrivningsutrymme på inventarier"
+  ],
+  "statuses": [
+   "Undersök",
+   "Verifiera"
+  ],
+  "lower_low": 0,
+  "lower_high": 7004000,
+  "deferred_low": 0,
+  "deferred_high": 13390000,
+  "warnings": [],
+  "missing": 25,
+  "facts": [
+   "depreciation",
+   "equipment",
+   "external_costs",
+   "fixed_assets",
+   "pension_costs",
+   "personnel_costs",
+   "taxable_result",
+   "wages"
+  ],
+  "limitations": 4,
+  "raw_len": 29677
+ },
+ {
+  "id": "044",
+  "group": "B",
+  "name": "Profil: ägarförändring senaste fem åren",
+  "expect": "identiskt bokslut — skillnaden i utfall är profilens och bara profilens",
+  "exit": 0,
+  "ms": 4,
+  "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn",
+  "ok": true,
+  "findings": 8,
+  "rules": [
+   "se.costs.inventarier.mindre_varde",
+   "se.costs.representation",
+   "se.investments.inventarier.avskrivningsutrymme",
+   "se.personnel.pension.avdragsutrymme",
+   "se.rnd.forskningsavdrag",
+   "se.tax.k10.lonekrav",
+   "se.tax.periodiseringsfond.outnyttjat_utrymme",
+   "se.vat.personbil.leasing"
+  ],
+  "titles": [
+   "Löneuttag för huvudregeln i fåmansföretag",
+   "Representation",
+   "Nedsättning av arbetsgivaravgifter för forskning och utveckling",
+   "Periodiseringsfond",
+   "Inventarier av mindre värde",
+   "Avdrag för pensionskostnader",
+   "Moms på leasing av personbil",
+   "Skattemässigt avskrivningsutrymme på inventarier"
+  ],
+  "statuses": [
+   "Undersök",
+   "Verifiera"
+  ],
+  "lower_low": 0,
+  "lower_high": 7004000,
+  "deferred_low": 0,
+  "deferred_high": 13390000,
+  "warnings": [],
+  "missing": 26,
+  "facts": [
+   "depreciation",
+   "equipment",
+   "external_costs",
+   "fixed_assets",
+   "pension_costs",
+   "personnel_costs",
+   "taxable_result",
+   "wages"
+  ],
+  "limitations": 4,
+  "raw_len": 30165
+ },
+ {
+  "id": "045",
+  "group": "B",
+  "name": "Profil: ingen ägarförändring",
+  "expect": "identiskt bokslut — skillnaden i utfall är profilens och bara profilens",
+  "exit": 0,
+  "ms": 3,
+  "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn",
+  "ok": true,
+  "findings": 8,
+  "rules": [
+   "se.costs.inventarier.mindre_varde",
+   "se.costs.representation",
+   "se.investments.inventarier.avskrivningsutrymme",
+   "se.personnel.pension.avdragsutrymme",
+   "se.rnd.forskningsavdrag",
+   "se.tax.k10.lonekrav",
+   "se.tax.periodiseringsfond.outnyttjat_utrymme",
+   "se.vat.personbil.leasing"
+  ],
+  "titles": [
+   "Löneuttag för huvudregeln i fåmansföretag",
+   "Representation",
+   "Nedsättning av arbetsgivaravgifter för forskning och utveckling",
+   "Periodiseringsfond",
+   "Inventarier av mindre värde",
+   "Avdrag för pensionskostnader",
+   "Moms på leasing av personbil",
+   "Skattemässigt avskrivningsutrymme på inventarier"
+  ],
+  "statuses": [
+   "Undersök",
+   "Verifiera"
+  ],
+  "lower_low": 0,
+  "lower_high": 7004000,
+  "deferred_low": 0,
+  "deferred_high": 13390000,
+  "warnings": [],
+  "missing": 26,
+  "facts": [
+   "depreciation",
+   "equipment",
+   "external_costs",
+   "fixed_assets",
+   "pension_costs",
+   "personnel_costs",
+   "taxable_result",
+   "wages"
+  ],
+  "limitations": 4,
+  "raw_len": 30165
+ },
+ {
+  "id": "046",
+  "group": "B",
+  "name": "Profil: ägarförändring OCH koncern",
+  "expect": "identiskt bokslut — skillnaden i utfall är profilens och bara profilens",
+  "exit": 0,
+  "ms": 3,
+  "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn",
+  "ok": true,
+  "findings": 9,
+  "rules": [
+   "se.costs.inventarier.mindre_varde",
+   "se.costs.representation",
+   "se.investments.inventarier.avskrivningsutrymme",
+   "se.personnel.pension.avdragsutrymme",
+   "se.rnd.forskningsavdrag",
+   "se.tax.k10.lonekrav",
+   "se.tax.koncernbidrag",
+   "se.tax.periodiseringsfond.outnyttjat_utrymme",
+   "se.vat.personbil.leasing"
+  ],
+  "titles": [
+   "Löneuttag för huvudregeln i fåmansföretag",
+   "Representation",
+   "Koncernbidrag",
+   "Nedsättning av arbetsgivaravgifter för forskning och utveckling",
+   "Periodiseringsfond",
+   "Inventarier av mindre värde",
+   "Avdrag för pensionskostnader",
+   "Moms på leasing av personbil",
+   "Skattemässigt avskrivningsutrymme på inventarier"
+  ],
+  "statuses": [
+   "Undersök",
+   "Verifiera"
+  ],
+  "lower_low": 0,
+  "lower_high": 7004000,
+  "deferred_low": 0,
+  "deferred_high": 13390000,
+  "warnings": [],
+  "missing": 28,
+  "facts": [
+   "depreciation",
+   "equipment",
+   "external_costs",
+   "fixed_assets",
+   "pension_costs",
+   "personnel_costs",
+   "taxable_result",
+   "wages"
+  ],
+  "limitations": 4,
+  "raw_len": 32517
  },
  {
   "id": "047",
@@ -2353,7 +2353,7 @@
   "name": "Profil: äger lokalerna",
   "expect": "identiskt bokslut — skillnaden i utfall är profilens och bara profilens",
   "exit": 0,
-  "ms": 3,
+  "ms": 4,
   "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn",
   "ok": true,
   "findings": 9,
@@ -2400,7 +2400,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 32978
+  "raw_len": 32842
  },
  {
   "id": "048",
@@ -2455,7 +2455,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 32978
+  "raw_len": 32842
  },
  {
   "id": "049",
@@ -2510,7 +2510,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 32705
+  "raw_len": 32569
  },
  {
   "id": "050",
@@ -2518,7 +2518,7 @@
   "name": "Profil: inga fordon",
   "expect": "identiskt bokslut — skillnaden i utfall är profilens och bara profilens",
   "exit": 0,
-  "ms": 4,
+  "ms": 3,
   "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn",
   "ok": true,
   "findings": 8,
@@ -2563,7 +2563,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 30215
+  "raw_len": 30079
  },
  {
   "id": "051",
@@ -2571,7 +2571,7 @@
   "name": "Profil: bedriver utvecklingsarbete",
   "expect": "identiskt bokslut — skillnaden i utfall är profilens och bara profilens",
   "exit": 0,
-  "ms": 3,
+  "ms": 4,
   "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn",
   "ok": true,
   "findings": 9,
@@ -2618,7 +2618,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 32635
+  "raw_len": 32499
  },
  {
   "id": "052",
@@ -2671,7 +2671,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 29489
+  "raw_len": 29353
  },
  {
   "id": "053",
@@ -2726,7 +2726,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 32978
+  "raw_len": 32842
  },
  {
   "id": "054",
@@ -2781,7 +2781,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 32978
+  "raw_len": 32842
  },
  {
   "id": "055",
@@ -2789,7 +2789,7 @@
   "name": "Profil: noll anställda",
   "expect": "identiskt bokslut — skillnaden i utfall är profilens och bara profilens",
   "exit": 0,
-  "ms": 4,
+  "ms": 3,
   "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn",
   "ok": true,
   "findings": 9,
@@ -2824,7 +2824,7 @@
   "deferred_low": 0,
   "deferred_high": 13390000,
   "warnings": [],
-  "missing": 27,
+  "missing": 28,
   "facts": [
    "depreciation",
    "equipment",
@@ -2836,7 +2836,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 32306
+  "raw_len": 32354
  },
  {
   "id": "056",
@@ -2889,7 +2889,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 29013
+  "raw_len": 28869
  },
  {
   "id": "057",
@@ -2897,7 +2897,7 @@
   "name": "Bara resultaträkning, ingen balansräkning",
   "expect": "avskrivningsregeln ska tiga — inventarieposten finns inte",
   "exit": 0,
-  "ms": 3,
+  "ms": 4,
   "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn",
   "ok": true,
   "findings": 4,
@@ -2951,11 +2951,10 @@
    "Skattemässigt avskrivningsutrymme på inventarier"
   ],
   "statuses": [
-   "Undersök",
    "Verifiera"
   ],
   "lower_low": 0,
-  "lower_high": 0,
+  "lower_high": 14832000,
   "deferred_low": 0,
   "deferred_high": 0,
   "warnings": [],
@@ -2965,7 +2964,7 @@
    "fixed_assets"
   ],
   "limitations": 4,
-  "raw_len": 10072
+  "raw_len": 10147
  },
  {
   "id": "059",
@@ -3010,7 +3009,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 20133
+  "raw_len": 19989
  },
  {
   "id": "060",
@@ -3039,11 +3038,10 @@
    "Skattemässigt avskrivningsutrymme på inventarier"
   ],
   "statuses": [
-   "Undersök",
    "Verifiera"
   ],
   "lower_low": 0,
-  "lower_high": 0,
+  "lower_high": 14832000,
   "deferred_low": 0,
   "deferred_high": 13390000,
   "warnings": [],
@@ -3058,7 +3056,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 23494
+  "raw_len": 23415
  },
  {
   "id": "061",
@@ -3102,7 +3100,7 @@
    "taxable_result"
   ],
   "limitations": 4,
-  "raw_len": 20562
+  "raw_len": 20418
  },
  {
   "id": "062",
@@ -3150,7 +3148,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 23452
+  "raw_len": 23308
  },
  {
   "id": "063",
@@ -3198,7 +3196,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 23479
+  "raw_len": 23335
  },
  {
   "id": "064",
@@ -3246,7 +3244,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 23428
+  "raw_len": 23284
  },
  {
   "id": "065",
@@ -3294,7 +3292,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 23437
+  "raw_len": 23293
  },
  {
   "id": "066",
@@ -3302,7 +3300,7 @@
   "name": "Sammanslagen rubrik 'Löner, andra ersättningar och sociala kostnader'",
   "expect": "ska läsas som PERSONALKOSTNAD, inte lön — pensionsregeln ska tiga",
   "exit": 0,
-  "ms": 6,
+  "ms": 3,
   "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn",
   "ok": true,
   "findings": 5,
@@ -3340,7 +3338,7 @@
    "taxable_result"
   ],
   "limitations": 4,
-  "raw_len": 20796
+  "raw_len": 20652
  },
  {
   "id": "067",
@@ -3348,7 +3346,7 @@
   "name": "Ackumulerade avskrivningar i not",
   "expect": "noten får inte läsas som årets avskrivning",
   "exit": 0,
-  "ms": 4,
+  "ms": 3,
   "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn",
   "ok": true,
   "findings": 6,
@@ -3390,7 +3388,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 23663
+  "raw_len": 23519
  },
  {
   "id": "068",
@@ -3438,7 +3436,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 23407
+  "raw_len": 23263
  },
  {
   "id": "069",
@@ -3486,7 +3484,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 23437
+  "raw_len": 23293
  },
  {
   "id": "070",
@@ -3534,7 +3532,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 23443
+  "raw_len": 23299
  },
  {
   "id": "071",
@@ -3582,7 +3580,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 23443
+  "raw_len": 23299
  },
  {
   "id": "072",
@@ -3630,7 +3628,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 23497
+  "raw_len": 23353
  },
  {
   "id": "073",
@@ -3678,7 +3676,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 23443
+  "raw_len": 23299
  },
  {
   "id": "074",
@@ -3726,7 +3724,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 23443
+  "raw_len": 23299
  },
  {
   "id": "075",
@@ -3734,7 +3732,7 @@
   "name": "Engelska rubriker",
   "expect": "ska INTE läsas — regelverket är svenskt och ska säga att det inte kunde läsa",
   "exit": 0,
-  "ms": 4,
+  "ms": 3,
   "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn",
   "ok": true,
   "findings": 5,
@@ -3753,11 +3751,10 @@
    "Skattemässigt avskrivningsutrymme på inventarier"
   ],
   "statuses": [
-   "Undersök",
    "Verifiera"
   ],
   "lower_low": 0,
-  "lower_high": 0,
+  "lower_high": 14832000,
   "deferred_low": 0,
   "deferred_high": 13390000,
   "warnings": [],
@@ -3771,7 +3768,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 19093
+  "raw_len": 19014
  },
  {
   "id": "076",
@@ -3819,61 +3816,13 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 23443
+  "raw_len": 23299
  },
  {
   "id": "077",
   "group": "C",
   "name": "Icke-brytande mellanslag i tal",
   "expect": "tusenavgränsaren i verkliga PDF:er är ofta detta tecken",
-  "exit": 0,
-  "ms": 4,
-  "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn",
-  "ok": true,
-  "findings": 6,
-  "rules": [
-   "se.costs.inventarier.mindre_varde",
-   "se.costs.representation",
-   "se.investments.inventarier.avskrivningsutrymme",
-   "se.personnel.pension.avdragsutrymme",
-   "se.tax.k10.lonekrav",
-   "se.tax.periodiseringsfond.outnyttjat_utrymme"
-  ],
-  "titles": [
-   "Löneuttag för huvudregeln i fåmansföretag",
-   "Representation",
-   "Periodiseringsfond",
-   "Inventarier av mindre värde",
-   "Avdrag för pensionskostnader",
-   "Skattemässigt avskrivningsutrymme på inventarier"
-  ],
-  "statuses": [
-   "Verifiera"
-  ],
-  "lower_low": 0,
-  "lower_high": 7004000,
-  "deferred_low": 0,
-  "deferred_high": 13390000,
-  "warnings": [],
-  "missing": 16,
-  "facts": [
-   "depreciation",
-   "equipment",
-   "external_costs",
-   "fixed_assets",
-   "pension_costs",
-   "personnel_costs",
-   "taxable_result",
-   "wages"
-  ],
-  "limitations": 4,
-  "raw_len": 23443
- },
- {
-  "id": "078",
-  "group": "C",
-  "name": "Punkt som tusenavgränsare",
-  "expect": "kontinentalt format — får inte läsas som decimaltal",
   "exit": 0,
   "ms": 3,
   "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn",
@@ -3902,7 +3851,42 @@
    "personnel_costs"
   ],
   "limitations": 4,
-  "raw_len": 11955
+  "raw_len": 11811
+ },
+ {
+  "id": "078",
+  "group": "C",
+  "name": "Punkt som tusenavgränsare",
+  "expect": "kontinentalt format — får inte läsas som decimaltal",
+  "exit": 0,
+  "ms": 4,
+  "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn",
+  "ok": true,
+  "findings": 2,
+  "rules": [
+   "se.investments.inventarier.avskrivningsutrymme",
+   "se.tax.k10.lonekrav"
+  ],
+  "titles": [
+   "Löneuttag för huvudregeln i fåmansföretag",
+   "Skattemässigt avskrivningsutrymme på inventarier"
+  ],
+  "statuses": [
+   "Verifiera"
+  ],
+  "lower_low": 0,
+  "lower_high": 7004000,
+  "deferred_low": 0,
+  "deferred_high": 0,
+  "warnings": [],
+  "missing": 8,
+  "facts": [
+   "depreciation",
+   "equipment",
+   "personnel_costs"
+  ],
+  "limitations": 4,
+  "raw_len": 11811
  },
  {
   "id": "079",
@@ -3912,7 +3896,8 @@
   "exit": 1,
   "ms": 3,
   "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn\nkor/079.txt: går inte att läsa: the document contained no extractable text; it may be a scan",
-  "ok": false
+  "ok": false,
+  "reason": "kor/079.txt: går inte att läsa: the document contained no extractable text; it may be a scan"
  },
  {
   "id": "080",
@@ -3922,7 +3907,8 @@
   "exit": 1,
   "ms": 3,
   "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn\nkor/080.txt: går inte att läsa: the document contained no extractable text; it may be a scan",
-  "ok": false
+  "ok": false,
+  "reason": "kor/080.txt: går inte att läsa: the document contained no extractable text; it may be a scan"
  },
  {
   "id": "081",
@@ -3984,109 +3970,7 @@
   "name": "Negativ omsättning",
   "expect": "orimligt men läsbart — ska inte ge fabricerade belopp",
   "exit": 0,
-  "ms": 4,
-  "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn",
-  "ok": true,
-  "findings": 6,
-  "rules": [
-   "se.costs.inventarier.mindre_varde",
-   "se.costs.representation",
-   "se.investments.inventarier.avskrivningsutrymme",
-   "se.personnel.pension.avdragsutrymme",
-   "se.tax.k10.lonekrav",
-   "se.tax.periodiseringsfond.outnyttjat_utrymme"
-  ],
-  "titles": [
-   "Löneuttag för huvudregeln i fåmansföretag",
-   "Representation",
-   "Periodiseringsfond",
-   "Inventarier av mindre värde",
-   "Avdrag för pensionskostnader",
-   "Skattemässigt avskrivningsutrymme på inventarier"
-  ],
-  "statuses": [
-   "Verifiera"
-  ],
-  "lower_low": 0,
-  "lower_high": 7004000,
-  "deferred_low": 0,
-  "deferred_high": 13390000,
-  "warnings": [
-   "implausible_value"
-  ],
-  "missing": 16,
-  "facts": [
-   "depreciation",
-   "equipment",
-   "external_costs",
-   "fixed_assets",
-   "pension_costs",
-   "personnel_costs",
-   "taxable_result",
-   "wages"
-  ],
-  "limitations": 4,
-  "raw_len": 23698
- },
- {
-  "id": "084",
-  "group": "D",
-  "name": "Enorma tal (biljoner)",
-  "expect": "överskridande av i64 öre ska fångas, inte wrappa",
-  "exit": 0,
-  "ms": 4,
-  "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn",
-  "ok": true,
-  "findings": 6,
-  "rules": [
-   "se.costs.inventarier.mindre_varde",
-   "se.costs.representation",
-   "se.investments.inventarier.avskrivningsutrymme",
-   "se.personnel.pension.avdragsutrymme",
-   "se.tax.k10.lonekrav",
-   "se.tax.periodiseringsfond.outnyttjat_utrymme"
-  ],
-  "titles": [
-   "Periodiseringsfond",
-   "Löneuttag för huvudregeln i fåmansföretag",
-   "Representation",
-   "Skattemässigt avskrivningsutrymme på inventarier",
-   "Inventarier av mindre värde",
-   "Avdrag för pensionskostnader"
-  ],
-  "statuses": [
-   "Verifiera"
-  ],
-  "lower_low": 0,
-  "lower_high": 28840000000000,
-  "deferred_low": 0,
-  "deferred_high": 30900000000000,
-  "warnings": [
-   "implausible_value",
-   "implausible_value",
-   "implausible_value"
-  ],
-  "missing": 16,
-  "facts": [
-   "depreciation",
-   "equipment",
-   "external_costs",
-   "fixed_assets",
-   "pension_costs",
-   "personnel_costs",
-   "taxable_result",
-   "wages"
-  ],
-  "limitations": 4,
-  "raw_len": 26380
- },
- {
-  "id": "085",
-  "group": "D",
-  "name": "Ören och decimaler",
-  "expect": "decimaler ska inte tappas eller dubblas",
-  "exit": 0,
-  "ms": 4,
+  "ms": 3,
   "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn",
   "ok": true,
   "findings": 6,
@@ -4126,7 +4010,103 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 23443
+  "raw_len": 23299
+ },
+ {
+  "id": "084",
+  "group": "D",
+  "name": "Enorma tal (biljoner)",
+  "expect": "överskridande av i64 öre ska fångas, inte wrappa",
+  "exit": 0,
+  "ms": 3,
+  "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn",
+  "ok": true,
+  "findings": 6,
+  "rules": [
+   "se.costs.inventarier.mindre_varde",
+   "se.costs.representation",
+   "se.investments.inventarier.avskrivningsutrymme",
+   "se.personnel.pension.avdragsutrymme",
+   "se.tax.k10.lonekrav",
+   "se.tax.periodiseringsfond.outnyttjat_utrymme"
+  ],
+  "titles": [
+   "Periodiseringsfond",
+   "Löneuttag för huvudregeln i fåmansföretag",
+   "Representation",
+   "Skattemässigt avskrivningsutrymme på inventarier",
+   "Inventarier av mindre värde",
+   "Avdrag för pensionskostnader"
+  ],
+  "statuses": [
+   "Verifiera"
+  ],
+  "lower_low": 0,
+  "lower_high": 28840000000000,
+  "deferred_low": 0,
+  "deferred_high": 30900000000000,
+  "warnings": [],
+  "missing": 16,
+  "facts": [
+   "depreciation",
+   "equipment",
+   "external_costs",
+   "fixed_assets",
+   "pension_costs",
+   "personnel_costs",
+   "taxable_result",
+   "wages"
+  ],
+  "limitations": 4,
+  "raw_len": 25244
+ },
+ {
+  "id": "085",
+  "group": "D",
+  "name": "Ören och decimaler",
+  "expect": "decimaler ska inte tappas eller dubblas",
+  "exit": 0,
+  "ms": 3,
+  "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn",
+  "ok": true,
+  "findings": 6,
+  "rules": [
+   "se.costs.inventarier.mindre_varde",
+   "se.costs.representation",
+   "se.investments.inventarier.avskrivningsutrymme",
+   "se.personnel.pension.avdragsutrymme",
+   "se.tax.k10.lonekrav",
+   "se.tax.periodiseringsfond.outnyttjat_utrymme"
+  ],
+  "titles": [
+   "Löneuttag för huvudregeln i fåmansföretag",
+   "Representation",
+   "Periodiseringsfond",
+   "Inventarier av mindre värde",
+   "Avdrag för pensionskostnader",
+   "Skattemässigt avskrivningsutrymme på inventarier"
+  ],
+  "statuses": [
+   "Verifiera"
+  ],
+  "lower_low": 0,
+  "lower_high": 7004000,
+  "deferred_low": 0,
+  "deferred_high": 13390000,
+  "warnings": [],
+  "missing": 16,
+  "facts": [
+   "depreciation",
+   "equipment",
+   "external_costs",
+   "fixed_assets",
+   "pension_costs",
+   "personnel_costs",
+   "taxable_result",
+   "wages"
+  ],
+  "limitations": 4,
+  "raw_len": 23299
  },
  {
   "id": "086",
@@ -4179,7 +4159,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 27337
+  "raw_len": 27193
  },
  {
   "id": "087",
@@ -4229,7 +4209,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 23671
+  "raw_len": 23527
  },
  {
   "id": "088",
@@ -4237,7 +4217,7 @@
   "name": "Samma post två gånger med samma värde",
   "expect": "ingen motsägelse — samma värde är samma värde",
   "exit": 0,
-  "ms": 4,
+  "ms": 3,
   "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn",
   "ok": true,
   "findings": 6,
@@ -4277,7 +4257,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 23443
+  "raw_len": 23299
  },
  {
   "id": "089",
@@ -4327,7 +4307,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 23813
+  "raw_len": 23669
  },
  {
   "id": "090",
@@ -4375,7 +4355,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 23443
+  "raw_len": 23299
  },
  {
   "id": "091",
@@ -4423,7 +4403,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 23443
+  "raw_len": 23299
  },
  {
   "id": "092",
@@ -4471,7 +4451,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 23443
+  "raw_len": 23299
  },
  {
   "id": "093",
@@ -4519,7 +4499,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 23443
+  "raw_len": 23299
  },
  {
   "id": "094",
@@ -4567,7 +4547,7 @@
    "wages"
   ],
   "limitations": 4,
-  "raw_len": 23443
+  "raw_len": 23299
  },
  {
   "id": "095",
@@ -4575,7 +4555,7 @@
   "name": "Bara rubriker, inga belopp",
   "expect": "etiketter utan tal ska ge noll fakta",
   "exit": 0,
-  "ms": 4,
+  "ms": 3,
   "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn",
   "ok": true,
   "findings": 0,
@@ -4600,7 +4580,8 @@
   "exit": 1,
   "ms": 3,
   "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn\nanalysen misslyckades: the rule set has no version covering tax year 2026; the analysis cannot be trusted",
-  "ok": false
+  "ok": false,
+  "reason": "analysen misslyckades: the rule set has no version covering tax year 2026; the analysis cannot be trusted"
  },
  {
   "id": "097",
@@ -4610,7 +4591,8 @@
   "exit": 1,
   "ms": 2,
   "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn\nanalysen misslyckades: the rule set has no version covering tax year 2022; the analysis cannot be trusted",
-  "ok": false
+  "ok": false,
+  "reason": "analysen misslyckades: the rule set has no version covering tax year 2022; the analysis cannot be trusted"
  },
  {
   "id": "098",
@@ -4620,7 +4602,8 @@
   "exit": 1,
   "ms": 3,
   "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn\nanalysen misslyckades: the rule set has no version covering tax year 2026; the analysis cannot be trusted",
-  "ok": false
+  "ok": false,
+  "reason": "analysen misslyckades: the rule set has no version covering tax year 2026; the analysis cannot be trusted"
  },
  {
   "id": "099",
@@ -4668,7 +4651,7 @@
    "wages"
   ],
   "limitations": 5,
-  "raw_len": 23510
+  "raw_len": 23366
  },
  {
   "id": "100",
@@ -4678,6 +4661,7 @@
   "exit": 1,
   "ms": 3,
   "stderr": "modell inte konfigurerad (the provider is not configured: ANTHROPIC_API_KEY is not set); kör bara regelmotorn\nkor/100.json: organisationsnumret: invalid organisationsnummer: checksum digit does not match",
-  "ok": false
+  "ok": false,
+  "reason": "kor/100.json: organisationsnumret: invalid organisationsnummer: checksum digit does not match"
  }
 ]
