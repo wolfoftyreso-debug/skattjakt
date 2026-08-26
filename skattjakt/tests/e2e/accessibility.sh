@@ -77,7 +77,8 @@ export SKATTJAKT_MERCHANT_ADDRESS="Exempelgatan 1, 111 22 Stockholm"
 export SKATTJAKT_MERCHANT_EMAIL="hej@skattjakt.se"
 export SKATTJAKT_MERCHANT_VAT_REGISTERED=1
 
-PORT="$APIPORT" "$(newest_binary skattjakt-api)" > "$WORKDIR/api.log" 2>&1 &
+BIN_API="$(newest_binary skattjakt-api)"
+PORT="$APIPORT" "$BIN_API" > "$WORKDIR/api.log" 2>&1 &
 API_PID=$!
 for _ in $(seq 1 80); do
     curl -fsS "http://127.0.0.1:$APIPORT/health" >/dev/null 2>&1 && break

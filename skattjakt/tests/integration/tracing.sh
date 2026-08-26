@@ -126,8 +126,9 @@ export RUST_LOG=skattjakt=warn
 export OTEL_EXPORTER_OTLP_ENDPOINT="http://127.0.0.1:$OTLP_PORT"
 export SKATTJAKT_ENVIRONMENT=test
 
+BIN_API="$(newest_binary skattjakt-api)"
 PORT="$APIPORT" OTEL_SERVICE_NAME=skattjakt-api \
-    "$(newest_binary skattjakt-api)" > "$WORKDIR/api.log" 2>&1 &
+    "$BIN_API" > "$WORKDIR/api.log" 2>&1 &
 API_PID=$!
 for _ in $(seq 1 60); do
     curl -fsS "http://127.0.0.1:$APIPORT/health" >/dev/null 2>&1 && break
@@ -136,8 +137,9 @@ done
 curl -fsS "http://127.0.0.1:$APIPORT/health" >/dev/null || {
     echo "the API did not start"; cat "$WORKDIR/api.log"; exit 1; }
 
+BIN_ANALYSIS_WORKER="$(newest_binary skattjakt-analysis-worker)"
 HOSTNAME=tracing-worker OTEL_SERVICE_NAME=skattjakt-analysis-worker \
-    "$(newest_binary skattjakt-analysis-worker)" > "$WORKDIR/worker.log" 2>&1 &
+    "$BIN_ANALYSIS_WORKER" > "$WORKDIR/worker.log" 2>&1 &
 WORKER_PID=$!
 sleep 1
 echo "api and worker running, both exporting to the collector"

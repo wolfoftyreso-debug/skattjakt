@@ -513,7 +513,7 @@ fn control_review(opportunities: &[Highlight], result: &AnalysisResult) -> Contr
             impact_display: h.impact.to_string(),
         })
         .collect();
-    points.sort_by(|a, b| b.impact.high.ore().cmp(&a.impact.high.ore()));
+    points.sort_by_key(|p| std::cmp::Reverse(p.impact.high.ore()));
     review.worth_raising = points;
 
     review

@@ -119,7 +119,8 @@ export SKATTJAKT_BLOB_ROOT="$WORKDIR/documents"
 export PORT="$PORT"
 export RUST_LOG=skattjakt=warn
 
-"$(newest_binary skattjakt-api)" > "$LOG" 2>&1 &
+BIN_API="$(newest_binary skattjakt-api)"
+"$BIN_API" > "$LOG" 2>&1 &
 API_PID=$!
 
 for _ in $(seq 1 50); do

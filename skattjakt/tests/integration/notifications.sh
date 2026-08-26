@@ -110,7 +110,8 @@ export SKATTJAKT_ADMIN_TOKEN="$ADMIN_TOKEN"
 export SKATTJAKT_BLOB_ROOT="$WORKDIR/documents"
 export RUST_LOG=skattjakt=warn
 
-PORT="$APIPORT" "$(newest_binary skattjakt-api)" > "$WORKDIR/api.log" 2>&1 &
+BIN_API="$(newest_binary skattjakt-api)"
+PORT="$APIPORT" "$BIN_API" > "$WORKDIR/api.log" 2>&1 &
 API_PID=$!
 for _ in $(seq 1 60); do
     curl -fsS "http://127.0.0.1:$APIPORT/health" >/dev/null 2>&1 && break
@@ -119,17 +120,19 @@ done
 curl -fsS "http://127.0.0.1:$APIPORT/health" >/dev/null || {
     echo "the API did not start"; cat "$WORKDIR/api.log"; exit 1; }
 
-HOSTNAME=analysis-1 "$(newest_binary skattjakt-analysis-worker)" \
+BIN_ANALYSIS_WORKER="$(newest_binary skattjakt-analysis-worker)"
+HOSTNAME=analysis-1 "$BIN_ANALYSIS_WORKER" \
     > "$WORKDIR/analysis.log" 2>&1 &
 ANALYSIS_PID=$!
 
 # STARTTLS off: Mailpit is on loopback here, and the code refuses credentials
 # without it, so this is the only honest way to exercise a plaintext relay.
+BIN_NOTIFICATION_WORKER="$(newest_binary skattjakt-notification-worker)"
 SKATTJAKT_SMTP_HOST=127.0.0.1 \
 SKATTJAKT_SMTP_PORT="$SMTP_PORT" \
 SKATTJAKT_SMTP_STARTTLS=0 \
 SKATTJAKT_SMTP_FROM="Skattjakt <ingen-svar@skattjakt.se>" \
-    "$(newest_binary skattjakt-notification-worker)" > "$WORKDIR/notify.log" 2>&1 &
+    "$BIN_NOTIFICATION_WORKER" > "$WORKDIR/notify.log" 2>&1 &
 NOTIFY_PID=$!
 sleep 1
 kill -0 "$NOTIFY_PID" 2>/dev/null || { echo "the notification worker died"; cat "$WORKDIR/notify.log"; exit 1; }

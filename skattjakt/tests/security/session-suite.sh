@@ -82,7 +82,8 @@ export RUST_LOG=skattjakt=warn
 # over it — so the cookie checks below would test nothing.
 export SKATTJAKT_INSECURE_COOKIES=1
 
-"$(newest_binary skattjakt-api)" > "$LOG" 2>&1 &
+BIN_API="$(newest_binary skattjakt-api)"
+"$BIN_API" > "$LOG" 2>&1 &
 API_PID=$!
 for _ in $(seq 1 60); do
     curl -fsS "$BASE/health" >/dev/null 2>&1 && break

@@ -79,12 +79,13 @@ fi
 
 step "starting the api"
 cd "$ROOT"
+BIN_API="$(newest_binary skattjakt-api)"
 DATABASE_URL="$DATABASE_URL" \
 SKATTJAKT_ADMIN_TOKEN="$ADMIN_TOKEN" \
 SKATTJAKT_BLOB_ROOT="$WORKDIR/documents" \
 PORT="$APIPORT" \
 RUST_LOG=skattjakt=info \
-    "$(newest_binary skattjakt-api)" > "$LOG" 2>&1 &
+    "$BIN_API" > "$LOG" 2>&1 &
 API_PID=$!
 
 for _ in $(seq 1 60); do
@@ -101,11 +102,12 @@ echo "  up on :$APIPORT"
 # forever and would not exercise the path that actually runs in production.
 
 step "starting the analysis worker"
+BIN_ANALYSIS_WORKER="$(newest_binary skattjakt-analysis-worker)"
 DATABASE_URL="$DATABASE_URL" \
 SKATTJAKT_BLOB_ROOT="$WORKDIR/documents" \
 HOSTNAME=e2e-worker \
 RUST_LOG=skattjakt=info \
-    "$(newest_binary skattjakt-analysis-worker)" > "$WORKDIR/worker.log" 2>&1 &
+    "$BIN_ANALYSIS_WORKER" > "$WORKDIR/worker.log" 2>&1 &
 WORKER_PID=$!
 
 # The worker has no HTTP surface, so readiness is "it did not exit".
