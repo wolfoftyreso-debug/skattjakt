@@ -1,0 +1,51 @@
+# What is allowed into the binary, and from where.
+#
+# CI runs `cargo deny check licenses sources bans`, and three documents say
+# it does. Until now no policy file existed, so the check ran on defaults,
+# rejected every crate in the tree for want of an allow-list, and the job
+# failed for a reason that had nothing to do with any actual licence.
+#
+# The lists below are drawn from what is genuinely in the tree — see
+# `cargo deny list` — not from a template.
+
+[licenses]
+# Permissive only. Every entry here is present in the current tree.
+allow = [
+    "0BSD",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CDLA-Permissive-2.0",
+    "ISC",
+    "MIT",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+
+# LGPL-2.1-or-later is deliberately absent. It appears in the tree only as
+# one arm of r-efi's `MIT OR Apache-2.0 OR LGPL-2.1-or-later`, which the
+# permissive arms already satisfy — and r-efi is a UEFI-target crate that
+# never builds for anything this ships on. A crate that offered copyleft as
+# its only option would fail here, which is the point.
+confidence-threshold = 0.9
+
+[licenses.private]
+# The eighteen skattjakt-* crates carry no `license` field because they are
+# not published. Nothing here is distributed as source, so there is no
+# licence to state; this stops "unlicensed" being read as a finding.
+ignore = true
+
+[bans]
+multiple-versions = "allow"
+wildcards = "deny"
+# The workspace's own crates depend on each other by path, with no version.
+# That is what an unpublished workspace looks like, not a wildcard risk.
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

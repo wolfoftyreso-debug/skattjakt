@@ -1,7 +1,11 @@
 [package]
 name = "skattjakt-payments"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
 description = "Taking payment for one analysis, and refusing to run one that was not paid for."
 
 [dependencies]
