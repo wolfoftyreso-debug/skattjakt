@@ -1,0 +1,32 @@
+# Advisories this repository knowingly carries.
+#
+# An entry here is a claim, not a shrug. Each one says why the advisory does
+# not apply or cannot yet be acted on, and CI asserts the claims that can be
+# asserted — see the "Known vulnerabilities" step in .github/workflows/ci.yml.
+# An ignore nobody can check is indistinguishable from not looking.
+
+[advisories]
+ignore = [
+    # RUSTSEC-2023-0071 — Marvin attack, timing sidechannel in `rsa` 0.9.
+    #
+    # `rsa` is in Cargo.lock but not in the build graph. It is reached only
+    # through sqlx-mysql, and this workspace takes sqlx with
+    # default-features = false and the postgres driver only, so the MySQL
+    # driver is never compiled. cargo-audit scans the lockfile, which lists
+    # every optional package regardless of which features select it.
+    #
+    # No upstream fix exists, so this cannot be resolved by upgrading. It
+    # would become real the moment anything turns the MySQL driver on, so CI
+    # fails if `rsa` ever appears in `cargo tree --target all`.
+    "RUSTSEC-2023-0071",
+
+    # RUSTSEC-2026-0192 — `ttf-parser` is unmaintained.
+    #
+    # This one *is* reachable: pdf-extract -> lopdf -> ttf-parser, on the path
+    # that reads uploaded PDFs. Unmaintained is not the same as vulnerable and
+    # no advisory against it is open, but it parses untrusted input, so it is
+    # a genuine watch item rather than a dismissed one. There is no maintained
+    # replacement inside pdf-extract's tree today; replacing it means replacing
+    # the PDF reader.
+    "RUSTSEC-2026-0192",
+]

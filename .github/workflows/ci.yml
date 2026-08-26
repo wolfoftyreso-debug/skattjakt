@@ -129,8 +129,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y postgresql
 
-      - name: Build the API
-        run: cargo build --bin skattjakt-api
+      # The suite starts two processes, because that is how it is deployed.
+      # Building only the API leaves the worker missing and the run fails at
+      # the point where the analysis would have been picked up.
+      - name: Build the API and the worker
+        run: cargo build --bin skattjakt-api --bin skattjakt-analysis-worker
 
       # Section 40: create a Swedish AB, upload accounts, analyse, and check the
       # result, evidence, report, audit trail, cross-tenant access,
@@ -159,6 +162,15 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y postgresql
+
+      # e2e-on-s3, tracing and notifications all start prebuilt binaries
+      # rather than going through cargo, so they have to exist first.
+      - name: Build the binaries the suites start
+        run: |
+          cargo build \
+            --bin skattjakt-api \
+            --bin skattjakt-analysis-worker \
+            --bin skattjakt-notification-worker
 
       # SigV4 is hand-written, so the only thing that proves a request is
       # well-formed is a server that verifies the signature and refuses when it
@@ -274,9 +286,18 @@ jobs:
           name: sbom
           path: skattjakt/sbom.cdx.json
 
+      # .cargo/audit.toml carries two ignores, each with its reason. The first
+      # one rests on `rsa` being unreachable — true only while sqlx's MySQL
+      # driver stays off, so assert it instead of trusting it. If `rsa` ever
+      # enters the build graph the ignore has stopped being honest, and this
+      # fails before cargo-audit gets the chance to stay quiet about it.
       - name: Known vulnerabilities
         run: |
           cargo install --locked cargo-audit
+          if cargo tree --quiet -i rsa --target all 2>/dev/null | grep -q .; then
+            echo "rsa is reachable again; RUSTSEC-2023-0071 can no longer be ignored" >&2
+            exit 1
+          fi
           cargo audit --deny warnings
 
       - name: Licences and sources
@@ -334,7 +355,7 @@ jobs:
         run: ./tests/supply-chain/inspect-image.sh skattjakt/api:ci
 
       - name: Scan for vulnerabilities
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: skattjakt/api:ci
           format: table

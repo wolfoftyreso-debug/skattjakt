@@ -314,7 +314,7 @@ impl FactSet {
         let key = kind.key();
         let mut readings: Vec<&FinancialFact> =
             self.facts.iter().filter(|f| f.kind.key() == key).collect();
-        readings.sort_by(|a, b| b.extraction_confidence.cmp(&a.extraction_confidence));
+        readings.sort_by_key(|f| std::cmp::Reverse(f.extraction_confidence));
         readings
     }
 
