@@ -29,7 +29,7 @@ metadata:
 spec:
   description: Skattjakt — tax recovery and opportunity engine
   sourceRepos:
-    - https://github.com/wolfoftyreso-debug/konditori-joy.git
+    - https://github.com/wolfoftyreso-debug/skattjakt.git
   destinations:
     - namespace: skattjakt-dev
       server: https://kubernetes.default.svc
@@ -57,7 +57,7 @@ metadata:
 spec:
   project: skattjakt
   source:
-    repoURL: https://github.com/wolfoftyreso-debug/konditori-joy.git
+    repoURL: https://github.com/wolfoftyreso-debug/skattjakt.git
     targetRevision: main
     path: skattjakt/infrastructure/overlays/dev
   destination:
@@ -83,7 +83,7 @@ metadata:
 spec:
   project: skattjakt
   source:
-    repoURL: https://github.com/wolfoftyreso-debug/konditori-joy.git
+    repoURL: https://github.com/wolfoftyreso-debug/skattjakt.git
     targetRevision: main
     path: skattjakt/infrastructure/overlays/staging
   destination:
@@ -108,7 +108,7 @@ metadata:
 spec:
   project: skattjakt
   source:
-    repoURL: https://github.com/wolfoftyreso-debug/konditori-joy.git
+    repoURL: https://github.com/wolfoftyreso-debug/skattjakt.git
     # A tag, not a branch. Production tracks something a human chose to cut,
     # so a merge to main is not a production deploy.
     targetRevision: production
