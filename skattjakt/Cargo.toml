@@ -9,6 +9,7 @@ members = [
     "crates/identity",
     "crates/notify",
     "crates/extract",
+    "crates/ocr",
     "crates/pipeline",
     "crates/simulate",
     "crates/store",
@@ -40,6 +41,7 @@ skattjakt-gateway = { path = "crates/gateway", default-features = false }
 skattjakt-identity = { path = "crates/identity" }
 skattjakt-notify = { path = "crates/notify" }
 skattjakt-extract = { path = "crates/extract" }
+skattjakt-ocr = { path = "crates/ocr" }
 skattjakt-pipeline = { path = "crates/pipeline", default-features = false }
 skattjakt-simulate = { path = "crates/simulate" }
 skattjakt-store = { path = "crates/store" }

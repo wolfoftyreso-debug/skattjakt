@@ -2056,6 +2056,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "skattjakt-ocr"
+version = "0.1.0"
+
+[[package]]
 name = "skattjakt-payments"
 version = "0.1.0"
 dependencies = [

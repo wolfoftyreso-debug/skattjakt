@@ -1,0 +1,11 @@
+[package]
+name = "skattjakt-ocr"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "Reading figures off a scanned or photographed set of accounts, and saying how well they were read."
+
+[dependencies]
