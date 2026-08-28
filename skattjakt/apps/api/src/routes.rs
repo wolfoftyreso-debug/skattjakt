@@ -585,7 +585,7 @@ pub async fn start_analysis(
             StatusCode::ACCEPTED,
             Json(json!({
                 "analysis_id": existing.subject_id,
-                "status": existing.state.as_str(),
+                "status": status_key(existing.state.reported()),
                 "stage": "queued",
                 "duplicate_of": existing.subject_id,
                 "poll": format!("/v1/analyses/{}", existing.subject_id),

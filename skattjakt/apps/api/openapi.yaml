@@ -1421,8 +1421,8 @@ paths:
                 required: [analysis_id, status, stage]
                 properties:
                   analysis_id: { type: string, format: uuid }
-                  status: { type: string }
-                  stage: { type: string }
+                  status: { $ref: "#/components/schemas/AnalysisStatus" }
+                  stage: { $ref: "#/components/schemas/Stage" }
                   duplicate_of: { type: string, format: uuid }
                   poll: { type: string }
         "400":
@@ -2333,6 +2333,18 @@ components:
         typed in. It is recorded and shown beside the input, and it never
         enters the arithmetic — widening a distribution because someone
         ticked "low" would be the system inventing uncertainty nobody stated.
+    AnalysisStatus:
+      type: string
+      enum: [pending, running, succeeded, failed]
+      description: |
+        Where an analysis is, for whoever is waiting for it.
+
+        The queue underneath runs seven states, including `retrying` and
+        `dead_lettered`. Those are operational facts a caller polling for a
+        report cannot act on, so they are projected onto these four:
+        `retrying` reports as `running` because the work has not stopped, and
+        `cancelled` and `dead_lettered` report as `failed` because both are
+        terminal without a result. `error` says which it was.
     Confidence:
       type: object
       required: [score, band]

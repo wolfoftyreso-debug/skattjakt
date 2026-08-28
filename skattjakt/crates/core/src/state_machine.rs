@@ -13,6 +13,7 @@
 
 use std::fmt;
 
+use crate::analysis::AnalysisStatus;
 use serde::{Deserialize, Serialize};
 
 /// Where an analysis is. Distinct from `AnalysisStage`, which is the
@@ -39,6 +40,29 @@ pub enum AnalysisState {
 }
 
 impl AnalysisState {
+    /// The same run, in the words the API answers in.
+    ///
+    /// Seven states run the queue; four describe an analysis to whoever is
+    /// waiting for it. Keeping both is deliberate — `retrying` and
+    /// `dead_lettered` are operational facts a caller polling for a report
+    /// cannot act on — but the projection has to happen somewhere, or the
+    /// same `status` field answers in two vocabularies depending on which
+    /// branch produced it.
+    ///
+    /// `Retrying` reports as running: the work has not stopped and the caller
+    /// should keep polling. `Cancelled` and `DeadLettered` report as failed:
+    /// both are terminal without a result, and `error` says which it was.
+    pub fn reported(self) -> AnalysisStatus {
+        match self {
+            AnalysisState::Queued => AnalysisStatus::Pending,
+            AnalysisState::Running | AnalysisState::Retrying => AnalysisStatus::Running,
+            AnalysisState::Succeeded => AnalysisStatus::Succeeded,
+            AnalysisState::Failed | AnalysisState::Cancelled | AnalysisState::DeadLettered => {
+                AnalysisStatus::Failed
+            }
+        }
+    }
+
     pub fn as_str(self) -> &'static str {
         match self {
             AnalysisState::Queued => "queued",
@@ -335,6 +359,49 @@ mod tests {
                 state.is_active(),
                 state.is_terminal(),
                 "{state} is both or neither"
+            );
+        }
+    }
+
+    /// Every queue state must answer in the analysis vocabulary. An
+    /// unmapped state is how `retrying` reached a caller that had only ever
+    /// been told about four values.
+    #[test]
+    fn every_state_reports_in_the_analysis_vocabulary() {
+        use crate::analysis::AnalysisStatus::*;
+        let expected = [
+            (AnalysisState::Queued, Pending),
+            (AnalysisState::Running, Running),
+            (AnalysisState::Retrying, Running),
+            (AnalysisState::Succeeded, Succeeded),
+            (AnalysisState::Failed, Failed),
+            (AnalysisState::Cancelled, Failed),
+            (AnalysisState::DeadLettered, Failed),
+        ];
+        for (state, want) in expected {
+            assert_eq!(state.reported(), want, "{state:?} reported wrongly");
+        }
+    }
+
+    /// Retrying is not finished. A caller that stops polling on it waits
+    /// forever for a report that was still coming.
+    #[test]
+    fn retrying_is_not_reported_as_terminal() {
+        assert_eq!(
+            AnalysisState::Retrying.reported(),
+            crate::analysis::AnalysisStatus::Running
+        );
+    }
+
+    /// A cancelled run and a dead-lettered one both end without a result,
+    /// and neither may be reported as one that produced something.
+    #[test]
+    fn terminal_failures_never_report_success() {
+        for state in [AnalysisState::Cancelled, AnalysisState::DeadLettered] {
+            assert_ne!(
+                state.reported(),
+                crate::analysis::AnalysisStatus::Succeeded,
+                "{state:?} was reported as a run that produced a result"
             );
         }
     }
