@@ -152,10 +152,10 @@ MODEL='{
   "note": "första versionen",
   "inputs": [
     {"id":"customers","name":"Antal kunder","source":"CRM, 2025-12-31",
-     "confidence":"medium","unit":"st",
+     "stated_certainty":"medium","unit":"st",
      "distribution":{"kind":"normal","mean":1000,"std_dev":120}},
     {"id":"average_revenue","name":"Snittintäkt per kund","unit":"kr",
-     "source":"Faktureringsunderlag 2025","confidence":"high",
+     "source":"Faktureringsunderlag 2025","stated_certainty":"high",
      "distribution":{"kind":"triangular","low":700,"mode":850,"high":1100}},
     {"id":"churn","name":"Kundtapp","source":"Historik 2023–2025",
      "distribution":{"kind":"beta","alpha":2,"beta":18,"low":0,"high":1}},

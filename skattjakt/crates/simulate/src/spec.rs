@@ -99,13 +99,18 @@ pub const MAX_ITERATIONS: u32 = 10_000_000;
 
 /// How much the person who supplied a number believes it.
 ///
+/// Named for who is asserting it. `skattjakt_core::Confidence` is a score
+/// this system computes about a finding; this is a claim the analyst makes
+/// about an input. Calling both "confidence" put two incompatible things
+/// behind one word in the same API.
+///
 /// Recorded rather than used in the arithmetic. It belongs in the audit record
 /// and on the screen beside the input, and it must never quietly widen a
 /// distribution — that would be the system inventing uncertainty the analyst
 /// did not state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum Confidence {
+pub enum StatedCertainty {
     Low,
     Medium,
     High,
@@ -184,7 +189,7 @@ pub struct Input {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub confidence: Option<Confidence>,
+    pub stated_certainty: Option<StatedCertainty>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -207,7 +212,7 @@ pub struct InputSummary {
     pub max: Option<f64>,
     pub unit: Option<String>,
     pub source: Option<String>,
-    pub confidence: Option<Confidence>,
+    pub stated_certainty: Option<StatedCertainty>,
     pub constraints: Option<Constraints>,
 }
 
@@ -241,7 +246,7 @@ impl Input {
             max: moments.max,
             unit: self.unit.clone(),
             source: self.source.clone(),
-            confidence: self.confidence,
+            stated_certainty: self.stated_certainty,
             constraints: self.constraints,
         }
     }
@@ -571,7 +576,7 @@ mod tests {
             distribution,
             unit: None,
             source: None,
-            confidence: None,
+            stated_certainty: None,
             description: None,
             constraints: None,
         }

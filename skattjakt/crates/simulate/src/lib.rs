@@ -69,9 +69,9 @@ pub use expr::{ExprError, Expression};
 pub use sensitivity::{InputSensitivity, Sensitivity};
 pub use shape::{Bin, CdfPoint, Shape};
 pub use spec::{
-    CompiledSpec, Confidence, ConstraintMode, Constraints, Input, InputSummary, Output, RunConfig,
-    SimulationSpec, SpecError, TargetDirection, MAX_INPUTS, MAX_ITERATIONS, MAX_OUTPUTS,
-    MIN_ITERATIONS,
+    CompiledSpec, ConstraintMode, Constraints, Input, InputSummary, Output, RunConfig,
+    SimulationSpec, SpecError, StatedCertainty, TargetDirection, MAX_INPUTS, MAX_ITERATIONS,
+    MAX_OUTPUTS, MIN_ITERATIONS,
 };
 pub use stats::Statistics;
 

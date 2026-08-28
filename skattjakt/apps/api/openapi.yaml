@@ -1654,7 +1654,7 @@ components:
         source:
           type: string
           description: Where the number came from. A model whose inputs have no stated source is one nobody can defend afterwards.
-        confidence: { type: string, enum: [low, medium, high] }
+        stated_certainty: { $ref: "#/components/schemas/StatedCertainty" }
         description: { type: string }
         constraints:
           type: object
@@ -2321,6 +2321,18 @@ components:
         rejection_reason: { type: [string, "null"] }
         created_at: { type: string, format: date-time }
 
+    StatedCertainty:
+      type: string
+      enum: [low, medium, high]
+      description: |
+        How much the person who supplied a number believes it.
+
+        Named for who is asserting it, because `Confidence` in this same API
+        is something else entirely: a score *this system computes* about a
+        finding. This is a claim *the analyst makes* about an input they
+        typed in. It is recorded and shown beside the input, and it never
+        enters the arithmetic — widening a distribution because someone
+        ticked "low" would be the system inventing uncertainty nobody stated.
     Confidence:
       type: object
       required: [score, band]

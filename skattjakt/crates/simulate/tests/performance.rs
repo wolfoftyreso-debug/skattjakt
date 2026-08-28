@@ -25,7 +25,7 @@ fn input(id: &str, distribution: Distribution) -> Input {
         distribution,
         unit: None,
         source: None,
-        confidence: None,
+        stated_certainty: None,
         description: None,
         constraints: None,
     }

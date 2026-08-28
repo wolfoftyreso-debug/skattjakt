@@ -249,7 +249,7 @@ impl Tenant<'_> {
             sqlx::query(
                 "INSERT INTO simulation_inputs
                      (id, company_id, version_id, position, input_id, name, distribution_kind,
-                      parameters, unit, source, confidence, description, constraints,
+                      parameters, unit, source, stated_certainty, description, constraints,
                       mean, std_dev)
                  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)",
             )
@@ -265,7 +265,7 @@ impl Tenant<'_> {
             .bind(input.source.as_deref())
             .bind(
                 input
-                    .confidence
+                    .stated_certainty
                     .map(|c| serde_json::to_value(c).unwrap_or(Value::Null))
                     .and_then(|v| v.as_str().map(str::to_string)),
             )
