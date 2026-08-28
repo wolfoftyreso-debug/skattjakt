@@ -34,11 +34,11 @@ job is to help you ask better questions of the person qualified to answer them.
 
 | Area | State |
 |---|---|
-| Domain model, rule engine, extraction, pipeline | Implemented, 451 tests |
-| Golden dataset, 10 cases | Precision 1.000, recall 1.000, zero false positives |
+| Domain model, rule engine, extraction, pipeline | Implemented, 732 tests |
+| Golden dataset, 11 cases | Precision 1.000, recall 1.000, zero false positives |
 | Tenant isolation (Postgres RLS) | 10 checks verified against a real cluster |
-| Security suite (§50) | 39 checks verified against a live API |
-| Identity: sessions, rotation, devices, roles | 44 checks verified against a live API |
+| Security suite (§50) | 56 checks verified against a live API |
+| Identity: sessions, rotation, devices, roles | 61 checks verified against a live API |
 | Failure injection (§77) | 24 checks verified against a real cluster |
 | End-to-end product test | 20 steps, API and worker as separate processes |
 | Durable job system, analysis state machine | Implemented and verified |
@@ -49,8 +49,7 @@ job is to help you ask better questions of the person qualified to answer them.
 | SBOM | Generated — 305 components, all checksummed |
 | Kubernetes manifests | 33 resources × 3 environments, schema-valid, properties asserted |
 | Kubernetes cluster | **Never applied** — no cluster is reachable from this environment |
-| OTLP trace export | **Not implemented** — context is propagated, spans reach the logs |
-
+| OTLP trace export | Implemented — spans exported over OTLP/HTTP, verified against a real collector |
 | OCR for scanned PDFs | **Not implemented** — unreadable pages are reported, not read |
 
 A full account of what has and has not been verified is in
