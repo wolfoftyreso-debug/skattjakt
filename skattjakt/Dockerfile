@@ -19,20 +19,24 @@
 # Fetched by checksum inside the build, not committed: the digests are pinned
 # in scripts/fetch-ocr-models.sh and a model that does not match fails the
 # build rather than shipping.
-FROM mirror.gcr.io/library/debian:bookworm-slim AS ocr-fetch
+# Declared here, before the first FROM, because that is the only place an ARG
+# a FROM interpolates can live. Anywhere later it belongs to whichever stage it
+# sits in, expands to nothing in the FROM, and the build fails with
+# `failed to parse stage name "ocr-"` — which is exactly what happened.
+ARG WITH_OCR=0
+
+FROM mirror.gcr.io/library/debian:bookworm-slim AS ocr-1
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 COPY scripts/fetch-ocr-models.sh /tmp/fetch-ocr-models.sh
 RUN /tmp/fetch-ocr-models.sh /models
 
-# Scratch, holding the two files and nothing else, so the copy into the
-# runtime image cannot drag a Debian filesystem along with it.
-FROM scratch AS ocr-1
-COPY --from=ocr-fetch /models/ /
+# The same shape with nothing in it, so the copy below has a source directory
+# whichever way WITH_OCR went. Only /models is ever copied out, so no part of
+# this base image reaches the runtime image.
+FROM mirror.gcr.io/library/debian:bookworm-slim AS ocr-0
+RUN mkdir -p /models
 
-FROM scratch AS ocr-0
-
-ARG WITH_OCR=0
 FROM ocr-${WITH_OCR} AS ocr
 
 # ---- build ----------------------------------------------------------------
@@ -100,8 +104,8 @@ RUN find crates apps workers -name '*.rs' -exec touch {} + \
 FROM gcr.io/distroless/cc-debian12:nonroot
 WORKDIR /app
 COPY --from=build /src/entrypoint /app/skattjakt
-# Empty when WITH_OCR=0, so this line costs nothing in those images.
-COPY --from=ocr / /app/models/
+# Empty when WITH_OCR=0: the directory exists, the two models do not.
+COPY --from=ocr /models /app/models
 
 # 65532 is distroless's `nonroot`. Stated numerically as well as by name,
 # because `runAsNonRoot` in the pod spec is checked against the numeric UID and
