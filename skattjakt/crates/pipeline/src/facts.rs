@@ -14,14 +14,37 @@ pub struct DocumentInput {
     pub extracted: ExtractedDocument,
 }
 
+/// A line parsed out of a text layer.
+const PARSED_LINE_BASE: f64 = 0.95;
+
+/// A line read off the pixels.
+///
+/// Deliberately far below the text-layer figure, and the reason is measured
+/// rather than assumed: on a two-column statement the recogniser dropped
+/// three of four minus signs, so a cost came back looking like income. Under
+/// the `not_actionable` threshold a finding resting on such a reading is
+/// never presented as something to act on — which is the correct answer
+/// until a person has looked at the scan.
+const OCR_LINE_BASE: f64 = 0.45;
+
 /// How much to trust a value the deterministic parser read.
 ///
-/// A parsed line is strong evidence — it has a page and the text it came from —
-/// but it is still only as good as the text layer underneath it, so the score
-/// is scaled by how much of the document was readable at all.
-fn extraction_confidence(document: &ExtractedDocument) -> UnitInterval {
-    const PARSED_LINE_BASE: f64 = 0.95;
-    UnitInterval::saturating(PARSED_LINE_BASE * document.readable_fraction())
+/// A parsed line is strong evidence — it has a page and the text it came from
+/// — but it is only as good as what lay underneath it, so the score is scaled
+/// by how much of the document was readable at all and by how that page's
+/// text was obtained.
+///
+/// Per page rather than per document, because a scanned PDF routinely mixes
+/// the two: a covering letter with real text in front of photographed
+/// statements. Marking the whole document by its worst page would understate
+/// the pages that were read properly.
+fn extraction_confidence_for_page(document: &ExtractedDocument, page: u32) -> UnitInterval {
+    let base = if document.page_was_read_by_ocr(page) {
+        OCR_LINE_BASE
+    } else {
+        PARSED_LINE_BASE
+    };
+    UnitInterval::saturating(base * document.readable_fraction())
 }
 
 /// Builds the fact set for a period from every document in the analysis.
@@ -37,7 +60,6 @@ pub fn build_fact_set(
     let mut set = FactSet::new();
 
     for document in documents {
-        let confidence = extraction_confidence(&document.extracted);
         for extracted in document.extracted.facts() {
             // Costs are presented as negative in a Swedish income statement and
             // stored as positive magnitudes in the canonical model, so a rule
@@ -68,7 +90,10 @@ pub fn build_fact_set(
                 account: None,
                 source_page: Some(extracted.page),
                 source_text: Some(extracted.source_text),
-                extraction_confidence: confidence,
+                extraction_confidence: extraction_confidence_for_page(
+                    &document.extracted,
+                    extracted.page,
+                ),
             });
         }
     }
@@ -112,6 +137,69 @@ mod tests {
             "a fact must carry its page and source text"
         );
         assert_eq!(fact.source_page, Some(1));
+    }
+
+    /// A figure read off a scan is not a figure read out of a text layer,
+    /// and the confidence has to say so. Three of four minus signs were lost
+    /// on a measured statement; a cost that comes back looking like income
+    /// must not be presented as established.
+    #[test]
+    fn a_fact_read_by_ocr_is_trusted_less_than_a_parsed_one() {
+        let parsed = document("Nettoomsättning    1 000 000");
+        let mut scanned = document("Nettoomsättning    1 000 000");
+        scanned.extracted.ocr_pages.push(1);
+
+        let year = FiscalYear::calendar(2025).unwrap();
+        let from_text = build_fact_set(CompanyId::new(), year, &[parsed]);
+        let from_scan = build_fact_set(CompanyId::new(), year, &[scanned]);
+
+        let text_confidence = from_text
+            .get(&FactKind::Revenue)
+            .unwrap()
+            .extraction_confidence
+            .get();
+        let scan_confidence = from_scan
+            .get(&FactKind::Revenue)
+            .unwrap()
+            .extraction_confidence
+            .get();
+
+        assert!(
+            scan_confidence < text_confidence,
+            "a scanned reading ({scan_confidence}) must not be trusted like a parsed one ({text_confidence})"
+        );
+        assert!(
+            scan_confidence < 0.5,
+            "a scanned reading must fall below the actionable threshold, was {scan_confidence}"
+        );
+    }
+
+    /// A scanned PDF routinely mixes the two — a covering letter with real
+    /// text in front of photographed statements — so the penalty has to
+    /// follow the page, not the document.
+    #[test]
+    fn only_the_scanned_page_is_penalised() {
+        let mut doc = document("Nettoomsättning    1 000 000");
+        doc.extracted.pages.push(Page {
+            number: 2,
+            text: "Rörelseresultat    250 000".to_string(),
+        });
+        doc.extracted.ocr_pages.push(2);
+
+        let set = build_fact_set(
+            CompanyId::new(),
+            FiscalYear::calendar(2025).unwrap(),
+            &[doc],
+        );
+        let from_text_layer = set.get(&FactKind::Revenue).unwrap();
+        let from_scan = set.get(&FactKind::OperatingProfit).unwrap();
+
+        assert_eq!(from_text_layer.source_page, Some(1));
+        assert_eq!(from_scan.source_page, Some(2));
+        assert!(
+            from_scan.extraction_confidence < from_text_layer.extraction_confidence,
+            "the page read off pixels should be the only one penalised"
+        );
     }
 
     #[test]

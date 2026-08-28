@@ -9,3 +9,13 @@ publish.workspace = true
 description = "Reading figures off a scanned or photographed set of accounts, and saying how well they were read."
 
 [dependencies]
+# Pure Rust, no system libraries: the runtime image is distroless and a
+# libtesseract dependency would end that. rten is pinned to the version ocrs
+# builds against — 0.25 is published but ocrs 0.12 links 0.24, and mixing them
+# gives two incompatible `Model` types in one graph.
+ocrs = "0.12"
+rten = "0.24"
+rten-imageproc = "0.24"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "tiff", "bmp"] }
+thiserror.workspace = true
+skattjakt-extract.workspace = true

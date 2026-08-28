@@ -145,6 +145,29 @@ async fn main() -> anyhow::Result<()> {
         None => skattjakt_telemetry::otlp::SpanExporter::disabled(),
     };
 
+    // Loaded once: eleven megabytes of models and a few seconds. Absent is a
+    // legitimate configuration — an image the worker cannot read is reported
+    // as unread, which is not the same as a scan that held nothing — so this
+    // says which of the two happened rather than starting quietly either way.
+    let reader = match skattjakt_ocr::Models::from_env() {
+        None => {
+            LogRecord::info("no SKATTJAKT_OCR_MODELS: scanned documents will not be read").emit();
+            None
+        }
+        Some(models) => match skattjakt_ocr::Reader::load(&models) {
+            Ok(reader) => {
+                LogRecord::info("OCR reader loaded").emit();
+                Some(Arc::new(reader))
+            }
+            Err(e) => {
+                LogRecord::warn("OCR models configured but not loadable")
+                    .internal("error", e.to_string())
+                    .emit();
+                None
+            }
+        },
+    };
+
     let runner = Arc::new(Runner {
         store: store.clone(),
         blobs,
@@ -153,6 +176,7 @@ async fn main() -> anyhow::Result<()> {
         queue: queue.clone(),
         metrics: metrics_registry.clone(),
         spans,
+        reader,
     });
 
     LogRecord::info("analysis worker started")

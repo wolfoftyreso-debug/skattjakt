@@ -9,6 +9,10 @@
 //! [`layout`] holds the part worth testing hardest, and holds no engine
 //! dependency: rebuilding statement rows out of recognised words.
 
+pub mod engine;
+pub mod fill;
 pub mod layout;
 
+pub use engine::{Models, OcrError, Reader};
+pub use fill::{read_images, Filled};
 pub use layout::{rows_from_words, Amount, Row, Sign, Word};

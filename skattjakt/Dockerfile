@@ -9,6 +9,32 @@
 # reach. `mirror.gcr.io` is Google's Docker Hub mirror; the content is
 # identical, and going through it avoids the rate limit on the Hub itself.
 
+
+# ---- OCR models -----------------------------------------------------------
+#
+# 11.5 MB of them, and only the processes that read documents need them. The
+# notification worker never sees a scan, so it gets the empty stage and stays
+# the size it was. WITH_OCR picks which.
+#
+# Fetched by checksum inside the build, not committed: the digests are pinned
+# in scripts/fetch-ocr-models.sh and a model that does not match fails the
+# build rather than shipping.
+FROM mirror.gcr.io/library/debian:bookworm-slim AS ocr-fetch
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+COPY scripts/fetch-ocr-models.sh /tmp/fetch-ocr-models.sh
+RUN /tmp/fetch-ocr-models.sh /models
+
+# Scratch, holding the two files and nothing else, so the copy into the
+# runtime image cannot drag a Debian filesystem along with it.
+FROM scratch AS ocr-1
+COPY --from=ocr-fetch /models/ /
+
+FROM scratch AS ocr-0
+
+ARG WITH_OCR=0
+FROM ocr-${WITH_OCR} AS ocr
+
 # ---- build ----------------------------------------------------------------
 FROM mirror.gcr.io/library/rust:1.94-slim-bookworm AS build
 WORKDIR /src
@@ -74,6 +100,8 @@ RUN find crates apps workers -name '*.rs' -exec touch {} + \
 FROM gcr.io/distroless/cc-debian12:nonroot
 WORKDIR /app
 COPY --from=build /src/entrypoint /app/skattjakt
+# Empty when WITH_OCR=0, so this line costs nothing in those images.
+COPY --from=ocr / /app/models/
 
 # 65532 is distroless's `nonroot`. Stated numerically as well as by name,
 # because `runAsNonRoot` in the pod spec is checked against the numeric UID and
@@ -81,6 +109,7 @@ COPY --from=build /src/entrypoint /app/skattjakt
 USER 65532:65532
 EXPOSE 8080
 ENV PORT=8080 \
-    RUST_LOG=skattjakt=info,sqlx=warn
+    RUST_LOG=skattjakt=info,sqlx=warn \
+    SKATTJAKT_OCR_MODELS=/app/models
 
 ENTRYPOINT ["/app/skattjakt"]

@@ -47,8 +47,16 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets
 
+      # The OCR test refuses to skip in CI, so the models have to be here.
+      # Fetched by checksum: scripts/fetch-ocr-models.sh rejects a model that
+      # does not match and says which one.
+      - name: OCR models
+        run: ./scripts/fetch-ocr-models.sh models
+
       - name: Tests
         run: cargo test --workspace --all-targets
+        env:
+          SKATTJAKT_OCR_MODELS: ${{ github.workspace }}/skattjakt/models
 
       # Runs the whole pipeline over ten synthetic companies and fails the build
       # on any false positive or critical-evidence breach.
@@ -331,7 +339,9 @@ jobs:
         with:
           context: skattjakt
           file: skattjakt/Dockerfile
-          build-args: BINARY=skattjakt-api
+          build-args: |
+            BINARY=skattjakt-api
+            WITH_OCR=1
           tags: skattjakt/api:ci
           load: true
           push: false
@@ -343,7 +353,9 @@ jobs:
         with:
           context: skattjakt
           file: skattjakt/Dockerfile
-          build-args: BINARY=skattjakt-analysis-worker
+          build-args: |
+            BINARY=skattjakt-analysis-worker
+            WITH_OCR=1
           tags: skattjakt/analysis-worker:ci
           load: true
           push: false

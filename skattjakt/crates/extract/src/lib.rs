@@ -53,6 +53,16 @@ pub struct ExtractedDocument {
     pub pages: Vec<Page>,
     /// Pages that yielded no text. Reported to the user, never ignored.
     pub unreadable_pages: Vec<u32>,
+    /// Pages whose text was read off the pixels rather than out of a text
+    /// layer, in the same shape as `unreadable_pages` because it is the same
+    /// kind of fact about a page.
+    ///
+    /// A reading is not a text layer and must not be trusted like one. On a
+    /// measured two-column statement the recogniser dropped three of four
+    /// minus signs — a lost sign turns a cost into income — so a fact from
+    /// one of these pages carries a lower extraction confidence, and the
+    /// analysis is capped accordingly rather than presented as established.
+    pub ocr_pages: Vec<u32>,
     pub scale: Scale,
     /// What the bytes turned out to be, whatever the filename claimed.
     pub detected_type: String,
@@ -80,6 +90,7 @@ impl Default for ExtractedDocument {
         Self {
             pages: Vec::new(),
             unreadable_pages: Vec::new(),
+            ocr_pages: Vec::new(),
             scale: Scale::Kronor,
             detected_type: "text/plain".to_string(),
             not_read_because: None,
@@ -104,6 +115,11 @@ impl ExtractedDocument {
 
     /// Fraction of pages that produced text. Feeds the extraction-quality
     /// component of the confidence engine.
+    /// Whether this page's text came from a reading of the pixels.
+    pub fn page_was_read_by_ocr(&self, page: u32) -> bool {
+        self.ocr_pages.contains(&page)
+    }
+
     pub fn readable_fraction(&self) -> f64 {
         if self.pages.is_empty() {
             return 0.0;
@@ -194,6 +210,7 @@ pub fn extract_within(
         return Ok(ExtractedDocument {
             pages: Vec::new(),
             unreadable_pages: Vec::new(),
+            ocr_pages: vec![],
             scale: Scale::Kronor,
             detected_type: mime.as_content_type().to_string(),
             not_read_because: Some(match &mime {
@@ -234,6 +251,7 @@ pub fn extract_within(
     let document = ExtractedDocument {
         pages,
         unreadable_pages,
+        ocr_pages: vec![],
         scale,
         detected_type: mime.as_content_type().to_string(),
         not_read_because: None,

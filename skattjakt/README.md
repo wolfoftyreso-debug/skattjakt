@@ -34,7 +34,7 @@ job is to help you ask better questions of the person qualified to answer them.
 
 | Area | State |
 |---|---|
-| Domain model, rule engine, extraction, pipeline | Implemented, 732 tests |
+| Domain model, rule engine, extraction, pipeline | Implemented, 752 tests |
 | Golden dataset, 11 cases | Precision 1.000, recall 1.000, zero false positives |
 | Tenant isolation (Postgres RLS) | 10 checks verified against a real cluster |
 | Security suite (§50) | 56 checks verified against a live API |
@@ -50,7 +50,8 @@ job is to help you ask better questions of the person qualified to answer them.
 | Kubernetes manifests | 33 resources × 3 environments, schema-valid, properties asserted |
 | Kubernetes cluster | **Never applied** — no cluster is reachable from this environment |
 | OTLP trace export | Implemented — spans exported over OTLP/HTTP, verified against a real collector |
-| OCR for scanned PDFs | **Not implemented** — unreadable pages are reported, not read |
+| OCR for uploaded images | Implemented — read off the pixels, at a confidence that keeps a finding below actionable |
+| OCR for scanned PDFs | **Not implemented** — the pages are images inside a container; pulling them out is not done |
 
 A full account of what has and has not been verified is in
 [`docs/SKATTJAKT_DEPLOYMENT.md`](docs/SKATTJAKT_DEPLOYMENT.md) §9.

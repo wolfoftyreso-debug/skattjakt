@@ -64,6 +64,9 @@ pub struct Runner {
     pub queue: Queue,
     pub metrics: Registry,
     pub spans: skattjakt_telemetry::otlp::SpanExporter,
+    /// Absent when this deployment ships without OCR models. A scan then
+    /// reports as unread rather than as empty — see `Filled::NoReader`.
+    pub reader: Option<Arc<skattjakt_ocr::Reader>>,
 }
 
 impl std::fmt::Debug for Runner {
@@ -225,12 +228,26 @@ impl Runner {
                 ));
             }
 
-            let extracted = skattjakt_extract::extract(&bytes, version.mime_type.clone()).map_err(|_| {
-                RunFailure::permanent(
-                    "document_unreadable",
-                    "Ett av dokumenten gick inte att läsa. Kontrollera att det är en textbaserad PDF.",
-                )
-            })?;
+            let mut extracted = skattjakt_extract::extract(&bytes, version.mime_type.clone())
+                .map_err(|_| {
+                    RunFailure::permanent(
+                        "document_unreadable",
+                        "Ett av dokumenten gick inte att läsa. Kontrollera att det är en textbaserad PDF.",
+                    )
+                })?;
+
+            // A photographed or scanned statement leaves extraction with no
+            // text at all. Read it off the pixels where a reader is loaded;
+            // the pages it had to read that way are recorded, and the facts
+            // drawn from them carry a confidence that says so.
+            let filled = skattjakt_ocr::read_images(&mut extracted, &bytes, self.reader.as_deref());
+            if let skattjakt_ocr::Filled::Read { rows_with_figures } = &filled {
+                tracing::info!(
+                    document_version = %version.id,
+                    rows_with_figures,
+                    "read a page off the pixels"
+                );
+            }
             documents.push(DocumentInput {
                 document_id: version.document_id,
                 document_version_id: version.id,

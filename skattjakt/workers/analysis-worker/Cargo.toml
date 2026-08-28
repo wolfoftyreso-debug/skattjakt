@@ -19,6 +19,7 @@ path = "src/main.rs"
 
 skattjakt-core.workspace = true
 skattjakt-extract.workspace = true
+skattjakt-ocr.workspace = true
 skattjakt-gateway = { workspace = true, features = ["native"] }
 skattjakt-jobs.workspace = true
 skattjakt-model = { workspace = true, features = ["native"] }
